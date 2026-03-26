@@ -41,6 +41,8 @@ type UploadItem = {
   createdAtLabel: string;
 };
 
+type ToastType = "success" | "error" | "info";
+
 function normalizePhone(value: string) {
   const trimmed = String(value || "").trim();
   if (!trimmed) return "";
@@ -110,7 +112,7 @@ function truncateMiddle(value: string, start = 8, end = 6) {
 function statusChipTone(status?: string) {
   const value = String(status || "").toLowerCase();
 
-  if (value.includes("completed")) {
+  if (value.includes("completed") || value.includes("sent") || value.includes("success")) {
     return {
       bg: "rgba(16, 185, 129, 0.12)",
       text: "#059669",
@@ -144,12 +146,13 @@ function statusChipTone(status?: string) {
 export default function DashboardPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
 
   const [checking, setChecking] = useState(true);
   const [adminName, setAdminName] = useState("Admin");
 
-  const [status, setStatus] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [sendingSms, setSendingSms] = useState(false);
 
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [loadingUploads, setLoadingUploads] = useState(false);
@@ -162,10 +165,37 @@ export default function DashboardPage() {
 
   const [message, setMessage] = useState("");
   const [campaignName, setCampaignName] = useState("");
-  const [sendingSms, setSendingSms] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [leadSearch, setLeadSearch] = useState("");
+
+  const [toastOpen, setToastOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
+  const [toastType, setToastType] = useState<ToastType>("info");
+
+  const isBusy = checking || uploading || sendingSms;
+
+  const showToast = (msg: string, type: ToastType = "info") => {
+    setToastMessage(msg);
+    setToastType(type);
+    setToastOpen(true);
+
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastOpen(false);
+    }, 5000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -233,6 +263,7 @@ export default function DashboardPage() {
       }
     } catch (error) {
       console.error("Failed to load uploads", error);
+      showToast("Failed to load imported files.", "error");
     } finally {
       setLoadingUploads(false);
     }
@@ -262,6 +293,7 @@ export default function DashboardPage() {
     } catch (error) {
       console.error("Failed to load leads for upload", error);
       setSelectedLeads([]);
+      showToast("Failed to load leads for selected file.", "error");
     } finally {
       setLoadingSelectedLeads(false);
     }
@@ -281,14 +313,13 @@ export default function DashboardPage() {
     const file = event.target.files?.[0];
 
     if (!user) {
-      setStatus("You are not signed in.");
+      showToast("You are not signed in.", "error");
       return;
     }
 
     if (!file) return;
 
     setUploading(true);
-    setStatus("Reading CSV...");
 
     Papa.parse<RowData>(file, {
       header: true,
@@ -306,7 +337,7 @@ export default function DashboardPage() {
             [];
 
           if (!detectedHeaders.length) {
-            setStatus("No CSV headers found.");
+            showToast("No CSV headers found.", "error");
             setUploading(false);
             return;
           }
@@ -350,11 +381,11 @@ export default function DashboardPage() {
             imported += 1;
           }
 
-          setStatus(`Import complete. ${imported} leads saved to file ${file.name}.`);
           await loadUploads();
           setSelectedUploadId(uploadRef.id);
+          showToast(`Import complete. ${imported} leads saved from ${file.name}.`, "success");
         } catch (error: any) {
-          setStatus(error?.message || "Import failed.");
+          showToast(error?.message || "Import failed.", "error");
         } finally {
           setUploading(false);
           if (fileInputRef.current) {
@@ -363,7 +394,7 @@ export default function DashboardPage() {
         }
       },
       error: (error) => {
-        setStatus(`CSV read failed: ${error.message}`);
+        showToast(`CSV read failed: ${error.message}`, "error");
         setUploading(false);
       },
     });
@@ -385,8 +416,10 @@ export default function DashboardPage() {
         setSelectedUpload(null);
         setSelectedLeads([]);
       }
+
+      showToast("File record deleted.", "success");
     } catch (error: any) {
-      alert(error?.message || "Failed to delete file.");
+      showToast(error?.message || "Failed to delete file.", "error");
     } finally {
       setDeletingUploadId("");
     }
@@ -396,27 +429,26 @@ export default function DashboardPage() {
     const user = auth.currentUser;
 
     if (!user) {
-      setStatus("You are not signed in.");
+      showToast("You are not signed in.", "error");
       return;
     }
 
     if (!selectedUploadId || !selectedUpload) {
-      setStatus("Please select a file first.");
+      showToast("Please select a file first.", "error");
       return;
     }
 
     if (!message.trim()) {
-      setStatus("Please write an SMS message.");
+      showToast("Please write an SMS message.", "error");
       return;
     }
 
     if (!selectedLeads.length) {
-      setStatus("No leads found in selected file.");
+      showToast("No leads found in selected file.", "error");
       return;
     }
 
     setSendingSms(true);
-    setStatus("Sending SMS...");
 
     try {
       const res = await fetch("/api/send-sms", {
@@ -439,7 +471,7 @@ export default function DashboardPage() {
       const data = await res.json();
 
       if (!res.ok || !data.ok) {
-        setStatus(data.error || "Failed to send SMS.");
+        showToast(data.error || "Failed to send SMS.", "error");
         return;
       }
 
@@ -472,14 +504,16 @@ export default function DashboardPage() {
         });
       }
 
-      setStatus(
-        `SMS finished. Sent: ${data.success}, Failed: ${data.failed}, Total: ${data.total}.`
+      showToast(
+        `SMS finished. Sent: ${data.success}, Failed: ${data.failed}, Total: ${data.total}.`,
+        data.failed > 0 ? "info" : "success"
       );
+
       setCampaignName("");
       setMessage("");
     } catch (error: any) {
       console.error(error);
-      setStatus(error?.message || "Unexpected error while sending SMS.");
+      showToast(error?.message || "Unexpected error while sending SMS.", "error");
     } finally {
       setSendingSms(false);
     }
@@ -519,8 +553,9 @@ export default function DashboardPage() {
   if (checking) {
     return (
       <main style={loadingPageStyle}>
+        <GlobalStyles />
         <div style={loadingCardStyle}>
-          <div style={loadingDotStyle} />
+          <div style={spinnerStyle} />
           <p style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#e6fffb" }}>
             Checking admin access...
           </p>
@@ -530,426 +565,503 @@ export default function DashboardPage() {
   }
 
   return (
-    <main style={pageStyle}>
-      <div style={pageShellStyle}>
-        <aside style={sidebarStyle}>
-          <div>
-            <div style={brandWrapStyle}>
-              <div style={brandIconStyle}>N</div>
-              <div>
-                <div style={brandTitleStyle}>Nexgen SMS</div>
-                <div style={brandSubStyle}>Admin Portal</div>
+    <>
+      <GlobalStyles />
+
+      {toastOpen ? (
+        <div
+          style={{
+            ...toastStyle,
+            ...(toastType === "success"
+              ? toastSuccessStyle
+              : toastType === "error"
+              ? toastErrorStyle
+              : toastInfoStyle),
+          }}
+        >
+          <div
+            style={{
+              ...toastDotStyle,
+              background:
+                toastType === "success"
+                  ? "#34d399"
+                  : toastType === "error"
+                  ? "#f87171"
+                  : "#22d3ee",
+            }}
+          />
+          <div style={{ flex: 1 }}>
+            <div style={toastTitleStyle}>
+              {toastType === "success"
+                ? "Success"
+                : toastType === "error"
+                ? "Something went wrong"
+                : "System update"}
+            </div>
+            <div style={toastMessageStyle}>{toastMessage}</div>
+          </div>
+          <button onClick={() => setToastOpen(false)} style={toastCloseStyle}>
+            ×
+          </button>
+        </div>
+      ) : null}
+
+      {isBusy ? (
+        <div style={busyOverlayStyle}>
+          <div style={busyCardStyle}>
+            <div style={busySpinnerRingStyle}>
+              <div style={busySpinnerInnerStyle} />
+            </div>
+
+            <h3 style={busyTitleStyle}>
+              {uploading
+                ? "Uploading and importing file..."
+                : sendingSms
+                ? "Sending SMS campaign..."
+                : "Please wait..."}
+            </h3>
+
+            <p style={busyTextStyle}>
+              {uploading
+                ? "The system is reading your CSV, detecting phone numbers, and saving leads."
+                : sendingSms
+                ? "The system is processing recipients and sending messages. Please do not close this page."
+                : "The system is busy."}
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      <main style={pageStyle}>
+        <div style={pageShellStyle}>
+          <aside style={sidebarStyle}>
+            <div>
+              <div style={brandWrapStyle}>
+                <div style={brandIconStyle}>N</div>
+                <div>
+                  <div style={brandTitleStyle}>Nexgen SMS</div>
+                  <div style={brandSubStyle}>Admin Portal</div>
+                </div>
+              </div>
+
+              <div style={adminMiniCardStyle}>
+                <div style={avatarStyle}>
+                  {adminName?.slice(0, 1)?.toUpperCase() || "A"}
+                </div>
+                <div>
+                  <div style={sidebarSmallLabelStyle}>Signed in as</div>
+                  <div style={sidebarAdminNameStyle}>{adminName}</div>
+                </div>
               </div>
             </div>
 
-            <div style={adminMiniCardStyle}>
-              <div style={avatarStyle}>
-                {adminName?.slice(0, 1)?.toUpperCase() || "A"}
-              </div>
-              <div>
-                <div style={sidebarSmallLabelStyle}>Signed in as</div>
-                <div style={sidebarAdminNameStyle}>{adminName}</div>
-              </div>
+            <div style={sidebarBottomActionsStyle}>
+              <Link href="/replies" style={sidebarRepliesButtonStyle}>
+                Replies
+              </Link>
+
+              <button onClick={handleLogout} style={sidebarLogoutButtonStyle}>
+                Logout
+              </button>
             </div>
+          </aside>
 
-            <nav style={{ marginTop: 24, display: "grid", gap: 10 }}>
-              <SideNavItem active label="Dashboard" sub="Overview and actions" />
-              <SideNavItem label="Uploads" sub={`${totalUploads} imported files`} />
-              <SideNavItem label="Campaigns" sub="Bulk messaging" />
-              <SideNavItem label="Leads" sub={`${totalValidNumbers} valid numbers`} />
-            </nav>
-          </div>
-
-          <div style={{ display: "grid", gap: 12 }}>
-            <Link href="/replies" style={sidebarLinkButtonStyle}>
-              Open Replies
-            </Link>
-
-            <button onClick={handleLogout} style={sidebarLogoutButtonStyle}>
-              Logout
-            </button>
-          </div>
-        </aside>
-
-        <section style={contentStyle}>
-          <div style={heroCardStyle}>
-            <div style={heroOverlayStyle} />
-            <div style={heroInnerStyle}>
-              <div>
-                <div style={heroBadgeStyle}>Premium Admin Workspace</div>
-                <h1 style={heroTitleStyle}>Fintech SMS Admin Dashboard</h1>
-                <p style={heroTextStyle}>
-                  Upload lead files, review imported recipients, and launch campaigns from one clean control center.
-                </p>
-              </div>
-
-              <div style={heroTopControlsStyle}>
-                <div style={searchBarStyle}>
-                  <span style={{ fontSize: 16, opacity: 0.8 }}>⌕</span>
-                  <input
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Search files by name, uuid, or status"
-                    style={searchInputStyle}
-                  />
+          <section style={contentStyle}>
+            <div style={heroCardStyle}>
+              <div style={heroOverlayStyle} />
+              <div style={heroInnerStyle}>
+                <div>
+                  <div style={heroBadgeStyle}>Premium Admin Workspace</div>
+                  <h1 style={heroTitleStyle}>Fintech SMS Admin Dashboard</h1>
+                  <p style={heroTextStyle}>
+                    Upload lead files, review imported recipients, and launch campaigns from one clean control center.
+                  </p>
                 </div>
 
-                <button
-                  onClick={handlePickFile}
-                  disabled={uploading}
-                  style={{
-                    ...heroPrimaryButtonStyle,
-                    opacity: uploading ? 0.7 : 1,
-                    cursor: uploading ? "not-allowed" : "pointer",
-                  }}
-                >
-                  {uploading ? "Uploading..." : "Upload CSV"}
-                </button>
-              </div>
-
-              <div style={statsGridStyle}>
-                <StatCard
-                  label="Imported Files"
-                  value={String(totalUploads)}
-                  accent="rgba(255,255,255,0.18)"
-                />
-                <StatCard
-                  label="Valid Numbers"
-                  value={String(totalValidNumbers)}
-                  accent="rgba(255,255,255,0.18)"
-                />
-                <StatCard
-                  label="Selected Recipients"
-                  value={String(totalRecipients)}
-                  accent="rgba(255,255,255,0.18)"
-                />
-                <StatCard
-                  label="Selected File"
-                  value={selectedUpload?.fileName || "-"}
-                  accent="rgba(255,255,255,0.18)"
-                  compact
-                />
-              </div>
-            </div>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv,text/csv"
-              onChange={handleCsvUpload}
-              style={{ display: "none" }}
-            />
-          </div>
-
-          {status ? (
-            <div style={statusToastStyle}>
-              <div style={statusToastDotStyle} />
-              <span>{status}</span>
-            </div>
-          ) : null}
-
-          <div style={mainGridStyle}>
-            <div style={leftColumnStyle}>
-              <section style={panelStyle}>
-                <div style={panelHeaderStyle}>
-                  <div>
-                    <h2 style={panelTitleStyle}>Imported Files</h2>
-                    <p style={panelDescStyle}>
-                      Pick one imported file to load all leads into the SMS portal.
-                    </p>
+                <div style={heroTopControlsStyle}>
+                  <div style={searchBarStyle}>
+                    <span style={{ fontSize: 16, opacity: 0.8 }}>⌕</span>
+                    <input
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      placeholder="Search files by name, uuid, or status"
+                      style={searchInputStyle}
+                    />
                   </div>
 
-                  <button onClick={loadUploads} style={secondaryButtonStyle}>
-                    Refresh
+                  <button
+                    onClick={handlePickFile}
+                    disabled={uploading || sendingSms}
+                    style={{
+                      ...heroPrimaryButtonStyle,
+                      opacity: uploading || sendingSms ? 0.7 : 1,
+                      cursor: uploading || sendingSms ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {uploading ? "Uploading..." : "Upload CSV"}
                   </button>
                 </div>
 
-                {loadingUploads ? (
-                  <EmptyState text="Loading files..." />
-                ) : filteredUploads.length === 0 ? (
-                  <EmptyState text="No imported files found." />
-                ) : (
-                  <div style={{ display: "grid", gap: 14 }}>
-                    {filteredUploads.map((upload) => {
-                      const selected = selectedUploadId === upload.id;
-                      const tone = statusChipTone(upload.status);
+                <div style={statsGridStyle}>
+                  <StatCard
+                    label="Imported Files"
+                    value={String(totalUploads)}
+                    accent="rgba(255,255,255,0.18)"
+                  />
+                  <StatCard
+                    label="Valid Numbers"
+                    value={String(totalValidNumbers)}
+                    accent="rgba(255,255,255,0.18)"
+                  />
+                  <StatCard
+                    label="Selected Recipients"
+                    value={String(totalRecipients)}
+                    accent="rgba(255,255,255,0.18)"
+                  />
+                  <StatCard
+                    label="Selected File"
+                    value={selectedUpload?.fileName || "-"}
+                    accent="rgba(255,255,255,0.18)"
+                    compact
+                  />
+                </div>
+              </div>
 
-                      return (
-                        <div
-                          key={upload.id}
-                          style={{
-                            ...fileCardStyle,
-                            border: selected
-                              ? "1px solid rgba(13, 148, 136, 0.45)"
-                              : "1px solid rgba(15, 23, 42, 0.06)",
-                            boxShadow: selected
-                              ? "0 18px 40px rgba(13, 148, 136, 0.14)"
-                              : "0 8px 20px rgba(15, 23, 42, 0.05)",
-                          }}
-                        >
-                          <div style={fileCardTopStyle}>
-                            <div style={{ minWidth: 0 }}>
-                              <div style={fileNameStyle}>{upload.fileName}</div>
-                              <div style={fileMetaStyle}>
-                                UUID: {truncateMiddle(upload.id, 10, 8)}
-                              </div>
-                            </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleCsvUpload}
+                style={{ display: "none" }}
+              />
+            </div>
 
-                            <div
-                              style={{
-                                background: tone.bg,
-                                color: tone.text,
-                                border: `1px solid ${tone.border}`,
-                                borderRadius: 999,
-                                padding: "8px 12px",
-                                fontSize: 12,
-                                fontWeight: 700,
-                                textTransform: "capitalize",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {upload.status || "imported"}
-                            </div>
-                          </div>
+            <div style={mainGridStyle}>
+              <div style={leftColumnStyle}>
+                <section style={panelStyle}>
+                  <div style={panelHeaderStyle}>
+                    <div>
+                      <h2 style={panelTitleStyle}>Imported Files</h2>
+                      <p style={panelDescStyle}>
+                        Pick one imported file to load all leads into the SMS portal.
+                      </p>
+                    </div>
 
-                          <div style={fileStatsRowStyle}>
-                            <MiniData label="Imported" value={upload.createdAtLabel} />
-                            <MiniData label="Rows" value={String(upload.totalRows)} />
-                            <MiniData label="Valid Phones" value={String(upload.validPhoneRows)} />
-                          </div>
-
-                          <div style={fileActionsStyle}>
-                            <button
-                              onClick={() => setSelectedUploadId(upload.id)}
-                              style={selected ? selectedButtonStyle : primaryButtonStyle}
-                            >
-                              {selected ? "Selected" : "Select File"}
-                            </button>
-
-                            <button
-                              onClick={() => handleDeleteUpload(upload.id)}
-                              disabled={deletingUploadId === upload.id}
-                              style={{
-                                ...dangerButtonStyle,
-                                opacity: deletingUploadId === upload.id ? 0.65 : 1,
-                              }}
-                            >
-                              {deletingUploadId === upload.id ? "Deleting..." : "Delete"}
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-
-              <section style={panelStyle}>
-                <div style={panelHeaderStyle}>
-                  <div>
-                    <h2 style={panelTitleStyle}>Leads in Selected File</h2>
-                    <p style={panelDescStyle}>
-                      Review all numbers before sending.
-                    </p>
-                  </div>
-
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <input
-                      value={leadSearch}
-                      onChange={(e) => setLeadSearch(e.target.value)}
-                      placeholder="Search leads"
-                      style={inlineSearchInputStyle}
-                    />
-                    <button
-                      onClick={() => selectedUploadId && loadLeadsForUpload(selectedUploadId)}
-                      style={secondaryButtonStyle}
-                    >
+                    <button onClick={loadUploads} style={secondaryButtonStyle}>
                       Refresh
                     </button>
                   </div>
-                </div>
 
-                {loadingSelectedLeads ? (
-                  <EmptyState text="Loading selected leads..." />
-                ) : !selectedUploadId ? (
-                  <EmptyState text="Select a file first." />
-                ) : filteredLeads.length === 0 ? (
-                  <EmptyState text="No leads found in selected file." />
-                ) : (
-                  <div style={tableWrapStyle}>
-                    <table style={tableStyle}>
-                      <thead>
-                        <tr>
-                          <th style={thStyle}>Name</th>
-                          <th style={thStyle}>Phone</th>
-                          <th style={thStyle}>Status</th>
-                          <th style={thStyle}>Source File</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredLeads.map((lead) => {
-                          const tone = statusChipTone(lead.status);
-                          return (
-                            <tr key={lead.id}>
-                              <td style={tdStyle}>{lead.name || "-"}</td>
-                              <td style={tdStyle}>{lead.phone}</td>
-                              <td style={tdStyle}>
-                                <span
-                                  style={{
-                                    background: tone.bg,
-                                    color: tone.text,
-                                    border: `1px solid ${tone.border}`,
-                                    borderRadius: 999,
-                                    padding: "6px 10px",
-                                    fontSize: 12,
-                                    fontWeight: 700,
-                                    textTransform: "capitalize",
-                                  }}
-                                >
-                                  {lead.status || "imported"}
-                                </span>
-                              </td>
-                              <td style={tdStyle}>{lead.sourceFileName || "-"}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                  {loadingUploads ? (
+                    <EmptyState text="Loading files..." />
+                  ) : filteredUploads.length === 0 ? (
+                    <EmptyState text="No imported files found." />
+                  ) : (
+                    <div style={{ display: "grid", gap: 14 }}>
+                      {filteredUploads.map((upload) => {
+                        const selected = selectedUploadId === upload.id;
+                        const tone = statusChipTone(upload.status);
+
+                        return (
+                          <div
+                            key={upload.id}
+                            style={{
+                              ...fileCardStyle,
+                              border: selected
+                                ? "1px solid rgba(13, 148, 136, 0.45)"
+                                : "1px solid rgba(15, 23, 42, 0.06)",
+                              boxShadow: selected
+                                ? "0 18px 40px rgba(13, 148, 136, 0.14)"
+                                : "0 8px 20px rgba(15, 23, 42, 0.05)",
+                            }}
+                          >
+                            <div style={fileCardTopStyle}>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={fileNameStyle}>{upload.fileName}</div>
+                                <div style={fileMetaStyle}>
+                                  UUID: {truncateMiddle(upload.id, 10, 8)}
+                                </div>
+                              </div>
+
+                              <div
+                                style={{
+                                  background: tone.bg,
+                                  color: tone.text,
+                                  border: `1px solid ${tone.border}`,
+                                  borderRadius: 999,
+                                  padding: "8px 12px",
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  textTransform: "capitalize",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {upload.status || "imported"}
+                              </div>
+                            </div>
+
+                            <div style={fileStatsRowStyle}>
+                              <MiniData label="Imported" value={upload.createdAtLabel} />
+                              <MiniData label="Rows" value={String(upload.totalRows)} />
+                              <MiniData label="Valid Phones" value={String(upload.validPhoneRows)} />
+                            </div>
+
+                            <div style={fileActionsStyle}>
+                              <button
+                                onClick={() => setSelectedUploadId(upload.id)}
+                                style={selected ? selectedButtonStyle : primaryButtonStyle}
+                              >
+                                {selected ? "Selected" : "Select File"}
+                              </button>
+
+                              <button
+                                onClick={() => handleDeleteUpload(upload.id)}
+                                disabled={deletingUploadId === upload.id}
+                                style={{
+                                  ...dangerButtonStyle,
+                                  opacity: deletingUploadId === upload.id ? 0.65 : 1,
+                                }}
+                              >
+                                {deletingUploadId === upload.id ? "Deleting..." : "Delete"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+
+                <section style={panelStyle}>
+                  <div style={panelHeaderStyle}>
+                    <div>
+                      <h2 style={panelTitleStyle}>Leads in Selected File</h2>
+                      <p style={panelDescStyle}>
+                        Review all numbers before sending.
+                      </p>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      <input
+                        value={leadSearch}
+                        onChange={(e) => setLeadSearch(e.target.value)}
+                        placeholder="Search leads"
+                        style={inlineSearchInputStyle}
+                      />
+                      <button
+                        onClick={() => selectedUploadId && loadLeadsForUpload(selectedUploadId)}
+                        style={secondaryButtonStyle}
+                      >
+                        Refresh
+                      </button>
+                    </div>
                   </div>
-                )}
-              </section>
-            </div>
 
-            <div style={rightColumnStyle}>
-              <section style={panelStyle}>
-                <div style={panelHeaderStyle}>
-                  <div>
-                    <h2 style={panelTitleStyle}>SMS Portal</h2>
-                    <p style={panelDescStyle}>
-                      Create a campaign and send the message to all recipients in the selected file.
-                    </p>
+                  {loadingSelectedLeads ? (
+                    <EmptyState text="Loading selected leads..." />
+                  ) : !selectedUploadId ? (
+                    <EmptyState text="Select a file first." />
+                  ) : filteredLeads.length === 0 ? (
+                    <EmptyState text="No leads found in selected file." />
+                  ) : (
+                    <div style={tableWrapStyle}>
+                      <table style={tableStyle}>
+                        <thead>
+                          <tr>
+                            <th style={thStyle}>Name</th>
+                            <th style={thStyle}>Phone</th>
+                            <th style={thStyle}>Status</th>
+                            <th style={thStyle}>Source File</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredLeads.map((lead) => {
+                            const tone = statusChipTone(lead.status);
+                            return (
+                              <tr key={lead.id}>
+                                <td style={tdStyle}>{lead.name || "-"}</td>
+                                <td style={tdStyle}>{lead.phone}</td>
+                                <td style={tdStyle}>
+                                  <span
+                                    style={{
+                                      background: tone.bg,
+                                      color: tone.text,
+                                      border: `1px solid ${tone.border}`,
+                                      borderRadius: 999,
+                                      padding: "6px 10px",
+                                      fontSize: 12,
+                                      fontWeight: 700,
+                                      textTransform: "capitalize",
+                                    }}
+                                  >
+                                    {lead.status || "imported"}
+                                  </span>
+                                </td>
+                                <td style={tdStyle}>{lead.sourceFileName || "-"}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+              </div>
+
+              <div style={rightColumnStyle}>
+                <section style={panelStyle}>
+                  <div style={panelHeaderStyle}>
+                    <div>
+                      <h2 style={panelTitleStyle}>SMS Portal</h2>
+                      <p style={panelDescStyle}>
+                        Create a campaign and send the message to all recipients in the selected file.
+                      </p>
+                    </div>
                   </div>
-                </div>
 
-                <div style={composeTopGridStyle}>
-                  <InfoPanel
-                    label="Selected File"
-                    value={selectedUpload?.fileName || "-"}
-                  />
-                  <InfoPanel
-                    label="File UUID"
-                    value={selectedUpload?.id || "-"}
-                  />
-                  <InfoPanel
-                    label="Recipients"
-                    value={String(totalRecipients)}
-                  />
-                </div>
+                  <div style={composeTopGridStyle}>
+                    <InfoPanel
+                      label="Selected File"
+                      value={selectedUpload?.fileName || "-"}
+                    />
+                    <InfoPanel
+                      label="File UUID"
+                      value={selectedUpload?.id || "-"}
+                    />
+                    <InfoPanel
+                      label="Recipients"
+                      value={String(totalRecipients)}
+                    />
+                  </div>
 
-                <div style={{ marginTop: 18 }}>
-                  <label style={fieldLabelStyle}>Campaign Name</label>
-                  <input
-                    value={campaignName}
-                    onChange={(e) => setCampaignName(e.target.value)}
-                    placeholder="Example: Ramadan March Campaign"
-                    style={fieldInputStyle}
-                  />
-                </div>
+                  <div style={{ marginTop: 18 }}>
+                    <label style={fieldLabelStyle}>Campaign Name</label>
+                    <input
+                      value={campaignName}
+                      onChange={(e) => setCampaignName(e.target.value)}
+                      placeholder="Example: March Promo Batch"
+                      style={fieldInputStyle}
+                    />
+                  </div>
 
-                <div style={{ marginTop: 18 }}>
-                  <label style={fieldLabelStyle}>SMS Message</label>
-                  <textarea
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    placeholder="Write your SMS message here..."
-                    rows={8}
-                    style={fieldTextareaStyle}
-                  />
-                </div>
+                  <div style={{ marginTop: 18 }}>
+                    <label style={fieldLabelStyle}>SMS Message</label>
+                    <textarea
+                      value={message}
+                      onChange={(e) => setMessage(e.target.value)}
+                      placeholder="Write your SMS message here..."
+                      rows={8}
+                      style={fieldTextareaStyle}
+                    />
+                  </div>
 
-                <div style={messageHintStyle}>
-                  <span>Characters:</span>
-                  <strong>{message.length}</strong>
-                </div>
+                  <div style={messageHintStyle}>
+                    <span>Characters:</span>
+                    <strong>{message.length}</strong>
+                  </div>
 
-                <div style={sendActionWrapStyle}>
-                  <button
-                    onClick={handleSendSms}
-                    disabled={
-                      sendingSms ||
-                      !selectedUploadId ||
-                      !selectedLeads.length ||
-                      !message.trim()
-                    }
-                    style={{
-                      ...sendButtonStyle,
-                      opacity:
+                  <div style={sendActionWrapStyle}>
+                    <button
+                      onClick={handleSendSms}
+                      disabled={
                         sendingSms ||
+                        uploading ||
                         !selectedUploadId ||
                         !selectedLeads.length ||
                         !message.trim()
-                          ? 0.55
-                          : 1,
-                      cursor:
-                        sendingSms ||
-                        !selectedUploadId ||
-                        !selectedLeads.length ||
-                        !message.trim()
-                          ? "not-allowed"
-                          : "pointer",
-                    }}
-                  >
-                    {sendingSms ? "Sending..." : "Send SMS"}
-                  </button>
+                      }
+                      style={{
+                        ...sendButtonStyle,
+                        opacity:
+                          sendingSms ||
+                          uploading ||
+                          !selectedUploadId ||
+                          !selectedLeads.length ||
+                          !message.trim()
+                            ? 0.55
+                            : 1,
+                        cursor:
+                          sendingSms ||
+                          uploading ||
+                          !selectedUploadId ||
+                          !selectedLeads.length ||
+                          !message.trim()
+                            ? "not-allowed"
+                            : "pointer",
+                      }}
+                    >
+                      {sendingSms ? "Sending..." : "Send SMS"}
+                    </button>
 
-                  <div style={sendHelpTextStyle}>
-                    {selectedUploadId
-                      ? `Target file: ${selectedUpload?.fileName || selectedUploadId}`
-                      : "No file selected"}
+                    <div style={sendHelpTextStyle}>
+                      {selectedUploadId
+                        ? `Target file: ${selectedUpload?.fileName || selectedUploadId}`
+                        : "No file selected"}
+                    </div>
                   </div>
-                </div>
-              </section>
+                </section>
 
-              <section style={rightMiniPanelStyle}>
-                <h3 style={miniPanelTitleStyle}>Quick Guide</h3>
-                <div style={guideListStyle}>
-                  <GuideItem number="1" text="Upload a CSV file containing lead data." />
-                  <GuideItem number="2" text="Select the file you want to use for your campaign." />
-                  <GuideItem number="3" text="Review imported recipients in the leads table." />
-                  <GuideItem number="4" text="Write the SMS and send the campaign." />
-                </div>
-              </section>
+                <section style={rightMiniPanelStyle}>
+                  <h3 style={miniPanelTitleStyle}>Quick Guide</h3>
+                  <div style={guideListStyle}>
+                    <GuideItem number="1" text="Upload a CSV file containing lead data." />
+                    <GuideItem number="2" text="Select the file you want to use for your campaign." />
+                    <GuideItem number="3" text="Review imported recipients in the leads table." />
+                    <GuideItem number="4" text="Write the SMS and send the campaign." />
+                  </div>
+                </section>
+              </div>
             </div>
-          </div>
-        </section>
-      </div>
-    </main>
+          </section>
+        </div>
+      </main>
+    </>
   );
 }
 
-function SideNavItem({
-  label,
-  sub,
-  active = false,
-}: {
-  label: string;
-  sub: string;
-  active?: boolean;
-}) {
+function GlobalStyles() {
   return (
-    <div
-      style={{
-        borderRadius: 18,
-        padding: "14px 14px",
-        background: active ? "rgba(255,255,255,0.12)" : "transparent",
-        border: active ? "1px solid rgba(255,255,255,0.14)" : "1px solid transparent",
-      }}
-    >
-      <div style={{ color: "#ecfeff", fontWeight: 700, fontSize: 15 }}>{label}</div>
-      <div style={{ color: "rgba(236, 254, 255, 0.68)", fontSize: 12, marginTop: 4 }}>
-        {sub}
-      </div>
-    </div>
+    <style jsx global>{`
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes pulseScale {
+        0% {
+          transform: scale(0.96);
+          opacity: 0.85;
+        }
+        50% {
+          transform: scale(1);
+          opacity: 1;
+        }
+        100% {
+          transform: scale(0.96);
+          opacity: 0.85;
+        }
+      }
+
+      @keyframes toastIn {
+        0% {
+          opacity: 0;
+          transform: translateY(-18px) scale(0.96);
+        }
+        100% {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      input::placeholder,
+      textarea::placeholder {
+        color: rgba(100, 116, 139, 0.9);
+      }
+    `}</style>
   );
 }
 
@@ -1125,9 +1237,15 @@ const sidebarAdminNameStyle: CSSProperties = {
   fontWeight: 800,
 };
 
-const sidebarLinkButtonStyle: CSSProperties = {
+const sidebarBottomActionsStyle: CSSProperties = {
+  display: "flex",
+  gap: 12,
+  alignItems: "center",
+};
+
+const sidebarRepliesButtonStyle: CSSProperties = {
+  flex: 1,
   display: "block",
-  width: "100%",
   textAlign: "center",
   textDecoration: "none",
   borderRadius: 16,
@@ -1138,6 +1256,7 @@ const sidebarLinkButtonStyle: CSSProperties = {
 };
 
 const sidebarLogoutButtonStyle: CSSProperties = {
+  flex: 1,
   border: "1px solid rgba(255,255,255,0.16)",
   borderRadius: 16,
   padding: "14px 16px",
@@ -1250,25 +1369,6 @@ const statsGridStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
   gap: 14,
-};
-
-const statusToastStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 10,
-  padding: "14px 16px",
-  borderRadius: 18,
-  background: "#0f172a",
-  color: "#ffffff",
-  boxShadow: "0 18px 40px rgba(15, 23, 42, 0.18)",
-};
-
-const statusToastDotStyle: CSSProperties = {
-  width: 10,
-  height: 10,
-  borderRadius: "50%",
-  background: "#2dd4bf",
-  flexShrink: 0,
 };
 
 const mainGridStyle: CSSProperties = {
@@ -1646,9 +1746,130 @@ const loadingCardStyle: CSSProperties = {
   backdropFilter: "blur(10px)",
 };
 
-const loadingDotStyle: CSSProperties = {
-  width: 14,
-  height: 14,
+const spinnerStyle: CSSProperties = {
+  width: 22,
+  height: 22,
   borderRadius: "50%",
-  background: "#ccfbf1",
+  border: "3px solid rgba(255,255,255,0.25)",
+  borderTop: "3px solid #ffffff",
+  animation: "spin 1s linear infinite",
+};
+
+const busyOverlayStyle: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 9998,
+  background: "rgba(3, 7, 18, 0.52)",
+  backdropFilter: "blur(8px)",
+  display: "grid",
+  placeItems: "center",
+  padding: 24,
+};
+
+const busyCardStyle: CSSProperties = {
+  width: "100%",
+  maxWidth: 520,
+  borderRadius: 30,
+  padding: "34px 28px",
+  background: "linear-gradient(135deg, #0f172a 0%, #0b2545 100%)",
+  boxShadow: "0 30px 100px rgba(2, 8, 23, 0.45)",
+  border: "1px solid rgba(255,255,255,0.08)",
+  textAlign: "center",
+};
+
+const busySpinnerRingStyle: CSSProperties = {
+  width: 96,
+  height: 96,
+  margin: "0 auto 20px auto",
+  borderRadius: "50%",
+  border: "8px solid rgba(255,255,255,0.12)",
+  borderTop: "8px solid #2dd4bf",
+  animation: "spin 1s linear infinite",
+  display: "grid",
+  placeItems: "center",
+};
+
+const busySpinnerInnerStyle: CSSProperties = {
+  width: 24,
+  height: 24,
+  borderRadius: "50%",
+  background: "#2dd4bf",
+  animation: "pulseScale 1.2s ease-in-out infinite",
+};
+
+const busyTitleStyle: CSSProperties = {
+  margin: 0,
+  color: "#ffffff",
+  fontSize: 28,
+  fontWeight: 900,
+  lineHeight: 1.15,
+};
+
+const busyTextStyle: CSSProperties = {
+  margin: "12px 0 0 0",
+  color: "rgba(226, 232, 240, 0.92)",
+  fontSize: 15,
+  lineHeight: 1.7,
+};
+
+const toastStyle: CSSProperties = {
+  position: "fixed",
+  top: 24,
+  right: 24,
+  zIndex: 9999,
+  width: "min(560px, calc(100vw - 32px))",
+  borderRadius: 26,
+  padding: "18px 18px",
+  display: "flex",
+  alignItems: "flex-start",
+  gap: 14,
+  boxShadow: "0 30px 80px rgba(2, 8, 23, 0.32)",
+  animation: "toastIn 0.28s ease-out",
+  border: "1px solid rgba(255,255,255,0.08)",
+};
+
+const toastSuccessStyle: CSSProperties = {
+  background: "linear-gradient(135deg, #052e2b 0%, #065f46 100%)",
+  color: "#ffffff",
+};
+
+const toastErrorStyle: CSSProperties = {
+  background: "linear-gradient(135deg, #3f0d0d 0%, #991b1b 100%)",
+  color: "#ffffff",
+};
+
+const toastInfoStyle: CSSProperties = {
+  background: "linear-gradient(135deg, #0f172a 0%, #0b2545 100%)",
+  color: "#ffffff",
+};
+
+const toastDotStyle: CSSProperties = {
+  width: 18,
+  height: 18,
+  borderRadius: "50%",
+  flexShrink: 0,
+  marginTop: 4,
+};
+
+const toastTitleStyle: CSSProperties = {
+  fontSize: 16,
+  fontWeight: 900,
+  lineHeight: 1.2,
+};
+
+const toastMessageStyle: CSSProperties = {
+  marginTop: 6,
+  fontSize: 15,
+  lineHeight: 1.6,
+  color: "rgba(255,255,255,0.95)",
+};
+
+const toastCloseStyle: CSSProperties = {
+  border: "none",
+  background: "transparent",
+  color: "#ffffff",
+  fontSize: 24,
+  lineHeight: 1,
+  cursor: "pointer",
+  opacity: 0.85,
 };
