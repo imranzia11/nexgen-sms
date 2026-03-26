@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { collection, getDocs, orderBy, query } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 
@@ -25,9 +25,16 @@ function formatDate(value: any) {
   }
 }
 
+function truncateText(value: string, max = 110) {
+  if (!value) return "-";
+  if (value.length <= max) return value;
+  return `${value.slice(0, max)}...`;
+}
+
 export default function RepliesPage() {
   const [items, setItems] = useState<ConversationItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
 
   async function loadConversations() {
     try {
@@ -63,128 +70,464 @@ export default function RepliesPage() {
     void loadConversations();
   }, []);
 
+  const filteredItems = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return items;
+
+    return items.filter((item) => {
+      return (
+        item.phone.toLowerCase().includes(term) ||
+        item.lastMessage.toLowerCase().includes(term)
+      );
+    });
+  }, [items, search]);
+
+  const totalUnread = items.reduce((sum, item) => sum + (item.unreadCount || 0), 0);
+
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: "#f1f5f9",
-        padding: 24,
-        color: "#0f172a",
-      }}
-    >
-      <div style={{ maxWidth: 1100, margin: "0 auto", display: "grid", gap: 20 }}>
-        <div
-          style={{
-            background: "#fff",
-            border: "1px solid #e2e8f0",
-            borderRadius: 24,
-            padding: 24,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 12,
-              flexWrap: "wrap",
-            }}
-          >
-            <div>
-              <h1 style={{ margin: 0, fontSize: 34, fontWeight: 800 }}>Replies</h1>
-              <p style={{ marginTop: 8, color: "#475569" }}>
-                All customer SMS replies.
-              </p>
-            </div>
+    <>
+      <style jsx global>{`
+        input::placeholder {
+          color: rgba(236, 254, 255, 0.78);
+        }
+      `}</style>
 
-            <Link
-              href="/dashboard"
-              style={{
-                background: "#000",
-                color: "#fff",
-                textDecoration: "none",
-                borderRadius: 14,
-                padding: "14px 18px",
-                fontWeight: 700,
-              }}
-            >
-              Back to Dashboard
-            </Link>
-          </div>
-        </div>
+      <main style={pageStyle}>
+        <div style={pageWrapStyle}>
+          <div style={heroStyle}>
+            <div style={heroOverlayStyle} />
 
-        <div
-          style={{
-            background: "#fff",
-            border: "1px solid #e2e8f0",
-            borderRadius: 24,
-            padding: 24,
-          }}
-        >
-          {loading ? (
-            <div>Loading replies...</div>
-          ) : items.length === 0 ? (
-            <div>No replies yet.</div>
-          ) : (
-            <div style={{ display: "grid", gap: 14 }}>
-              {items.map((item) => (
-                <Link
-                  key={item.id}
-                  href={`/replies/${encodeURIComponent(item.phone)}`}
-                  style={{
-                    textDecoration: "none",
-                    color: "#0f172a",
-                    background: "#f8fafc",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 18,
-                    padding: 18,
-                    display: "block",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontSize: 18, fontWeight: 800 }}>{item.phone}</div>
-                      <div style={{ marginTop: 6, color: "#475569" }}>
-                        {item.lastMessage || "-"}
-                      </div>
-                    </div>
+            <div style={heroInnerStyle}>
+              <div>
+                <div style={heroBadgeStyle}>Incoming SMS Center</div>
+                <h1 style={heroTitleStyle}>Replies</h1>
+                <p style={heroTextStyle}>
+                  View all customer SMS conversations, unread replies, and latest message activity in one place.
+                </p>
+              </div>
 
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ color: "#475569", fontSize: 14 }}>
-                        {item.lastMessageAtLabel}
-                      </div>
+              <div style={heroActionsStyle}>
+                <div style={searchWrapStyle}>
+                  <span style={{ fontSize: 16, opacity: 0.85 }}>⌕</span>
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search by phone number or message"
+                    style={searchInputStyle}
+                  />
+                </div>
 
-                      {item.unreadCount > 0 ? (
-                        <div
-                          style={{
-                            marginTop: 8,
-                            display: "inline-block",
-                            background: "#dc2626",
-                            color: "#fff",
-                            borderRadius: 999,
-                            padding: "6px 10px",
-                            fontSize: 12,
-                            fontWeight: 700,
-                          }}
-                        >
-                          {item.unreadCount} unread
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
+                <Link href="/dashboard" style={backButtonStyle}>
+                  Back to Dashboard
                 </Link>
-              ))}
+              </div>
+
+              <div style={statsGridStyle}>
+                <StatCard label="Total Conversations" value={String(items.length)} />
+                <StatCard label="Unread Replies" value={String(totalUnread)} />
+                <StatCard label="Visible Results" value={String(filteredItems.length)} />
+              </div>
             </div>
-          )}
+          </div>
+
+          <section style={panelStyle}>
+            <div style={panelHeaderStyle}>
+              <div>
+                <h2 style={panelTitleStyle}>Customer Conversations</h2>
+                <p style={panelDescStyle}>
+                  Open any conversation to view the full reply thread.
+                </p>
+              </div>
+
+              <button onClick={loadConversations} style={refreshButtonStyle}>
+                Refresh
+              </button>
+            </div>
+
+            {loading ? (
+              <div style={emptyStateStyle}>
+                <div style={loadingSpinnerStyle} />
+                <div style={emptyTitleStyle}>Loading replies...</div>
+              </div>
+            ) : filteredItems.length === 0 ? (
+              <div style={emptyStateStyle}>
+                <div style={emptyDotStyle} />
+                <div style={emptyTitleStyle}>
+                  {search.trim() ? "No matching replies found." : "No replies yet."}
+                </div>
+                <div style={emptyTextStyle}>
+                  {search.trim()
+                    ? "Try a different phone number or keyword."
+                    : "When customers reply to your SMS campaigns, conversations will show here."}
+                </div>
+              </div>
+            ) : (
+              <div style={conversationGridStyle}>
+                {filteredItems.map((item) => (
+                  <Link
+                    key={item.id}
+                    href={`/replies/${encodeURIComponent(item.phone)}`}
+                    style={conversationCardStyle}
+                  >
+                    <div style={conversationTopStyle}>
+                      <div>
+                        <div style={phoneStyle}>{item.phone}</div>
+                        <div style={timeStyleMobile}>{item.lastMessageAtLabel}</div>
+                      </div>
+
+                      <div style={conversationRightStyle}>
+                        <div style={timeStyle}>{item.lastMessageAtLabel}</div>
+
+                        {item.unreadCount > 0 ? (
+                          <div style={unreadBadgeStyle}>
+                            {item.unreadCount} unread
+                          </div>
+                        ) : (
+                          <div style={readBadgeStyle}>Seen</div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={messagePreviewStyle}>
+                      {truncateText(item.lastMessage || "-")}
+                    </div>
+
+                    <div style={openRowStyle}>
+                      <span style={openTextStyle}>Open conversation</span>
+                      <span style={openArrowStyle}>→</span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </section>
         </div>
-      </div>
-    </main>
+      </main>
+    </>
   );
 }
+
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={statCardStyle}>
+      <div style={statLabelStyle}>{label}</div>
+      <div style={statValueStyle}>{value}</div>
+    </div>
+  );
+}
+
+const pageStyle: CSSProperties = {
+  minHeight: "100vh",
+  background:
+    "radial-gradient(circle at top left, rgba(20,184,166,0.18), transparent 28%), linear-gradient(180deg, #ecfeff 0%, #f8fafc 46%, #f8fafc 100%)",
+  color: "#0f172a",
+  padding: 24,
+};
+
+const pageWrapStyle: CSSProperties = {
+  maxWidth: 1220,
+  margin: "0 auto",
+  display: "grid",
+  gap: 20,
+};
+
+const heroStyle: CSSProperties = {
+  position: "relative",
+  overflow: "hidden",
+  borderRadius: 32,
+  background: "linear-gradient(135deg, #0f766e 0%, #0d9488 48%, #14b8a6 100%)",
+  boxShadow: "0 30px 80px rgba(13, 148, 136, 0.28)",
+};
+
+const heroOverlayStyle: CSSProperties = {
+  position: "absolute",
+  inset: 0,
+  background:
+    "radial-gradient(circle at top right, rgba(255,255,255,0.18), transparent 24%), radial-gradient(circle at bottom left, rgba(255,255,255,0.08), transparent 28%)",
+  pointerEvents: "none",
+};
+
+const heroInnerStyle: CSSProperties = {
+  position: "relative",
+  zIndex: 1,
+  padding: 28,
+  display: "grid",
+  gap: 22,
+};
+
+const heroBadgeStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  width: "fit-content",
+  borderRadius: 999,
+  padding: "8px 14px",
+  background: "rgba(255,255,255,0.14)",
+  border: "1px solid rgba(255,255,255,0.18)",
+  color: "#ecfeff",
+  fontSize: 12,
+  fontWeight: 800,
+  letterSpacing: 0.3,
+};
+
+const heroTitleStyle: CSSProperties = {
+  margin: "12px 0 0 0",
+  color: "#ffffff",
+  fontSize: 40,
+  lineHeight: 1.05,
+  fontWeight: 900,
+};
+
+const heroTextStyle: CSSProperties = {
+  margin: "10px 0 0 0",
+  maxWidth: 760,
+  color: "rgba(236,254,255,0.86)",
+  fontSize: 16,
+  lineHeight: 1.65,
+};
+
+const heroActionsStyle: CSSProperties = {
+  display: "flex",
+  gap: 14,
+  alignItems: "center",
+  flexWrap: "wrap",
+};
+
+const searchWrapStyle: CSSProperties = {
+  flex: 1,
+  minWidth: 260,
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  padding: "14px 16px",
+  borderRadius: 18,
+  background: "rgba(255,255,255,0.12)",
+  border: "1px solid rgba(255,255,255,0.16)",
+  backdropFilter: "blur(10px)",
+};
+
+const searchInputStyle: CSSProperties = {
+  flex: 1,
+  border: "none",
+  outline: "none",
+  background: "transparent",
+  color: "#ffffff",
+  fontSize: 15,
+};
+
+const backButtonStyle: CSSProperties = {
+  border: "none",
+  borderRadius: 18,
+  padding: "15px 20px",
+  background: "#ecfeff",
+  color: "#0f766e",
+  fontWeight: 900,
+  fontSize: 15,
+  textDecoration: "none",
+  whiteSpace: "nowrap",
+};
+
+const statsGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gap: 14,
+};
+
+const statCardStyle: CSSProperties = {
+  background: "rgba(255,255,255,0.18)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  borderRadius: 20,
+  padding: "18px 18px",
+  backdropFilter: "blur(10px)",
+};
+
+const statLabelStyle: CSSProperties = {
+  color: "rgba(236, 254, 255, 0.72)",
+  fontSize: 13,
+  fontWeight: 600,
+};
+
+const statValueStyle: CSSProperties = {
+  marginTop: 10,
+  color: "#ffffff",
+  fontSize: 30,
+  fontWeight: 800,
+  lineHeight: 1.15,
+  wordBreak: "break-word",
+};
+
+const panelStyle: CSSProperties = {
+  background: "rgba(255,255,255,0.88)",
+  border: "1px solid rgba(15,23,42,0.06)",
+  borderRadius: 28,
+  padding: 22,
+  boxShadow: "0 16px 40px rgba(15,23,42,0.06)",
+  backdropFilter: "blur(8px)",
+};
+
+const panelHeaderStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: 14,
+  flexWrap: "wrap",
+};
+
+const panelTitleStyle: CSSProperties = {
+  margin: 0,
+  fontSize: 24,
+  fontWeight: 900,
+  color: "#0f172a",
+};
+
+const panelDescStyle: CSSProperties = {
+  margin: "8px 0 0 0",
+  color: "#64748b",
+  fontSize: 14,
+  lineHeight: 1.5,
+};
+
+const refreshButtonStyle: CSSProperties = {
+  border: "1px solid rgba(15,23,42,0.08)",
+  borderRadius: 14,
+  padding: "12px 16px",
+  background: "#ffffff",
+  color: "#0f172a",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const conversationGridStyle: CSSProperties = {
+  marginTop: 20,
+  display: "grid",
+  gap: 14,
+};
+
+const conversationCardStyle: CSSProperties = {
+  textDecoration: "none",
+  color: "#0f172a",
+  background: "linear-gradient(180deg, #ffffff 0%, #fcfffe 100%)",
+  border: "1px solid rgba(15, 23, 42, 0.06)",
+  borderRadius: 22,
+  padding: 20,
+  display: "block",
+  boxShadow: "0 8px 20px rgba(15, 23, 42, 0.05)",
+};
+
+const conversationTopStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  flexWrap: "wrap",
+};
+
+const phoneStyle: CSSProperties = {
+  fontSize: 20,
+  fontWeight: 900,
+  color: "#0f172a",
+  wordBreak: "break-word",
+};
+
+const conversationRightStyle: CSSProperties = {
+  textAlign: "right",
+};
+
+const timeStyle: CSSProperties = {
+  color: "#64748b",
+  fontSize: 14,
+};
+
+const timeStyleMobile: CSSProperties = {
+  marginTop: 6,
+  color: "#64748b",
+  fontSize: 13,
+};
+
+const unreadBadgeStyle: CSSProperties = {
+  marginTop: 8,
+  display: "inline-block",
+  background: "#dc2626",
+  color: "#fff",
+  borderRadius: 999,
+  padding: "7px 11px",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const readBadgeStyle: CSSProperties = {
+  marginTop: 8,
+  display: "inline-block",
+  background: "rgba(16, 185, 129, 0.12)",
+  color: "#059669",
+  border: "1px solid rgba(16, 185, 129, 0.25)",
+  borderRadius: 999,
+  padding: "7px 11px",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const messagePreviewStyle: CSSProperties = {
+  marginTop: 14,
+  color: "#475569",
+  fontSize: 15,
+  lineHeight: 1.65,
+};
+
+const openRowStyle: CSSProperties = {
+  marginTop: 18,
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+};
+
+const openTextStyle: CSSProperties = {
+  color: "#0d9488",
+  fontWeight: 800,
+  fontSize: 14,
+};
+
+const openArrowStyle: CSSProperties = {
+  color: "#0d9488",
+  fontSize: 22,
+  fontWeight: 900,
+};
+
+const emptyStateStyle: CSSProperties = {
+  marginTop: 18,
+  borderRadius: 22,
+  padding: "38px 20px",
+  background: "#f8fafc",
+  border: "1px dashed #cbd5e1",
+  display: "grid",
+  justifyItems: "center",
+  gap: 10,
+  textAlign: "center",
+};
+
+const emptyDotStyle: CSSProperties = {
+  width: 34,
+  height: 34,
+  borderRadius: "50%",
+  background: "#e2e8f0",
+};
+
+const emptyTitleStyle: CSSProperties = {
+  fontSize: 16,
+  color: "#334155",
+  fontWeight: 800,
+};
+
+const emptyTextStyle: CSSProperties = {
+  fontSize: 14,
+  color: "#64748b",
+  lineHeight: 1.6,
+  maxWidth: 460,
+};
+
+const loadingSpinnerStyle: CSSProperties = {
+  width: 28,
+  height: 28,
+  borderRadius: "50%",
+  border: "3px solid rgba(15,118,110,0.18)",
+  borderTop: "3px solid #0f766e",
+  animation: "spin 1s linear infinite",
+};
