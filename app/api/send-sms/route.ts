@@ -1,19 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import twilio from "twilio";
 
-const accountSid = process.env.TWILIO_ACCOUNT_SID;
-const authToken = process.env.TWILIO_AUTH_TOKEN;
-const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
-
-
-
-
-if (!accountSid || !authToken || !messagingServiceSid) {
-  throw new Error("Missing Twilio environment variables in .env.local");
-}
-
-const client = twilio(accountSid, authToken);
-
 type LeadInput = {
   name?: string;
   phone?: string;
@@ -28,6 +15,19 @@ function toE164(raw: string) {
 
 export async function POST(req: NextRequest) {
   try {
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+
+    if (!accountSid || !authToken || !messagingServiceSid) {
+      return NextResponse.json(
+        { ok: false, error: "Missing Twilio environment variables." },
+        { status: 500 }
+      );
+    }
+
+    const client = twilio(accountSid, authToken);
+
     const body = await req.json();
 
     const {

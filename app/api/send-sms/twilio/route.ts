@@ -20,25 +20,35 @@ export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const params = Object.fromEntries(
-      Array.from(formData.entries()).map(([k, v]) => [k, String(v)])
+      Array.from(formData.entries()).map(([key, value]) => [key, String(value)])
     );
 
     const signature = req.headers.get("x-twilio-signature") || "";
     const authToken = process.env.TWILIO_AUTH_TOKEN || "";
-    const baseUrl = process.env.APP_BASE_URL || "";
-    const webhookUrl = `${baseUrl}/api/send-sms/twilio`;
 
-    if (authToken && baseUrl) {
-      const valid = twilio.validateRequest(authToken, signature, webhookUrl, params);
+    const appBaseUrl = process.env.APP_BASE_URL?.trim();
+    const requestUrl = appBaseUrl
+      ? `${appBaseUrl.replace(/\/$/, "")}/api/send-sms/twilio`
+      : req.url;
+
+    if (authToken && signature) {
+      const valid = twilio.validateRequest(
+        authToken,
+        signature,
+        requestUrl,
+        params
+      );
+
       if (!valid) {
+        console.error("Invalid Twilio signature");
         return xmlResponse();
       }
     }
 
-    const from = String(params.From || "");
-    const to = String(params.To || "");
-    const body = String(params.Body || "");
-    const messageSid = String(params.MessageSid || "");
+    const from = String(params.From || "").trim();
+    const to = String(params.To || "").trim();
+    const body = String(params.Body || "").trim();
+    const messageSid = String(params.MessageSid || "").trim();
 
     if (!from || !messageSid) {
       return xmlResponse();
@@ -48,15 +58,18 @@ export async function POST(req: NextRequest) {
     const convoRef = adminDb.collection("conversations").doc(convoId);
     const messageRef = convoRef.collection("messages").doc(messageSid);
 
-    await messageRef.set({
-      sid: messageSid,
-      from,
-      to,
-      body,
-      direction: "inbound",
-      read: false,
-      createdAt: FieldValue.serverTimestamp(),
-    });
+    await messageRef.set(
+      {
+        sid: messageSid,
+        from,
+        to,
+        body,
+        direction: "inbound",
+        read: false,
+        createdAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
 
     await convoRef.set(
       {
