@@ -653,13 +653,19 @@ export default function DashboardPage() {
                   <div style={sidebarAdminNameStyle}>{adminName}</div>
                 </div>
               </div>
+
+              <div style={sidebarRepliesWrapStyle}>
+                <Link href="/replies" style={sidebarRepliesCardStyle}>
+                  <div style={sidebarRepliesIconStyle}>↩</div>
+                  <div>
+                    <div style={sidebarRepliesTitleStyle}>Replies</div>
+                    <div style={sidebarRepliesTextStyle}>Open incoming messages</div>
+                  </div>
+                </Link>
+              </div>
             </div>
 
-            <div style={sidebarBottomActionsStyle}>
-              <Link href="/replies" style={sidebarRepliesButtonStyle}>
-                Replies
-              </Link>
-
+            <div style={sidebarBottomLogoutWrapStyle}>
               <button onClick={handleLogout} style={sidebarLogoutButtonStyle}>
                 Logout
               </button>
@@ -1237,26 +1243,57 @@ const sidebarAdminNameStyle: CSSProperties = {
   fontWeight: 800,
 };
 
-const sidebarBottomActionsStyle: CSSProperties = {
-  display: "flex",
-  gap: 12,
-  alignItems: "center",
+const sidebarRepliesWrapStyle: CSSProperties = {
+  marginTop: 18,
 };
 
-const sidebarRepliesButtonStyle: CSSProperties = {
-  flex: 1,
-  display: "block",
-  textAlign: "center",
+const sidebarRepliesCardStyle: CSSProperties = {
+  width: "100%",
+  borderRadius: 26,
+  padding: "18px 18px",
+  background: "rgba(255,255,255,0.10)",
+  border: "1px solid rgba(255,255,255,0.16)",
+  boxShadow: "0 18px 40px rgba(0,0,0,0.08)",
+  backdropFilter: "blur(10px)",
+  display: "flex",
+  alignItems: "center",
+  gap: 14,
   textDecoration: "none",
-  borderRadius: 16,
-  padding: "14px 16px",
-  background: "#ecfeff",
-  color: "#0f766e",
-  fontWeight: 800,
+};
+
+const sidebarRepliesIconStyle: CSSProperties = {
+  width: 54,
+  height: 54,
+  borderRadius: "50%",
+  display: "grid",
+  placeItems: "center",
+  background: "#ccfbf1",
+  color: "#115e59",
+  fontSize: 26,
+  fontWeight: 900,
+  flexShrink: 0,
+};
+
+const sidebarRepliesTitleStyle: CSSProperties = {
+  color: "#ffffff",
+  fontSize: 18,
+  fontWeight: 900,
+  lineHeight: 1.1,
+};
+
+const sidebarRepliesTextStyle: CSSProperties = {
+  marginTop: 6,
+  color: "rgba(236, 254, 255, 0.78)",
+  fontSize: 13,
+  lineHeight: 1.4,
+};
+
+const sidebarBottomLogoutWrapStyle: CSSProperties = {
+  display: "grid",
 };
 
 const sidebarLogoutButtonStyle: CSSProperties = {
-  flex: 1,
+  width: "100%",
   border: "1px solid rgba(255,255,255,0.16)",
   borderRadius: 16,
   padding: "14px 16px",
