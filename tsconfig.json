@@ -29,6 +29,6 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts"
-  ],
+, "app/api/send-sms/twilio/send-sms"  ],
   "exclude": ["node_modules"]
 }
