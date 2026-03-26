@@ -3,17 +3,25 @@ import twilio from "twilio";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../../../lib/firebaseAdmin";
 
-const client = twilio(
-  process.env.TWILIO_ACCOUNT_SID!,
-  process.env.TWILIO_AUTH_TOKEN!
-);
-
 function phoneDocId(phone: string) {
   return String(phone || "").replace(/[^\d+]/g, "");
 }
 
 export async function POST(req: NextRequest) {
   try {
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+
+    if (!accountSid || !authToken || !messagingServiceSid) {
+      return NextResponse.json(
+        { ok: false, error: "Missing Twilio environment variables." },
+        { status: 500 }
+      );
+    }
+
+    const client = twilio(accountSid, authToken);
+
     const { to, body } = await req.json();
 
     if (!to || !body?.trim()) {
@@ -26,7 +34,7 @@ export async function POST(req: NextRequest) {
     const msg = await client.messages.create({
       to,
       body: body.trim(),
-      messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID!,
+      messagingServiceSid,
     });
 
     const convoId = phoneDocId(to);
@@ -60,7 +68,6 @@ export async function POST(req: NextRequest) {
       status: msg.status,
     });
   } catch (error: any) {
-    console.error(error);
     return NextResponse.json(
       { ok: false, error: error?.message || "Failed to send reply." },
       { status: 500 }
