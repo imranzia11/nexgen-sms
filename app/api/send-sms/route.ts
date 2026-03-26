@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import twilio from "twilio";
+import { FieldValue } from "firebase-admin/firestore";
+import { adminDb } from "../../../lib/firebaseAdmin";
 
 type LeadInput = {
   name?: string;
@@ -11,6 +13,10 @@ function toE164(raw: string) {
   if (!cleaned) return "";
   if (cleaned.startsWith("+")) return cleaned;
   return `+${cleaned}`;
+}
+
+function phoneDocId(phone: string) {
+  return String(phone || "").replace(/[^\d+]/g, "");
 }
 
 export async function POST(req: NextRequest) {
@@ -87,6 +93,45 @@ export async function POST(req: NextRequest) {
           body: message.trim(),
           to: formattedPhone,
           messagingServiceSid,
+        });
+
+        const convoId = phoneDocId(formattedPhone);
+        const convoRef = adminDb.collection("conversations").doc(convoId);
+        const threadMessageRef = convoRef.collection("messages").doc(res.sid);
+
+        await threadMessageRef.set({
+          sid: res.sid,
+          from: res.from || "",
+          to: formattedPhone,
+          body: message.trim(),
+          direction: "outbound",
+          status: res.status || "sent",
+          read: true,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+
+        await convoRef.set(
+          {
+            phone: formattedPhone,
+            name: lead.name || "",
+            lastMessage: message.trim(),
+            lastDirection: "outbound",
+            lastMessageAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        await adminDb.collection("messages").add({
+          campaignName: campaignName || "",
+          fileId: fileId || "",
+          fileName: fileName || "",
+          name: lead.name || "",
+          to: formattedPhone,
+          body: message.trim(),
+          sid: res.sid,
+          status: res.status || "sent",
+          direction: "outbound",
+          createdAt: FieldValue.serverTimestamp(),
         });
 
         results.push({
