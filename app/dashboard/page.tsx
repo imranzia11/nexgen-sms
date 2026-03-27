@@ -308,7 +308,7 @@ export default function DashboardPage() {
   };
 
   const handleContactSupport = () => {
-    showToast("Contact support is coming soon.", "info");
+   window.open("https://wa.me/971523480839", "_blank", "noopener,noreferrer")
   };
 
   const handlePickFile = () => {
