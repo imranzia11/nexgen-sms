@@ -44,8 +44,7 @@ type UploadItem = {
 type ToastType = "success" | "error" | "info";
 
 const DEFAULT_SMS_MESSAGE =
-  "NexGen Merchant Solutions: Thanks for contacting us about business funding. We may send you details about available funding options for your business. Reply STOP to opt out, HELP for help. Msg & data rates may apply.";
-
+"NexGen Merchant Solutions: Funding options from USD 5,000 to USD 5,000,000 may be available for eligible businesses. Reply for more information. Reply STOP to opt out, HELP for help.";
 function normalizePhone(value: string) {
   const trimmed = String(value || "").trim();
   if (!trimmed) return "";
