@@ -44,7 +44,8 @@ type UploadItem = {
 type ToastType = "success" | "error" | "info";
 
 const DEFAULT_SMS_MESSAGE =
-"NexGen Merchant Solutions: Funding options from USD 5,000 to USD 5,000,000 may be available for eligible businesses. Reply for more information. Reply STOP to opt out, HELP for help.";
+  "NexGen Merchant Solutions: Funding options from USD 5,000 to USD 5,000,000 may be available for eligible businesses. Reply for more information. Reply STOP to opt out, HELP for help.";
+
 function normalizePhone(value: string) {
   const trimmed = String(value || "").trim();
   if (!trimmed) return "";
@@ -304,6 +305,10 @@ export default function DashboardPage() {
   const handleLogout = async () => {
     await signOut(auth);
     router.push("/login");
+  };
+
+  const handleContactSupport = () => {
+    showToast("Contact support is coming soon.", "info");
   };
 
   const handlePickFile = () => {
@@ -664,6 +669,20 @@ export default function DashboardPage() {
                     <div style={sidebarRepliesTextStyle}>Open incoming messages</div>
                   </div>
                 </Link>
+              </div>
+
+              <div style={sidebarRepliesWrapStyle}>
+                <button
+                  onClick={handleContactSupport}
+                  style={sidebarSupportCardStyle}
+                  type="button"
+                >
+                  <div style={sidebarSupportIconStyle}>?</div>
+                  <div style={{ textAlign: "left" }}>
+                    <div style={sidebarRepliesTitleStyle}>Contact Support</div>
+                    <div style={sidebarRepliesTextStyle}>Get help for admin portal setup</div>
+                  </div>
+                </button>
               </div>
             </div>
 
@@ -1262,6 +1281,20 @@ const sidebarRepliesCardStyle: CSSProperties = {
   textDecoration: "none",
 };
 
+const sidebarSupportCardStyle: CSSProperties = {
+  width: "100%",
+  border: "1px solid rgba(255,255,255,0.16)",
+  borderRadius: 26,
+  padding: "18px 18px",
+  background: "rgba(255,255,255,0.10)",
+  boxShadow: "0 18px 40px rgba(0,0,0,0.08)",
+  backdropFilter: "blur(10px)",
+  display: "flex",
+  alignItems: "center",
+  gap: 14,
+  cursor: "pointer",
+};
+
 const sidebarRepliesIconStyle: CSSProperties = {
   width: 54,
   height: 54,
@@ -1271,6 +1304,19 @@ const sidebarRepliesIconStyle: CSSProperties = {
   background: "#ccfbf1",
   color: "#115e59",
   fontSize: 26,
+  fontWeight: 900,
+  flexShrink: 0,
+};
+
+const sidebarSupportIconStyle: CSSProperties = {
+  width: 54,
+  height: 54,
+  borderRadius: "50%",
+  display: "grid",
+  placeItems: "center",
+  background: "#ccfbf1",
+  color: "#115e59",
+  fontSize: 24,
   fontWeight: 900,
   flexShrink: 0,
 };
