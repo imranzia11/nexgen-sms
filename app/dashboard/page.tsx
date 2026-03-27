@@ -43,6 +43,9 @@ type UploadItem = {
 
 type ToastType = "success" | "error" | "info";
 
+const DEFAULT_SMS_MESSAGE =
+  "NexGen Merchant Solutions: Thank you for your inquiry. Funding options from USD 5,000 to USD 5,000,000 may be available for eligible businesses. Reply for more information. Reply STOP to opt out, HELP for help.";
+
 function normalizePhone(value: string) {
   const trimmed = String(value || "").trim();
   if (!trimmed) return "";
@@ -163,7 +166,7 @@ export default function DashboardPage() {
   const [selectedLeads, setSelectedLeads] = useState<LeadItem[]>([]);
   const [loadingSelectedLeads, setLoadingSelectedLeads] = useState(false);
 
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(DEFAULT_SMS_MESSAGE);
   const [campaignName, setCampaignName] = useState("");
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -510,7 +513,7 @@ export default function DashboardPage() {
       );
 
       setCampaignName("");
-      setMessage("");
+      setMessage(DEFAULT_SMS_MESSAGE);
     } catch (error: any) {
       console.error(error);
       showToast(error?.message || "Unexpected error while sending SMS.", "error");
@@ -955,7 +958,6 @@ export default function DashboardPage() {
                     <textarea
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
-                      placeholder="Write your SMS message here..."
                       rows={8}
                       style={fieldTextareaStyle}
                     />
