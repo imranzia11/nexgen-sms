@@ -308,7 +308,11 @@ export default function DashboardPage() {
   };
 
   const handleContactSupport = () => {
-   window.open("https://wa.me/971523480839", "_blank", "noopener,noreferrer")
+    window.open("https://wa.me/971523480839", "_blank", "noopener,noreferrer");
+  };
+
+  const handleBlacklistedNumbers = () => {
+    showToast("No number is black listed.", "info");
   };
 
   const handlePickFile = () => {
@@ -669,6 +673,20 @@ export default function DashboardPage() {
                     <div style={sidebarRepliesTextStyle}>Open incoming messages</div>
                   </div>
                 </Link>
+              </div>
+
+              <div style={sidebarRepliesWrapStyle}>
+                <button
+                  onClick={handleBlacklistedNumbers}
+                  style={sidebarSupportCardStyle}
+                  type="button"
+                >
+                  <div style={sidebarSupportIconStyle}>⛔</div>
+                  <div style={{ textAlign: "left" }}>
+                    <div style={sidebarRepliesTitleStyle}>Black Listed Numbers</div>
+                    <div style={sidebarRepliesTextStyle}>View STOP opt-out numbers</div>
+                  </div>
+                </button>
               </div>
 
               <div style={sidebarRepliesWrapStyle}>
