@@ -19,6 +19,57 @@ function phoneDocId(phone: string) {
   return String(phone || "").replace(/[^\d+]/g, "");
 }
 
+function formatLeadName(name?: string) {
+  const value = String(name || "").trim();
+  if (!value) return "";
+
+  return value
+    .replace(/\s+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+async function hasPreviouslySentSuccessfulSms(phone: string) {
+  const snap = await adminDb
+    .collection("messages")
+    .where("to", "==", phone)
+    .where("direction", "==", "outbound")
+    .limit(1)
+    .get();
+
+  if (snap.empty) return false;
+
+  const successfulStatuses = new Set([
+    "queued",
+    "accepted",
+    "scheduled",
+    "sending",
+    "sent",
+    "delivered",
+  ]);
+
+  return snap.docs.some((doc) => {
+    const data = doc.data();
+    const status = String(data.status || "").toLowerCase();
+    return successfulStatuses.has(status);
+  });
+}
+
+function buildPersonalizedMessage(baseMessage: string, leadName?: string, isFirstMessage?: boolean) {
+  const trimmedBase = String(baseMessage || "").trim();
+  if (!trimmedBase) return "";
+
+  if (!isFirstMessage) {
+    return trimmedBase;
+  }
+
+  const cleanName = formatLeadName(leadName);
+  const greeting = cleanName ? `Hi ${cleanName}! ` : "Hi! ";
+  return `${greeting}${trimmedBase}`;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
@@ -72,6 +123,8 @@ export async function POST(req: NextRequest) {
       status?: string;
       error?: string;
       code?: number | null;
+      personalizedBody?: string;
+      isFirstMessage?: boolean;
     }> = [];
 
     for (const lead of leads) {
@@ -89,8 +142,16 @@ export async function POST(req: NextRequest) {
       }
 
       try {
+        const alreadyMessaged = await hasPreviouslySentSuccessfulSms(formattedPhone);
+        const isFirstMessage = !alreadyMessaged;
+        const finalMessage = buildPersonalizedMessage(
+          message.trim(),
+          lead.name,
+          isFirstMessage
+        );
+
         const res = await client.messages.create({
-          body: message.trim(),
+          body: finalMessage,
           to: formattedPhone,
           messagingServiceSid,
         });
@@ -103,10 +164,11 @@ export async function POST(req: NextRequest) {
           sid: res.sid,
           from: res.from || "",
           to: formattedPhone,
-          body: message.trim(),
+          body: finalMessage,
           direction: "outbound",
           status: res.status || "sent",
           read: true,
+          isFirstMessage,
           createdAt: FieldValue.serverTimestamp(),
         });
 
@@ -114,7 +176,7 @@ export async function POST(req: NextRequest) {
           {
             phone: formattedPhone,
             name: lead.name || "",
-            lastMessage: message.trim(),
+            lastMessage: finalMessage,
             lastDirection: "outbound",
             lastMessageAt: FieldValue.serverTimestamp(),
           },
@@ -127,10 +189,11 @@ export async function POST(req: NextRequest) {
           fileName: fileName || "",
           name: lead.name || "",
           to: formattedPhone,
-          body: message.trim(),
+          body: finalMessage,
           sid: res.sid,
           status: res.status || "sent",
           direction: "outbound",
+          isFirstMessage,
           createdAt: FieldValue.serverTimestamp(),
         });
 
@@ -140,6 +203,8 @@ export async function POST(req: NextRequest) {
           ok: true,
           sid: res.sid,
           status: res.status,
+          personalizedBody: finalMessage,
+          isFirstMessage,
         });
       } catch (err: any) {
         results.push({
