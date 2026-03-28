@@ -39,6 +39,13 @@ const HELP_KEYWORDS = new Set([
   "INFO",
 ]);
 
+export async function GET() {
+  return NextResponse.json({
+    ok: true,
+    route: "twilio inbound route live",
+  });
+}
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -115,27 +122,6 @@ export async function POST(req: NextRequest) {
           messagingServiceSid: messagingServiceSid || null,
           createdAt: FieldValue.serverTimestamp(),
         });
-
-        const leadsSnap = await adminDb
-          .collection("leads")
-          .where("phone", "==", from)
-          .get();
-
-        if (!leadsSnap.empty) {
-          const batch = adminDb.batch();
-          leadsSnap.docs.forEach((doc) => {
-            batch.set(
-              doc.ref,
-              {
-                optedOut: true,
-                optedOutAt: FieldValue.serverTimestamp(),
-                updatedAt: FieldValue.serverTimestamp(),
-              },
-              { merge: true }
-            );
-          });
-          await batch.commit();
-        }
       } else if (eventType === "START") {
         await blacklistRef.set(
           {
@@ -162,28 +148,6 @@ export async function POST(req: NextRequest) {
           messagingServiceSid: messagingServiceSid || null,
           createdAt: FieldValue.serverTimestamp(),
         });
-
-        const leadsSnap = await adminDb
-          .collection("leads")
-          .where("phone", "==", from)
-          .get();
-
-        if (!leadsSnap.empty) {
-          const batch = adminDb.batch();
-          leadsSnap.docs.forEach((doc) => {
-            batch.set(
-              doc.ref,
-              {
-                optedOut: false,
-                optedOutAt: null,
-                optInRestoredAt: FieldValue.serverTimestamp(),
-                updatedAt: FieldValue.serverTimestamp(),
-              },
-              { merge: true }
-            );
-          });
-          await batch.commit();
-        }
       } else if (eventType === "HELP") {
         await blacklistEventRef.set({
           phone: from,
@@ -197,9 +161,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return new NextResponse("", { status: 200 });
-  } catch (error) {
+    return NextResponse.json({ ok: true, eventType });
+  } catch (error: any) {
     console.error("Twilio inbound webhook error:", error);
-    return new NextResponse("", { status: 500 });
+    return NextResponse.json(
+      {
+        ok: false,
+        error: error?.message || "Unknown error",
+      },
+      { status: 500 }
+    );
   }
 }
