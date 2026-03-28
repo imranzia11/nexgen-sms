@@ -312,7 +312,7 @@ export default function DashboardPage() {
   };
 
   const handleBlacklistedNumbers = () => {
-    showToast("No number is black listed.", "info");
+    router.push("/blacklisted");
   };
 
   const handlePickFile = () => {

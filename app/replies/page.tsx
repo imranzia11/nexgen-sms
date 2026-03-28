@@ -35,28 +35,48 @@ export default function RepliesPage() {
   const [items, setItems] = useState<ConversationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [blockedPhones, setBlockedPhones] = useState<string[]>([]);
 
   async function loadConversations() {
     try {
       setLoading(true);
 
-      const q = query(
+      const conversationsQuery = query(
         collection(db, "conversations"),
         orderBy("lastMessageAt", "desc")
       );
 
-      const snap = await getDocs(q);
+      const blacklistQuery = collection(db, "blacklisted_numbers");
 
-      const rows: ConversationItem[] = snap.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          phone: data.phone || d.id,
-          lastMessage: data.lastMessage || "",
-          unreadCount: data.unreadCount || 0,
-          lastMessageAtLabel: formatDate(data.lastMessageAt),
-        };
-      });
+      const [conversationSnap, blacklistSnap] = await Promise.all([
+        getDocs(conversationsQuery),
+        getDocs(blacklistQuery),
+      ]);
+
+      const blocked = blacklistSnap.docs
+        .map((d) => {
+          const data = d.data();
+          const status = String(data.status || "").toLowerCase();
+          if (status !== "blocked") return "";
+          return String(data.phone || d.id || "").trim();
+        })
+        .filter(Boolean);
+
+      const blockedSet = new Set(blocked);
+      setBlockedPhones(blocked);
+
+      const rows: ConversationItem[] = conversationSnap.docs
+        .map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            phone: data.phone || d.id,
+            lastMessage: data.lastMessage || "",
+            unreadCount: data.unreadCount || 0,
+            lastMessageAtLabel: formatDate(data.lastMessageAt),
+          };
+        })
+        .filter((item) => !blockedSet.has(String(item.phone || "").trim()));
 
       setItems(rows);
     } catch (error) {
@@ -87,6 +107,15 @@ export default function RepliesPage() {
   return (
     <>
       <style jsx global>{`
+        @keyframes spin {
+          0% {
+            transform: rotate(0deg);
+          }
+          100% {
+            transform: rotate(360deg);
+          }
+        }
+
         input::placeholder {
           color: rgba(236, 254, 255, 0.78);
         }
@@ -102,7 +131,7 @@ export default function RepliesPage() {
                 <div style={heroBadgeStyle}>Incoming SMS Center</div>
                 <h1 style={heroTitleStyle}>Replies</h1>
                 <p style={heroTextStyle}>
-                  View all customer SMS conversations, unread replies, and latest message activity in one place.
+                  View all active customer SMS conversations. STOP and blacklisted numbers are hidden from this page and kept in the blacklist area.
                 </p>
               </div>
 
@@ -126,6 +155,7 @@ export default function RepliesPage() {
                 <StatCard label="Total Conversations" value={String(items.length)} />
                 <StatCard label="Unread Replies" value={String(totalUnread)} />
                 <StatCard label="Visible Results" value={String(filteredItems.length)} />
+                <StatCard label="Blocked Hidden" value={String(blockedPhones.length)} />
               </div>
             </div>
           </div>
@@ -135,7 +165,7 @@ export default function RepliesPage() {
               <div>
                 <h2 style={panelTitleStyle}>Customer Conversations</h2>
                 <p style={panelDescStyle}>
-                  Open any conversation to view the full reply thread.
+                  Open any visible conversation to view the full reply thread.
                 </p>
               </div>
 
@@ -153,12 +183,12 @@ export default function RepliesPage() {
               <div style={emptyStateStyle}>
                 <div style={emptyDotStyle} />
                 <div style={emptyTitleStyle}>
-                  {search.trim() ? "No matching replies found." : "No replies yet."}
+                  {search.trim() ? "No matching replies found." : "No visible replies yet."}
                 </div>
                 <div style={emptyTextStyle}>
                   {search.trim()
                     ? "Try a different phone number or keyword."
-                    : "When customers reply to your SMS campaigns, conversations will show here."}
+                    : "Only active non-blacklisted conversations show here. STOP opt-out conversations stay in the blacklist section."}
                 </div>
               </div>
             ) : (
@@ -328,7 +358,7 @@ const backButtonStyle: CSSProperties = {
 
 const statsGridStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
   gap: 14,
 };
 
