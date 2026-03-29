@@ -19,6 +19,7 @@ import {
 } from "firebase/firestore";
 import Papa from "papaparse";
 import { auth, db } from "../../lib/firebase";
+import { formatFirestoreDateNY } from "../../lib/date";
 
 type RowData = Record<string, string>;
 
@@ -29,6 +30,7 @@ type LeadItem = {
   phone: string;
   rawPhone?: string;
   status?: string;
+  validationNote?: string;
   sourceFileName?: string;
 };
 
@@ -46,10 +48,39 @@ type ToastType = "success" | "error" | "info";
 const DEFAULT_SMS_MESSAGE =
   "NexGen Merchant Solutions: Funding options from USD 5,000 to USD 5,000,000 may be available for eligible businesses. Reply for more information. Reply STOP to opt out, HELP for help.";
 
-function normalizePhone(value: string) {
-  const trimmed = String(value || "").trim();
-  if (!trimmed) return "";
-  return trimmed.replace(/[^\d+]/g, "");
+function getUSPhoneValidation(raw: string) {
+  const original = String(raw || "").trim();
+  const digits = original.replace(/\D/g, "");
+
+  if (!digits) {
+    return {
+      valid: false,
+      normalized: "",
+      reason: "Format does not match US +1XXXXXXXXXX",
+    };
+  }
+
+  if (digits.length === 10) {
+    return {
+      valid: true,
+      normalized: `+1${digits}`,
+      reason: "Valid US number",
+    };
+  }
+
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return {
+      valid: true,
+      normalized: `+${digits}`,
+      reason: "Valid US number",
+    };
+  }
+
+  return {
+    valid: false,
+    normalized: "",
+    reason: "Format does not match US +1XXXXXXXXXX",
+  };
 }
 
 function guessPhoneColumn(headers: string[]) {
@@ -94,18 +125,6 @@ function guessNameFromRow(row: RowData) {
   );
 }
 
-function formatFirestoreDate(value: any) {
-  try {
-    if (!value) return "-";
-    if (typeof value?.toDate === "function") {
-      return value.toDate().toLocaleString();
-    }
-    return "-";
-  } catch {
-    return "-";
-  }
-}
-
 function truncateMiddle(value: string, start = 8, end = 6) {
   if (!value) return "-";
   if (value.length <= start + end + 3) return value;
@@ -115,7 +134,12 @@ function truncateMiddle(value: string, start = 8, end = 6) {
 function statusChipTone(status?: string) {
   const value = String(status || "").toLowerCase();
 
-  if (value.includes("completed") || value.includes("sent") || value.includes("success")) {
+  if (
+    value.includes("completed") ||
+    value.includes("sent") ||
+    value.includes("success") ||
+    value.includes("verified")
+  ) {
     return {
       bg: "rgba(16, 185, 129, 0.12)",
       text: "#059669",
@@ -123,7 +147,11 @@ function statusChipTone(status?: string) {
     };
   }
 
-  if (value.includes("failed") || value.includes("error")) {
+  if (
+    value.includes("failed") ||
+    value.includes("error") ||
+    value.includes("unverified")
+  ) {
     return {
       bg: "rgba(239, 68, 68, 0.12)",
       text: "#dc2626",
@@ -141,8 +169,8 @@ function statusChipTone(status?: string) {
 
   return {
     bg: "rgba(245, 158, 11, 0.12)",
-      text: "#b45309",
-      border: "rgba(245, 158, 11, 0.25)",
+    text: "#b45309",
+    border: "rgba(245, 158, 11, 0.25)",
   };
 }
 
@@ -255,7 +283,7 @@ export default function DashboardPage() {
           status: data.status || "imported",
           totalRows: data.totalRows || 0,
           validPhoneRows: data.validPhoneRows || 0,
-          createdAtLabel: formatFirestoreDate(data.createdAt),
+          createdAtLabel: formatFirestoreDateNY(data.createdAt),
         };
       });
 
@@ -288,6 +316,7 @@ export default function DashboardPage() {
           phone: data.phone || "",
           rawPhone: data.rawPhone || "",
           status: data.status || "",
+          validationNote: data.validationNote || "",
           sourceFileName: data.sourceFileName || "",
         };
       });
@@ -354,9 +383,10 @@ export default function DashboardPage() {
           }
 
           const phoneColumn = guessPhoneColumn(detectedHeaders);
-          const validPhoneRows = parsedRows.filter((row) =>
-            normalizePhone(row[phoneColumn] || "")
-          ).length;
+          const validPhoneRows = parsedRows.filter((row) => {
+            const validation = getUSPhoneValidation(row[phoneColumn] || "");
+            return validation.valid;
+          }).length;
 
           const uploadRef = await addDoc(collection(db, "uploads"), {
             fileName: file.name,
@@ -373,28 +403,32 @@ export default function DashboardPage() {
 
           for (const row of parsedRows) {
             const rawPhone = String(row[phoneColumn] || "");
-            const normalizedPhone = normalizePhone(rawPhone);
+            const validation = getUSPhoneValidation(rawPhone);
             const detectedName = String(guessNameFromRow(row) || "").trim();
-
-            if (!normalizedPhone) continue;
 
             await addDoc(collection(db, "leads"), {
               uploadId: uploadRef.id,
               uploadedBy: user.uid,
               name: detectedName,
-              phone: normalizedPhone,
+              phone: validation.valid ? validation.normalized : rawPhone,
               rawPhone,
-              status: "imported",
+              status: validation.valid ? "verified" : "unverified",
+              validationNote: validation.valid ? "Valid US number" : validation.reason,
               sourceFileName: file.name,
               createdAt: serverTimestamp(),
             });
 
-            imported += 1;
+            if (validation.valid) {
+              imported += 1;
+            }
           }
 
           await loadUploads();
           setSelectedUploadId(uploadRef.id);
-          showToast(`Import complete. ${imported} leads saved from ${file.name}.`, "success");
+          showToast(
+            `Import complete. ${imported} verified US leads saved from ${file.name}.`,
+            "success"
+          );
         } catch (error: any) {
           showToast(error?.message || "Import failed.", "error");
         } finally {
@@ -454,8 +488,12 @@ export default function DashboardPage() {
       return;
     }
 
-    if (!selectedLeads.length) {
-      showToast("No leads found in selected file.", "error");
+    const verifiedLeads = selectedLeads.filter(
+      (lead) => String(lead.status || "").toLowerCase() === "verified"
+    );
+
+    if (!verifiedLeads.length) {
+      showToast("No verified US leads found in selected file.", "error");
       return;
     }
 
@@ -472,7 +510,7 @@ export default function DashboardPage() {
           fileId: selectedUploadId,
           fileName: selectedUpload.fileName,
           message: message.trim(),
-          leads: selectedLeads.map((lead) => ({
+          leads: verifiedLeads.map((lead) => ({
             name: lead.name || "",
             phone: lead.phone || "",
           })),
@@ -491,7 +529,7 @@ export default function DashboardPage() {
         fileName: selectedUpload.fileName,
         name: campaignName.trim() || `Campaign for ${selectedUpload.fileName}`,
         message: message.trim(),
-        totalRecipients: selectedLeads.length,
+        totalRecipients: verifiedLeads.length,
         successCount: data.success || 0,
         failedCount: data.failed || 0,
         status: data.failed > 0 ? "completed_with_failures" : "completed",
@@ -516,7 +554,7 @@ export default function DashboardPage() {
       }
 
       showToast(
-        `SMS finished. Sent: ${data.success}, Failed: ${data.failed}, Total: ${data.total}.`,
+        `SMS finished. Sent: ${data.success}, Failed: ${data.failed}, Total Verified Sent Attempted: ${data.total}.`,
         data.failed > 0 ? "info" : "success"
       );
 
@@ -552,12 +590,15 @@ export default function DashboardPage() {
         String(lead.name || "").toLowerCase().includes(term) ||
         String(lead.phone || "").toLowerCase().includes(term) ||
         String(lead.status || "").toLowerCase().includes(term) ||
+        String(lead.validationNote || "").toLowerCase().includes(term) ||
         String(lead.sourceFileName || "").toLowerCase().includes(term)
       );
     });
   }, [selectedLeads, leadSearch]);
 
-  const totalRecipients = selectedLeads.length;
+  const totalRecipients = selectedLeads.filter(
+    (lead) => String(lead.status || "").toLowerCase() === "verified"
+  ).length;
   const totalUploads = uploads.length;
   const totalValidNumbers = uploads.reduce((sum, item) => sum + (item.validPhoneRows || 0), 0);
 
@@ -634,9 +675,9 @@ export default function DashboardPage() {
 
             <p style={busyTextStyle}>
               {uploading
-                ? "The system is reading your CSV, detecting phone numbers, and saving leads."
+                ? "The system is reading your CSV, validating US numbers, and saving leads."
                 : sendingSms
-                ? "The system is processing recipients and sending messages. Please do not close this page."
+                ? "The system is processing verified recipients and sending messages. Please do not close this page."
                 : "The system is busy."}
             </p>
           </div>
@@ -705,15 +746,15 @@ export default function DashboardPage() {
             </div>
 
             <div style={sidebarBottomLogoutWrapStyle}>
-          <div style={{ display: "grid", gap: 12 }}>
-  <Link href="/logs" style={sidebarSecondaryLinkButtonStyle}>
-    Logs
-  </Link>
+              <div style={{ display: "grid", gap: 12 }}>
+                <Link href="/logs" style={sidebarSecondaryLinkButtonStyle}>
+                  Logs
+                </Link>
 
-  <button onClick={handleLogout} style={sidebarLogoutButtonStyle}>
-    Logout
-  </button>
-</div>
+                <button onClick={handleLogout} style={sidebarLogoutButtonStyle}>
+                  Logout
+                </button>
+              </div>
             </div>
           </aside>
 
@@ -725,7 +766,7 @@ export default function DashboardPage() {
                   <div style={heroBadgeStyle}>Premium Admin Workspace</div>
                   <h1 style={heroTitleStyle}>Fintech SMS Admin Dashboard</h1>
                   <p style={heroTextStyle}>
-                    Upload lead files, review imported recipients, and launch campaigns from one clean control center.
+                    Upload lead files, review imported recipients, validate US numbers, and launch campaigns from one clean control center.
                   </p>
                 </div>
 
@@ -922,6 +963,7 @@ export default function DashboardPage() {
                             <th style={thStyle}>Name</th>
                             <th style={thStyle}>Phone</th>
                             <th style={thStyle}>Status</th>
+                            <th style={thStyle}>Validation</th>
                             <th style={thStyle}>Source File</th>
                           </tr>
                         </thead>
@@ -945,9 +987,10 @@ export default function DashboardPage() {
                                       textTransform: "capitalize",
                                     }}
                                   >
-                                    {lead.status || "imported"}
+                                    {lead.status || "-"}
                                   </span>
                                 </td>
+                                <td style={tdStyle}>{lead.validationNote || "-"}</td>
                                 <td style={tdStyle}>{lead.sourceFileName || "-"}</td>
                               </tr>
                             );
@@ -965,7 +1008,7 @@ export default function DashboardPage() {
                     <div>
                       <h2 style={panelTitleStyle}>SMS Portal</h2>
                       <p style={panelDescStyle}>
-                        Create a campaign and send the message to all recipients in the selected file.
+                        Create a campaign and send the message to all verified US recipients in the selected file.
                       </p>
                     </div>
                   </div>
@@ -1017,7 +1060,9 @@ export default function DashboardPage() {
                         sendingSms ||
                         uploading ||
                         !selectedUploadId ||
-                        !selectedLeads.length ||
+                        !selectedLeads.some(
+                          (lead) => String(lead.status || "").toLowerCase() === "verified"
+                        ) ||
                         !message.trim()
                       }
                       style={{
@@ -1026,7 +1071,9 @@ export default function DashboardPage() {
                           sendingSms ||
                           uploading ||
                           !selectedUploadId ||
-                          !selectedLeads.length ||
+                          !selectedLeads.some(
+                            (lead) => String(lead.status || "").toLowerCase() === "verified"
+                          ) ||
                           !message.trim()
                             ? 0.55
                             : 1,
@@ -1034,7 +1081,9 @@ export default function DashboardPage() {
                           sendingSms ||
                           uploading ||
                           !selectedUploadId ||
-                          !selectedLeads.length ||
+                          !selectedLeads.some(
+                            (lead) => String(lead.status || "").toLowerCase() === "verified"
+                          ) ||
                           !message.trim()
                             ? "not-allowed"
                             : "pointer",
@@ -1055,9 +1104,9 @@ export default function DashboardPage() {
                   <h3 style={miniPanelTitleStyle}>Quick Guide</h3>
                   <div style={guideListStyle}>
                     <GuideItem number="1" text="Upload a CSV file containing lead data." />
-                    <GuideItem number="2" text="Select the file you want to use for your campaign." />
-                    <GuideItem number="3" text="Review imported recipients in the leads table." />
-                    <GuideItem number="4" text="Write the SMS and send the campaign." />
+                    <GuideItem number="2" text="The system validates US numbers as +1 followed by 10 digits." />
+                    <GuideItem number="3" text="Only verified US leads will be used for the campaign." />
+                    <GuideItem number="4" text="Review validation status before sending SMS." />
                   </div>
                 </section>
               </div>
