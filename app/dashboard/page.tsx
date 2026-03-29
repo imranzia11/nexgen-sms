@@ -705,19 +705,15 @@ export default function DashboardPage() {
             </div>
 
             <div style={sidebarBottomLogoutWrapStyle}>
-              <div style={{ display: "grid", gap: 12 }}>
-                <Link href="/queue" style={sidebarSecondaryLinkButtonStyle}>
-                  Queue
-                </Link>
+          <div style={{ display: "grid", gap: 12 }}>
+  <Link href="/logs" style={sidebarSecondaryLinkButtonStyle}>
+    Logs
+  </Link>
 
-                <Link href="/logs" style={sidebarSecondaryLinkButtonStyle}>
-                  Logs
-                </Link>
-
-                <button onClick={handleLogout} style={sidebarLogoutButtonStyle}>
-                  Logout
-                </button>
-              </div>
+  <button onClick={handleLogout} style={sidebarLogoutButtonStyle}>
+    Logout
+  </button>
+</div>
             </div>
           </aside>
 
