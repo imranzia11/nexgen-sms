@@ -288,8 +288,10 @@ export default function LogsPage() {
                 </div>
               </Link>
             </div>
+          </div>
 
-            <div style={sidebarRepliesWrapStyle}>
+          <div style={sidebarBottomLogoutWrapStyle}>
+            <div style={{ display: "grid", gap: 12 }}>
               <div style={sidebarSupportCardStyle}>
                 <div style={sidebarSupportIconStyle}>≣</div>
                 <div style={{ textAlign: "left" }}>
@@ -297,13 +299,11 @@ export default function LogsPage() {
                   <div style={sidebarRepliesTextStyle}>Campaign and message activity</div>
                 </div>
               </div>
-            </div>
-          </div>
 
-          <div style={sidebarBottomLogoutWrapStyle}>
-            <button onClick={handleLogout} style={sidebarLogoutButtonStyle}>
-              Logout
-            </button>
+              <button onClick={handleLogout} style={sidebarLogoutButtonStyle}>
+                Logout
+              </button>
+            </div>
           </div>
         </aside>
 
@@ -344,9 +344,7 @@ export default function LogsPage() {
             </div>
           </div>
 
-          {errorText ? (
-            <div style={errorBoxStyle}>{errorText}</div>
-          ) : null}
+          {errorText ? <div style={errorBoxStyle}>{errorText}</div> : null}
 
           <section style={panelStyle}>
             <div style={panelHeaderStyle}>
@@ -458,7 +456,9 @@ export default function LogsPage() {
                               {item.status}
                             </span>
                           </td>
-                          <td style={tdStyle}>{truncateMiddle(item.twilioSid || "-", 8, 6)}</td>
+                          <td style={tdStyle}>
+                            {truncateMiddle(item.twilioSid || "-", 8, 6)}
+                          </td>
                           <td style={tdStyle}>{item.sourceFileName || "-"}</td>
                           <td style={tdStyle}>{item.createdAtLabel}</td>
                           <td style={tdStyle}>{truncateText(item.error || "-", 60)}</td>
