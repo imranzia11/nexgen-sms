@@ -14,6 +14,7 @@ import {
   where,
 } from "firebase/firestore";
 import { auth, db } from "../../../lib/firebase";
+import { formatFirestoreDateNY } from "../../../lib/date";
 
 type LeadItem = {
   id: string;
@@ -35,18 +36,6 @@ type UploadDetails = {
   uploadedByName: string;
   createdAtLabel: string;
 };
-
-function formatFirestoreDate(value: any) {
-  try {
-    if (!value) return "-";
-    if (typeof value?.toDate === "function") {
-      return value.toDate().toLocaleString();
-    }
-    return "-";
-  } catch {
-    return "-";
-  }
-}
 
 function getCreatedAtMs(value: any) {
   try {
@@ -116,7 +105,7 @@ export default function UploadDetailsPage() {
         validPhoneRows: uploadData.validPhoneRows || 0,
         phoneColumn: uploadData.phoneColumn || "-",
         uploadedByName: uploadData.uploadedByName || "-",
-        createdAtLabel: formatFirestoreDate(uploadData.createdAt),
+        createdAtLabel: formatFirestoreDateNY(uploadData.createdAt),
       });
 
       const leadQuery = query(
