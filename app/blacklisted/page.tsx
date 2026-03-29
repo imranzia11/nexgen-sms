@@ -13,6 +13,7 @@ import {
   query,
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
+import { formatFirestoreDateNY } from "../../lib/date";
 
 type ToastType = "success" | "error" | "info";
 
@@ -36,18 +37,6 @@ type ReplyItem = {
   optOutType?: string;
   createdAtLabel: string;
 };
-
-function formatFirestoreDate(value: any) {
-  try {
-    if (!value) return "-";
-    if (typeof value?.toDate === "function") {
-      return value.toDate().toLocaleString();
-    }
-    return "-";
-  } catch {
-    return "-";
-  }
-}
 
 function statusChipTone(status?: string) {
   const value = String(status || "").toLowerCase();
@@ -130,7 +119,10 @@ export default function BlacklistedPage() {
   useEffect(() => {
     if (checking) return;
 
-    const q = query(collection(db, "blacklisted_numbers"), orderBy("updatedAt", "desc"));
+    const q = query(
+      collection(db, "blacklisted_numbers"),
+      orderBy("updatedAt", "desc")
+    );
 
     const unsub = onSnapshot(
       q,
@@ -147,11 +139,13 @@ export default function BlacklistedPage() {
               source: data.source || "",
               lastKeyword: data.lastKeyword || "",
               lastBody: data.lastBody || "",
-              blockedAtLabel: formatFirestoreDate(data.blockedAt),
-              updatedAtLabel: formatFirestoreDate(data.updatedAt),
+              blockedAtLabel: formatFirestoreDateNY(data.blockedAt),
+              updatedAtLabel: formatFirestoreDateNY(data.updatedAt),
             };
           })
-          .filter((item) => String(item.status || "").toLowerCase() === "blocked");
+          .filter(
+            (item) => String(item.status || "").toLowerCase() === "blocked"
+          );
 
         setItems(next);
         setLoadingList(false);
@@ -183,7 +177,7 @@ export default function BlacklistedPage() {
             body: data.body || "",
             eventType: data.eventType || "",
             optOutType: data.optOutType || "",
-            createdAtLabel: formatFirestoreDate(data.createdAt),
+            createdAtLabel: formatFirestoreDateNY(data.createdAt),
           };
         });
 
@@ -379,7 +373,8 @@ export default function BlacklistedPage() {
                   <div style={heroBadgeStyle}>Compliance Protection</div>
                   <h1 style={heroTitleStyle}>Black Listed Numbers</h1>
                   <p style={heroTextStyle}>
-                    View all numbers that replied STOP and the replies linked to those blocked numbers.
+                    View all numbers that replied STOP and the replies linked to those blocked
+                    numbers.
                   </p>
                 </div>
 
@@ -455,7 +450,11 @@ export default function BlacklistedPage() {
                     const phoneReplies = (repliesByPhone.get(item.phone) || []).filter((reply) => {
                       const event = String(reply.eventType || "").toUpperCase();
                       const opt = String(reply.optOutType || "").toUpperCase();
-                      return event === "STOP" || opt === "STOP" || String(reply.body || "").trim().toUpperCase() === "STOP";
+                      return (
+                        event === "STOP" ||
+                        opt === "STOP" ||
+                        String(reply.body || "").trim().toUpperCase() === "STOP"
+                      );
                     });
 
                     return (
@@ -496,7 +495,9 @@ export default function BlacklistedPage() {
                           <div style={replySectionTitleStyle}>Replies moved to blacklist tab</div>
 
                           {phoneReplies.length === 0 ? (
-                            <div style={emptyReplyStyle}>No related STOP replies found for this number.</div>
+                            <div style={emptyReplyStyle}>
+                              No related STOP replies found for this number.
+                            </div>
                           ) : (
                             <div style={replyListStyle}>
                               {phoneReplies.map((reply) => (
@@ -505,10 +506,14 @@ export default function BlacklistedPage() {
                                     <span style={replyEventChipStyle}>
                                       {reply.eventType || reply.optOutType || "STOP"}
                                     </span>
-                                    <span style={replyDateStyle}>{reply.createdAtLabel || "-"}</span>
+                                    <span style={replyDateStyle}>
+                                      {reply.createdAtLabel || "-"}
+                                    </span>
                                   </div>
                                   <div style={replyBodyStyle}>{reply.body || "-"}</div>
-                                  <div style={replyIdStyle}>Reply ID: {truncateMiddle(reply.id, 10, 8)}</div>
+                                  <div style={replyIdStyle}>
+                                    Reply ID: {truncateMiddle(reply.id, 10, 8)}
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -741,6 +746,7 @@ const sidebarSupportCardStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 14,
+  cursor: "pointer",
 };
 
 const sidebarRepliesIconStyle: CSSProperties = {

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { collection, getDocs, orderBy, query } from "firebase/firestore";
 import { db } from "../../lib/firebase";
+import { formatFirestoreDateNY } from "../../lib/date";
 
 type ConversationItem = {
   id: string;
@@ -12,18 +13,6 @@ type ConversationItem = {
   unreadCount: number;
   lastMessageAtLabel: string;
 };
-
-function formatDate(value: any) {
-  try {
-    if (!value) return "-";
-    if (typeof value?.toDate === "function") {
-      return value.toDate().toLocaleString();
-    }
-    return "-";
-  } catch {
-    return "-";
-  }
-}
 
 function truncateText(value: string, max = 110) {
   if (!value) return "-";
@@ -73,7 +62,7 @@ export default function RepliesPage() {
             phone: data.phone || d.id,
             lastMessage: data.lastMessage || "",
             unreadCount: data.unreadCount || 0,
-            lastMessageAtLabel: formatDate(data.lastMessageAt),
+            lastMessageAtLabel: formatFirestoreDateNY(data.lastMessageAt),
           };
         })
         .filter((item) => !blockedSet.has(String(item.phone || "").trim()));

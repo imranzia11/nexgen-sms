@@ -19,6 +19,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { db } from "../../../lib/firebase";
+import { formatFirestoreDateNY } from "../../../lib/date";
 
 type MessageItem = {
   id: string;
@@ -34,18 +35,6 @@ type MessageItem = {
 
 function phoneDocId(phone: string) {
   return String(phone || "").replace(/[^\d+]/g, "");
-}
-
-function formatFirestoreDate(value: any) {
-  try {
-    if (!value) return "-";
-    if (typeof value?.toDate === "function") {
-      return value.toDate().toLocaleString();
-    }
-    return "-";
-  } catch {
-    return "-";
-  }
 }
 
 export default function ReplyThreadPage({
@@ -132,7 +121,7 @@ export default function ReplyThreadPage({
                 direction: data.direction || "",
                 status: data.status || "",
                 read: !!data.read,
-                createdAtLabel: formatFirestoreDate(data.createdAt),
+                createdAtLabel: formatFirestoreDateNY(data.createdAt),
               };
             });
 
@@ -201,7 +190,6 @@ export default function ReplyThreadPage({
       setReplyBody("");
       setStatus("Reply sent.");
 
-      // real-time listener will update the thread automatically
       setTimeout(() => {
         scrollToBottom(true);
       }, 150);
