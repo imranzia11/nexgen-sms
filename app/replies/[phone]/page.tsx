@@ -13,7 +13,7 @@ import {
   collection,
   doc,
   getDoc,
-  getDocs,
+  onSnapshot,
   orderBy,
   query,
   updateDoc,
@@ -75,11 +75,8 @@ export default function ReplyThreadPage({
     });
   }
 
-  async function loadThread(skipSmoothScroll = false) {
+  async function loadConversationMeta() {
     try {
-      setLoading(true);
-      setStatus("");
-
       const convoRef = doc(db, "conversations", conversationId);
       const convoSnap = await getDoc(convoRef);
 
@@ -93,53 +90,80 @@ export default function ReplyThreadPage({
       } else {
         setThreadTitle(routePhone || "Conversation");
       }
-
-      const q = query(
-        collection(db, "conversations", conversationId, "messages"),
-        orderBy("createdAt", "asc")
-      );
-
-      const snap = await getDocs(q);
-
-      const items: MessageItem[] = snap.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          sid: data.sid || "",
-          from: data.from || "",
-          to: data.to || "",
-          body: data.body || "",
-          direction: data.direction || "",
-          status: data.status || "",
-          read: !!data.read,
-          createdAtLabel: formatFirestoreDate(data.createdAt),
-        };
-      });
-
-      setMessages(items);
-
-      setTimeout(() => {
-        scrollToBottom(!skipSmoothScroll);
-      }, 80);
     } catch (error: any) {
       console.error(error);
       setStatus(error?.message || "Failed to load conversation.");
-      setMessages([]);
-    } finally {
-      setLoading(false);
     }
+  }
+
+  async function handleManualRefresh() {
+    setStatus("");
+    await loadConversationMeta();
+    scrollToBottom(false);
   }
 
   useEffect(() => {
     if (!conversationId) return;
-    void loadThread(true);
-  }, [conversationId]);
 
-  useEffect(() => {
-    if (!loading && messages.length > 0) {
-      scrollToBottom(false);
-    }
-  }, [loading, messages.length]);
+    let unsubMessages: (() => void) | undefined;
+
+    const start = async () => {
+      try {
+        setLoading(true);
+        setStatus("");
+        await loadConversationMeta();
+
+        const q = query(
+          collection(db, "conversations", conversationId, "messages"),
+          orderBy("createdAt", "asc")
+        );
+
+        unsubMessages = onSnapshot(
+          q,
+          (snap) => {
+            const items: MessageItem[] = snap.docs.map((d) => {
+              const data = d.data();
+              return {
+                id: d.id,
+                sid: data.sid || "",
+                from: data.from || "",
+                to: data.to || "",
+                body: data.body || "",
+                direction: data.direction || "",
+                status: data.status || "",
+                read: !!data.read,
+                createdAtLabel: formatFirestoreDate(data.createdAt),
+              };
+            });
+
+            setMessages(items);
+            setLoading(false);
+
+            setTimeout(() => {
+              scrollToBottom(false);
+            }, 60);
+          },
+          (error: any) => {
+            console.error(error);
+            setStatus(error?.message || "Failed to load conversation.");
+            setMessages([]);
+            setLoading(false);
+          }
+        );
+      } catch (error: any) {
+        console.error(error);
+        setStatus(error?.message || "Failed to load conversation.");
+        setMessages([]);
+        setLoading(false);
+      }
+    };
+
+    void start();
+
+    return () => {
+      if (unsubMessages) unsubMessages();
+    };
+  }, [conversationId, routePhone]);
 
   async function handleSendReply() {
     if (!routePhone) {
@@ -176,7 +200,11 @@ export default function ReplyThreadPage({
 
       setReplyBody("");
       setStatus("Reply sent.");
-      await loadThread(false);
+
+      // real-time listener will update the thread automatically
+      setTimeout(() => {
+        scrollToBottom(true);
+      }, 150);
     } catch (error: any) {
       console.error(error);
       setStatus(error?.message || "Failed to send reply.");
@@ -239,7 +267,7 @@ export default function ReplyThreadPage({
                   </p>
                 </div>
 
-                <button onClick={() => void loadThread(false)} style={refreshButtonStyle}>
+                <button onClick={() => void handleManualRefresh()} style={refreshButtonStyle}>
                   Refresh
                 </button>
               </div>
@@ -361,7 +389,7 @@ export default function ReplyThreadPage({
                 </button>
 
                 <button
-                  onClick={() => void loadThread(false)}
+                  onClick={() => void handleManualRefresh()}
                   style={secondaryButtonStyle}
                 >
                   Refresh Thread
