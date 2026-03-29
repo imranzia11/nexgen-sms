@@ -292,13 +292,9 @@ export default function LogsPage() {
 
           <div style={sidebarBottomLogoutWrapStyle}>
             <div style={{ display: "grid", gap: 12 }}>
-              <div style={sidebarSupportCardStyle}>
-                <div style={sidebarSupportIconStyle}>≣</div>
-                <div style={{ textAlign: "left" }}>
-                  <div style={sidebarRepliesTitleStyle}>Logs</div>
-                  <div style={sidebarRepliesTextStyle}>Campaign and message activity</div>
-                </div>
-              </div>
+              <Link href="/logs" style={sidebarSecondaryLinkButtonStyle}>
+                Logs
+              </Link>
 
               <button onClick={handleLogout} style={sidebarLogoutButtonStyle}>
                 Logout
@@ -616,33 +612,24 @@ const sidebarRepliesCardStyle: CSSProperties = {
   textDecoration: "none",
 };
 
-const sidebarSupportCardStyle: CSSProperties = {
+const sidebarBottomLogoutWrapStyle: CSSProperties = {
+  display: "grid",
+};
+
+const sidebarSecondaryLinkButtonStyle: CSSProperties = {
   width: "100%",
   border: "1px solid rgba(255,255,255,0.16)",
-  borderRadius: 26,
-  padding: "18px 18px",
-  background: "rgba(255,255,255,0.10)",
-  boxShadow: "0 18px 40px rgba(0,0,0,0.08)",
-  backdropFilter: "blur(10px)",
-  display: "flex",
-  alignItems: "center",
-  gap: 14,
+  borderRadius: 16,
+  padding: "14px 16px",
+  background: "rgba(255,255,255,0.08)",
+  color: "#ffffff",
+  fontWeight: 800,
+  cursor: "pointer",
+  textDecoration: "none",
+  textAlign: "center",
 };
 
 const sidebarRepliesIconStyle: CSSProperties = {
-  width: 54,
-  height: 54,
-  borderRadius: "50%",
-  display: "grid",
-  placeItems: "center",
-  background: "#ccfbf1",
-  color: "#115e59",
-  fontSize: 24,
-  fontWeight: 900,
-  flexShrink: 0,
-};
-
-const sidebarSupportIconStyle: CSSProperties = {
   width: 54,
   height: 54,
   borderRadius: "50%",
@@ -667,10 +654,6 @@ const sidebarRepliesTextStyle: CSSProperties = {
   color: "rgba(236, 254, 255, 0.78)",
   fontSize: 13,
   lineHeight: 1.4,
-};
-
-const sidebarBottomLogoutWrapStyle: CSSProperties = {
-  display: "grid",
 };
 
 const sidebarLogoutButtonStyle: CSSProperties = {
