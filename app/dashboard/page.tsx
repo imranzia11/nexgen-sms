@@ -141,8 +141,8 @@ function statusChipTone(status?: string) {
 
   return {
     bg: "rgba(245, 158, 11, 0.12)",
-    text: "#b45309",
-    border: "rgba(245, 158, 11, 0.25)",
+      text: "#b45309",
+      border: "rgba(245, 158, 11, 0.25)",
   };
 }
 
@@ -705,9 +705,19 @@ export default function DashboardPage() {
             </div>
 
             <div style={sidebarBottomLogoutWrapStyle}>
-              <button onClick={handleLogout} style={sidebarLogoutButtonStyle}>
-                Logout
-              </button>
+              <div style={{ display: "grid", gap: 12 }}>
+                <Link href="/queue" style={sidebarSecondaryLinkButtonStyle}>
+                  Queue
+                </Link>
+
+                <Link href="/logs" style={sidebarSecondaryLinkButtonStyle}>
+                  Logs
+                </Link>
+
+                <button onClick={handleLogout} style={sidebarLogoutButtonStyle}>
+                  Logout
+                </button>
+              </div>
             </div>
           </aside>
 
@@ -1355,6 +1365,19 @@ const sidebarRepliesTextStyle: CSSProperties = {
 
 const sidebarBottomLogoutWrapStyle: CSSProperties = {
   display: "grid",
+};
+
+const sidebarSecondaryLinkButtonStyle: CSSProperties = {
+  width: "100%",
+  border: "1px solid rgba(255,255,255,0.16)",
+  borderRadius: 16,
+  padding: "14px 16px",
+  background: "rgba(255,255,255,0.08)",
+  color: "#ffffff",
+  fontWeight: 800,
+  cursor: "pointer",
+  textDecoration: "none",
+  textAlign: "center",
 };
 
 const sidebarLogoutButtonStyle: CSSProperties = {
