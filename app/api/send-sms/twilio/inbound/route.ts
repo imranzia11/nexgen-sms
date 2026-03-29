@@ -89,6 +89,43 @@ export async function POST(req: NextRequest) {
     });
 
     if (from) {
+      const conversationId = phoneDocId(from);
+      const convoRef = adminDb.collection("conversations").doc(conversationId);
+      const convoMessageId = messageSid || adminDb.collection("_tmp").doc().id;
+      const convoMessageRef = convoRef.collection("messages").doc(convoMessageId);
+
+      await convoMessageRef.set({
+        sid: messageSid || "",
+        from,
+        to,
+        body,
+        normalizedBody,
+        direction: "inbound",
+        status: "received",
+        read: false,
+        eventType,
+        optOutType: optOutType || null,
+        messagingServiceSid: messagingServiceSid || "",
+        accountSid: accountSid || "",
+        createdAt: FieldValue.serverTimestamp(),
+      });
+
+      const convoSnap = await convoRef.get();
+      const currentUnreadCount = convoSnap.exists ? Number(convoSnap.data()?.unreadCount || 0) : 0;
+
+      await convoRef.set(
+        {
+          phone: from,
+          twilioNumber: to,
+          lastMessage: body,
+          lastDirection: "inbound",
+          lastMessageAt: FieldValue.serverTimestamp(),
+          unreadCount: currentUnreadCount + 1,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+
       const blacklistRef = adminDb
         .collection("blacklisted_numbers")
         .doc(phoneDocId(from));
