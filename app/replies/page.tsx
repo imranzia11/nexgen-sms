@@ -8,10 +8,10 @@ import {
   collection,
   getDoc,
   getDocs,
-  orderBy,
   query,
   doc,
   where,
+  orderBy,
   type Query,
   type DocumentData,
 } from "firebase/firestore";
@@ -24,6 +24,7 @@ type ConversationItem = {
   lastMessage: string;
   unreadCount: number;
   lastMessageAtLabel: string;
+  sortSeconds: number;
 };
 
 type AppUser = {
@@ -57,6 +58,14 @@ function isAdmin(role?: string) {
   );
 }
 
+function getSortSeconds(data: Record<string, any>) {
+  const ts = data?.lastMessageAt;
+  if (!ts) return 0;
+  if (typeof ts.seconds === "number") return ts.seconds;
+  if (ts instanceof Date) return Math.floor(ts.getTime() / 1000);
+  return 0;
+}
+
 function makeConversationItem(
   id: string,
   data: Record<string, any>
@@ -76,6 +85,7 @@ function makeConversationItem(
     lastMessage: String(data.lastMessage || ""),
     unreadCount: Number(data.unreadCount || 0),
     lastMessageAtLabel: formatFirestoreDateNY(data.lastMessageAt),
+    sortSeconds: getSortSeconds(data),
   };
 }
 
@@ -89,7 +99,7 @@ export default function RepliesPage() {
   const [blockedPhones, setBlockedPhones] = useState<string[]>([]);
   const [profile, setProfile] = useState<AppUser | null>(null);
 
-  async function runConversationQuery(q: Query<DocumentData>) {
+  async function runQuery(q: Query<DocumentData>) {
     const snap = await getDocs(q);
     return snap.docs.map((d) => ({
       id: d.id,
@@ -193,7 +203,7 @@ export default function RepliesPage() {
           collection(db, "conversations"),
           orderBy("lastMessageAt", "desc")
         );
-        docs = await runConversationQuery(adminQuery);
+        docs = await runQuery(adminQuery);
       } else {
         const collected = new Map<string, { id: string; data: Record<string, any> }>();
         const queriesToTry: Query<DocumentData>[] = [];
@@ -202,8 +212,7 @@ export default function RepliesPage() {
           queriesToTry.push(
             query(
               collection(db, "conversations"),
-              where("messagingServiceSid", "==", currentProfile.messagingServiceSid),
-              orderBy("lastMessageAt", "desc")
+              where("messagingServiceSid", "==", currentProfile.messagingServiceSid)
             )
           );
         }
@@ -212,16 +221,13 @@ export default function RepliesPage() {
           queriesToTry.push(
             query(
               collection(db, "conversations"),
-              where("twilioNumber", "==", currentProfile.twilioNumber),
-              orderBy("lastMessageAt", "desc")
+              where("twilioNumber", "==", currentProfile.twilioNumber)
             )
           );
-
           queriesToTry.push(
             query(
               collection(db, "conversations"),
-              where("assignedTwilioNumber", "==", currentProfile.twilioNumber),
-              orderBy("lastMessageAt", "desc")
+              where("assignedTwilioNumber", "==", currentProfile.twilioNumber)
             )
           );
         }
@@ -230,16 +236,13 @@ export default function RepliesPage() {
           queriesToTry.push(
             query(
               collection(db, "conversations"),
-              where("assignedTwilioNumber", "==", currentProfile.assignedTwilioNumber),
-              orderBy("lastMessageAt", "desc")
+              where("assignedTwilioNumber", "==", currentProfile.assignedTwilioNumber)
             )
           );
-
           queriesToTry.push(
             query(
               collection(db, "conversations"),
-              where("twilioNumber", "==", currentProfile.assignedTwilioNumber),
-              orderBy("lastMessageAt", "desc")
+              where("twilioNumber", "==", currentProfile.assignedTwilioNumber)
             )
           );
         }
@@ -247,14 +250,13 @@ export default function RepliesPage() {
         queriesToTry.push(
           query(
             collection(db, "conversations"),
-            where("ownerUid", "==", currentProfile.uid),
-            orderBy("lastMessageAt", "desc")
+            where("ownerUid", "==", currentProfile.uid)
           )
         );
 
         for (const q of queriesToTry) {
           try {
-            const rows = await runConversationQuery(q);
+            const rows = await runQuery(q);
             for (const row of rows) {
               collected.set(row.id, row);
             }
@@ -263,16 +265,13 @@ export default function RepliesPage() {
           }
         }
 
-        docs = Array.from(collected.values()).sort((a, b) => {
-          const aTime = a.data?.lastMessageAt?.seconds || 0;
-          const bTime = b.data?.lastMessageAt?.seconds || 0;
-          return bTime - aTime;
-        });
+        docs = Array.from(collected.values());
       }
 
       const rows = docs
         .map((row) => makeConversationItem(row.id, row.data))
-        .filter((item) => !blockedSet.has(String(item.phone || "").trim()));
+        .filter((item) => !blockedSet.has(String(item.phone || "").trim()))
+        .sort((a, b) => b.sortSeconds - a.sortSeconds);
 
       setItems(rows);
     } catch (error) {
@@ -315,8 +314,6 @@ export default function RepliesPage() {
           messagingServiceSid: String(userData.messagingServiceSid || ""),
         };
 
-        console.log("Replies profile debug", safeProfile);
-
         setProfile(safeProfile);
         setChecking(false);
         await loadConversations(safeProfile);
@@ -349,15 +346,10 @@ export default function RepliesPage() {
       <>
         <style jsx global>{`
           @keyframes spin {
-            0% {
-              transform: rotate(0deg);
-            }
-            100% {
-              transform: rotate(360deg);
-            }
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
           }
         `}</style>
-
         <main style={pageStyle}>
           <div style={pageWrapStyle}>
             <section style={panelStyle}>
@@ -376,12 +368,8 @@ export default function RepliesPage() {
     <>
       <style jsx global>{`
         @keyframes spin {
-          0% {
-            transform: rotate(0deg);
-          }
-          100% {
-            transform: rotate(360deg);
-          }
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
         }
 
         input::placeholder {
@@ -393,7 +381,6 @@ export default function RepliesPage() {
         <div style={pageWrapStyle}>
           <div style={heroStyle}>
             <div style={heroOverlayStyle} />
-
             <div style={heroInnerStyle}>
               <div>
                 <div style={heroBadgeStyle}>Incoming SMS Center</div>
@@ -458,7 +445,7 @@ export default function RepliesPage() {
                 <div style={emptyTextStyle}>
                   {search.trim()
                     ? "Try a different phone number or keyword."
-                    : "No conversations matched this user account yet. Check whether conversation docs contain messagingServiceSid, twilioNumber, assignedTwilioNumber, or ownerUid matching this user."}
+                    : "No conversations matched this user account yet."}
                 </div>
               </div>
             ) : (
@@ -477,7 +464,6 @@ export default function RepliesPage() {
 
                       <div style={conversationRightStyle}>
                         <div style={timeStyle}>{item.lastMessageAtLabel}</div>
-
                         {item.unreadCount > 0 ? (
                           <div style={unreadBadgeStyle}>{item.unreadCount} unread</div>
                         ) : (
