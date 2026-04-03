@@ -12,8 +12,8 @@ import {
   query,
   doc,
   where,
-  Query,
-  DocumentData,
+  type Query,
+  type DocumentData,
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
 import { formatFirestoreDateNY } from "../../lib/date";
@@ -108,17 +108,80 @@ export default function RepliesPage() {
         return;
       }
 
-      const blacklistQuery = query(collection(db, "blacklisted_numbers"));
-      const blacklistSnap = await getDocs(blacklistQuery);
+      let blocked: string[] = [];
 
-      const blocked = blacklistSnap.docs
-        .map((d) => {
-          const data = d.data();
-          const status = String(data.status || "").toLowerCase();
-          if (status !== "blocked") return "";
-          return String(data.phone || "").trim();
-        })
-        .filter(Boolean);
+      if (isAdmin(currentProfile.role)) {
+        const blacklistSnap = await getDocs(query(collection(db, "blacklisted_numbers")));
+        blocked = blacklistSnap.docs
+          .map((d) => {
+            const data = d.data();
+            return String(data.status || "").toLowerCase() === "blocked"
+              ? String(data.phone || "").trim()
+              : "";
+          })
+          .filter(Boolean);
+      } else {
+        const blacklistDocs = new Map<string, Record<string, any>>();
+        const blacklistQueries: Query<DocumentData>[] = [];
+
+        if (currentProfile.messagingServiceSid) {
+          blacklistQueries.push(
+            query(
+              collection(db, "blacklisted_numbers"),
+              where("messagingServiceSid", "==", currentProfile.messagingServiceSid)
+            )
+          );
+        }
+
+        if (currentProfile.twilioNumber) {
+          blacklistQueries.push(
+            query(
+              collection(db, "blacklisted_numbers"),
+              where("twilioNumber", "==", currentProfile.twilioNumber)
+            )
+          );
+          blacklistQueries.push(
+            query(
+              collection(db, "blacklisted_numbers"),
+              where("assignedTwilioNumber", "==", currentProfile.twilioNumber)
+            )
+          );
+        }
+
+        if (currentProfile.assignedTwilioNumber) {
+          blacklistQueries.push(
+            query(
+              collection(db, "blacklisted_numbers"),
+              where("assignedTwilioNumber", "==", currentProfile.assignedTwilioNumber)
+            )
+          );
+          blacklistQueries.push(
+            query(
+              collection(db, "blacklisted_numbers"),
+              where("twilioNumber", "==", currentProfile.assignedTwilioNumber)
+            )
+          );
+        }
+
+        for (const q of blacklistQueries) {
+          try {
+            const snap = await getDocs(q);
+            for (const d of snap.docs) {
+              blacklistDocs.set(d.id, d.data() as Record<string, any>);
+            }
+          } catch (error) {
+            console.error("Blacklist query failed", error);
+          }
+        }
+
+        blocked = Array.from(blacklistDocs.values())
+          .map((data) => {
+            return String(data.status || "").toLowerCase() === "blocked"
+              ? String(data.phone || "").trim()
+              : "";
+          })
+          .filter(Boolean);
+      }
 
       const blockedSet = new Set(blocked.map((phone) => String(phone).trim()));
       setBlockedPhones(blocked);
@@ -133,7 +196,6 @@ export default function RepliesPage() {
         docs = await runConversationQuery(adminQuery);
       } else {
         const collected = new Map<string, { id: string; data: Record<string, any> }>();
-
         const queriesToTry: Query<DocumentData>[] = [];
 
         if (currentProfile.messagingServiceSid) {
@@ -280,10 +342,7 @@ export default function RepliesPage() {
     });
   }, [items, search]);
 
-  const totalUnread = items.reduce(
-    (sum, item) => sum + (item.unreadCount || 0),
-    0
-  );
+  const totalUnread = items.reduce((sum, item) => sum + (item.unreadCount || 0), 0);
 
   if (checking) {
     return (
@@ -365,14 +424,8 @@ export default function RepliesPage() {
               <div style={statsGridStyle}>
                 <StatCard label="Total Conversations" value={String(items.length)} />
                 <StatCard label="Unread Replies" value={String(totalUnread)} />
-                <StatCard
-                  label="Visible Results"
-                  value={String(filteredItems.length)}
-                />
-                <StatCard
-                  label="Blocked Hidden"
-                  value={String(blockedPhones.length)}
-                />
+                <StatCard label="Visible Results" value={String(filteredItems.length)} />
+                <StatCard label="Blocked Hidden" value={String(blockedPhones.length)} />
               </div>
             </div>
           </div>
@@ -405,7 +458,7 @@ export default function RepliesPage() {
                 <div style={emptyTextStyle}>
                   {search.trim()
                     ? "Try a different phone number or keyword."
-                    : "No conversations matched this user account yet. Check whether the conversation documents contain messagingServiceSid, twilioNumber, assignedTwilioNumber, or ownerUid values that match this user."}
+                    : "No conversations matched this user account yet. Check whether conversation docs contain messagingServiceSid, twilioNumber, assignedTwilioNumber, or ownerUid matching this user."}
                 </div>
               </div>
             ) : (
