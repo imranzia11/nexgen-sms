@@ -18,7 +18,7 @@ import {
 import { auth, db } from "../../lib/firebase";
 import { formatFirestoreDateNY } from "../../lib/date";
 
-type MessageRow = {
+type SmsRow = {
   id: string;
   phone: string;
   name?: string;
@@ -26,6 +26,7 @@ type MessageRow = {
   createdAtLabel: string;
   sortSeconds: number;
   status: string;
+  replied: boolean;
 };
 
 type AppUser = {
@@ -70,8 +71,13 @@ function phoneKey(value: unknown) {
   return String(value || "").replace(/[^\d+]/g, "").trim();
 }
 
-function makeMessageRow(id: string, data: Record<string, any>): MessageRow {
+function makeSmsRow(
+  id: string,
+  data: Record<string, any>,
+  repliedPhones: Set<string>
+): SmsRow {
   const phone = String(data.to || data.phone || "").trim();
+  const normalizedPhone = phoneKey(phone);
 
   return {
     id,
@@ -81,13 +87,14 @@ function makeMessageRow(id: string, data: Record<string, any>): MessageRow {
     createdAtLabel: formatFirestoreDateNY(data.createdAt),
     sortSeconds: getSortSeconds(data.createdAt),
     status: String(data.status || "sent"),
+    replied: repliedPhones.has(normalizedPhone),
   };
 }
 
 export default function RepliesPage() {
   const router = useRouter();
 
-  const [items, setItems] = useState<MessageRow[]>([]);
+  const [items, setItems] = useState<SmsRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(true);
   const [search, setSearch] = useState("");
@@ -296,19 +303,18 @@ export default function RepliesPage() {
       }
 
       const rows = messageDocs
-        .map((row) => makeMessageRow(row.id, row.data))
+        .map((row) => makeSmsRow(row.id, row.data, repliedPhones))
         .filter((item) => {
           const p = phoneKey(item.phone);
           if (!p) return false;
           if (blockedSet.has(p)) return false;
-          if (repliedPhones.has(p)) return false;
           return true;
         })
         .sort((a, b) => b.sortSeconds - a.sortSeconds);
 
       setItems(rows);
     } catch (error) {
-      console.error("Failed to load unreplied outbound messages", error);
+      console.error("Failed to load sms activity", error);
       setItems([]);
       setBlockedPhones([]);
     } finally {
@@ -373,6 +379,9 @@ export default function RepliesPage() {
     });
   }, [items, search]);
 
+  const repliedCount = items.filter((item) => item.replied).length;
+  const awaitingCount = items.filter((item) => !item.replied).length;
+
   if (checking) {
     return (
       <>
@@ -415,10 +424,10 @@ export default function RepliesPage() {
             <div style={heroOverlayStyle} />
             <div style={heroInnerStyle}>
               <div>
-                <div style={heroBadgeStyle}>Outgoing SMS Waiting List</div>
-                <h1 style={heroTitleStyle}>Awaiting Replies</h1>
+                <div style={heroBadgeStyle}>SMS Activity</div>
+                <h1 style={heroTitleStyle}>All Sent SMS</h1>
                 <p style={heroTextStyle}>
-                  This page shows every outbound SMS that has been sent and has not received a reply yet. STOP and blacklisted numbers are hidden.
+                  This page shows every outbound SMS. Each row tells you whether that phone has replied or is still awaiting a reply. STOP and blacklisted numbers are hidden.
                 </p>
               </div>
 
@@ -439,10 +448,10 @@ export default function RepliesPage() {
               </div>
 
               <div style={statsGridStyle}>
-                <StatCard label="Unreplied Messages" value={String(items.length)} />
-                <StatCard label="Visible Results" value={String(filteredItems.length)} />
+                <StatCard label="All Sent SMS" value={String(items.length)} />
+                <StatCard label="Replied" value={String(repliedCount)} />
+                <StatCard label="Awaiting Reply" value={String(awaitingCount)} />
                 <StatCard label="Blocked Hidden" value={String(blockedPhones.length)} />
-                <StatCard label="Mode" value="Per Message" />
               </div>
             </div>
           </div>
@@ -450,9 +459,9 @@ export default function RepliesPage() {
           <section style={panelStyle}>
             <div style={panelHeaderStyle}>
               <div>
-                <h2 style={panelTitleStyle}>Outbound Messages Awaiting Reply</h2>
+                <h2 style={panelTitleStyle}>Outbound SMS Activity</h2>
                 <p style={panelDescStyle}>
-                  Each row below is an individual sent message where no reply has been received yet.
+                  Every row below is one sent SMS, marked as Replied or Awaiting Reply.
                 </p>
               </div>
 
@@ -464,20 +473,20 @@ export default function RepliesPage() {
             {loading ? (
               <div style={emptyStateStyle}>
                 <div style={loadingSpinnerStyle} />
-                <div style={emptyTitleStyle}>Loading messages...</div>
+                <div style={emptyTitleStyle}>Loading SMS activity...</div>
               </div>
             ) : filteredItems.length === 0 ? (
               <div style={emptyStateStyle}>
                 <div style={emptyDotStyle} />
                 <div style={emptyTitleStyle}>
                   {search.trim()
-                    ? "No matching outbound messages found."
-                    : "No pending outbound messages."}
+                    ? "No matching SMS activity found."
+                    : "No outbound SMS found."}
                 </div>
                 <div style={emptyTextStyle}>
                   {search.trim()
                     ? "Try a different phone number, name or keyword."
-                    : "All visible outbound messages have already received a reply, or no messages have been sent yet."}
+                    : "No sent SMS matched this account yet."}
                 </div>
               </div>
             ) : (
@@ -497,7 +506,15 @@ export default function RepliesPage() {
 
                       <div style={conversationRightStyle}>
                         <div style={timeStyle}>{item.createdAtLabel}</div>
-                        <div style={awaitingReplyBadgeStyle}>Awaiting Reply</div>
+                        <div
+                          style={
+                            item.replied
+                              ? repliedBadgeStyle
+                              : awaitingReplyBadgeStyle
+                          }
+                        >
+                          {item.replied ? "Replied" : "Awaiting Reply"}
+                        </div>
                       </div>
                     </div>
 
@@ -768,6 +785,18 @@ const awaitingReplyBadgeStyle: CSSProperties = {
   background: "rgba(245, 158, 11, 0.12)",
   color: "#b45309",
   border: "1px solid rgba(245, 158, 11, 0.25)",
+  borderRadius: 999,
+  padding: "7px 11px",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const repliedBadgeStyle: CSSProperties = {
+  marginTop: 8,
+  display: "inline-block",
+  background: "rgba(16, 185, 129, 0.12)",
+  color: "#059669",
+  border: "1px solid rgba(16, 185, 129, 0.25)",
   borderRadius: 999,
   padding: "7px 11px",
   fontSize: 12,
