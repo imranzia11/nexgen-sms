@@ -180,7 +180,7 @@ export default function DashboardPage() {
   const toastTimerRef = useRef<number | null>(null);
 
   const [checking, setChecking] = useState(true);
-  const [adminName, setAdminName] = useState("Admin");
+  const [adminName, setAdminName] = useState("User");
 
   const [uploading, setUploading] = useState(false);
   const [sendingSms, setSendingSms] = useState(false);
@@ -235,17 +235,23 @@ export default function DashboardPage() {
         return;
       }
 
-      const snap = await getDoc(doc(db, "users", user.uid));
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
 
-      if (!snap.exists() || snap.data().role !== "admin") {
+        if (!snap.exists() || snap.data().isActive !== true) {
+          await signOut(auth);
+          router.push("/login");
+          return;
+        }
+
+        setAdminName(snap.data().name || "User");
+        setChecking(false);
+        await loadUploads(user.uid);
+      } catch (error) {
+        console.error("Failed to validate user access", error);
         await signOut(auth);
         router.push("/login");
-        return;
       }
-
-      setAdminName(snap.data().name || "Admin");
-      setChecking(false);
-      await loadUploads();
     });
 
     return () => unsub();
@@ -263,12 +269,19 @@ export default function DashboardPage() {
     void loadLeadsForUpload(selectedUploadId);
   }, [selectedUploadId, uploads]);
 
-  const loadUploads = async () => {
+  const loadUploads = async (uid?: string) => {
     try {
       setLoadingUploads(true);
 
+      const currentUid = uid || auth.currentUser?.uid;
+      if (!currentUid) {
+        setUploads([]);
+        return;
+      }
+
       const q = query(
         collection(db, "uploads"),
+        where("uploadedBy", "==", currentUid),
         orderBy("createdAt", "desc"),
         limit(50)
       );
@@ -304,7 +317,18 @@ export default function DashboardPage() {
     try {
       setLoadingSelectedLeads(true);
 
-      const q = query(collection(db, "leads"), where("uploadId", "==", uploadId));
+      const currentUid = auth.currentUser?.uid;
+      if (!currentUid) {
+        setSelectedLeads([]);
+        return;
+      }
+
+      const q = query(
+        collection(db, "leads"),
+        where("uploadId", "==", uploadId),
+        where("uploadedBy", "==", currentUid)
+      );
+
       const snap = await getDocs(q);
 
       const items: LeadItem[] = snap.docs.map((d) => {
@@ -500,10 +524,13 @@ export default function DashboardPage() {
     setSendingSms(true);
 
     try {
+      const idToken = await user.getIdToken();
+
       const res = await fetch("/api/send-sms", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({
           campaignName: campaignName.trim() || `Campaign for ${selectedUpload.fileName}`,
@@ -525,6 +552,7 @@ export default function DashboardPage() {
       }
 
       await addDoc(collection(db, "campaigns"), {
+        ownerUid: user.uid,
         uploadId: selectedUploadId,
         fileName: selectedUpload.fileName,
         name: campaignName.trim() || `Campaign for ${selectedUpload.fileName}`,
@@ -540,15 +568,18 @@ export default function DashboardPage() {
 
       for (const result of data.results || []) {
         await addDoc(collection(db, "messages"), {
+          ownerUid: user.uid,
           uploadId: selectedUploadId,
+          createdBy: user.uid,
           to: result.phone || "",
           name: result.name || "",
-          body: message.trim(),
+          body: result.personalizedBody || message.trim(),
           status: result.ok ? result.status || "sent" : "failed",
           twilioSid: result.sid || "",
           error: result.error || "",
           code: result.code ?? null,
           sourceFileName: selectedUpload.fileName,
+          direction: "outbound",
           createdAt: serverTimestamp(),
         });
       }
@@ -609,7 +640,7 @@ export default function DashboardPage() {
         <div style={loadingCardStyle}>
           <div style={spinnerStyle} />
           <p style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#e6fffb" }}>
-            Checking admin access...
+            Checking account access...
           </p>
         </div>
       </main>
@@ -698,7 +729,7 @@ export default function DashboardPage() {
 
               <div style={adminMiniCardStyle}>
                 <div style={avatarStyle}>
-                  {adminName?.slice(0, 1)?.toUpperCase() || "A"}
+                  {adminName?.slice(0, 1)?.toUpperCase() || "U"}
                 </div>
                 <div>
                   <div style={sidebarSmallLabelStyle}>Signed in as</div>
@@ -763,8 +794,8 @@ export default function DashboardPage() {
               <div style={heroOverlayStyle} />
               <div style={heroInnerStyle}>
                 <div>
-                  <div style={heroBadgeStyle}>Premium Admin Workspace</div>
-                  <h1 style={heroTitleStyle}>Fintech SMS Admin Dashboard</h1>
+                  <div style={heroBadgeStyle}>Premium User Workspace</div>
+                  <h1 style={heroTitleStyle}>Fintech SMS Dashboard</h1>
                   <p style={heroTextStyle}>
                     Upload lead files, review imported recipients, validate US numbers, and launch campaigns from one clean control center.
                   </p>
@@ -839,7 +870,7 @@ export default function DashboardPage() {
                       </p>
                     </div>
 
-                    <button onClick={loadUploads} style={secondaryButtonStyle}>
+                    <button onClick={() => loadUploads()} style={secondaryButtonStyle}>
                       Refresh
                     </button>
                   </div>

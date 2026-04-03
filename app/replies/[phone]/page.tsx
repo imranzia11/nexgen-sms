@@ -9,16 +9,20 @@ import {
   useState,
   type CSSProperties,
 } from "react";
+import { useRouter } from "next/navigation";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
   collection,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
   updateDoc,
+  where,
 } from "firebase/firestore";
-import { db } from "../../../lib/firebase";
+import { auth, db } from "../../../lib/firebase";
 import { formatFirestoreDateNY } from "../../../lib/date";
 
 type MessageItem = {
@@ -33,27 +37,26 @@ type MessageItem = {
   createdAtLabel: string;
 };
 
-function phoneDocId(phone: string) {
-  return String(phone || "").replace(/[^\d+]/g, "");
-}
-
 export default function ReplyThreadPage({
   params,
 }: {
   params: Promise<{ phone: string }>;
 }) {
+  const router = useRouter();
   const resolved = use(params);
   const routePhone = decodeURIComponent(resolved.phone || "").trim();
-  const conversationId = useMemo(() => phoneDocId(routePhone), [routePhone]);
 
   const threadEndRef = useRef<HTMLDivElement | null>(null);
 
+  const [checking, setChecking] = useState(true);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [threadTitle, setThreadTitle] = useState(routePhone || "Conversation");
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [replyBody, setReplyBody] = useState("");
   const [status, setStatus] = useState("");
+  const [conversationId, setConversationId] = useState("");
+  const [ownerUid, setOwnerUid] = useState("");
 
   function scrollToBottom(smooth = true) {
     requestAnimationFrame(() => {
@@ -64,46 +67,126 @@ export default function ReplyThreadPage({
     });
   }
 
-  async function loadConversationMeta() {
+  async function findConversationId(uid?: string) {
+    const currentUid = uid || auth.currentUser?.uid;
+    if (!currentUid || !routePhone) {
+      return "";
+    }
+
+    const convoQuery = query(
+      collection(db, "conversations"),
+      where("ownerUid", "==", currentUid),
+      where("phone", "==", routePhone)
+    );
+
+    const convoSnap = await getDocs(convoQuery);
+
+    if (convoSnap.empty) {
+      return "";
+    }
+
+    return convoSnap.docs[0].id;
+  }
+
+  async function loadConversationMeta(uid?: string) {
     try {
-      const convoRef = doc(db, "conversations", conversationId);
+      const currentUid = uid || auth.currentUser?.uid;
+      if (!currentUid) {
+        setStatus("You are not signed in.");
+        return false;
+      }
+
+      const foundConversationId = await findConversationId(currentUid);
+
+      if (!foundConversationId) {
+        setThreadTitle(routePhone || "Conversation");
+        setConversationId("");
+        setStatus("Conversation not found.");
+        return false;
+      }
+
+      const convoRef = doc(db, "conversations", foundConversationId);
       const convoSnap = await getDoc(convoRef);
 
-      if (convoSnap.exists()) {
-        const data = convoSnap.data();
-        setThreadTitle(data.phone || routePhone || "Conversation");
-
-        if ((data.unreadCount || 0) > 0) {
-          await updateDoc(convoRef, { unreadCount: 0 });
-        }
-      } else {
+      if (!convoSnap.exists()) {
         setThreadTitle(routePhone || "Conversation");
+        setConversationId("");
+        setStatus("Conversation not found.");
+        return false;
       }
+
+      const data = convoSnap.data();
+
+      if (data.ownerUid !== currentUid) {
+        setThreadTitle("Conversation");
+        setConversationId("");
+        setStatus("You do not have access to this conversation.");
+        return false;
+      }
+
+      setConversationId(foundConversationId);
+      setOwnerUid(currentUid);
+      setThreadTitle(data.phone || routePhone || "Conversation");
+
+      if ((data.unreadCount || 0) > 0) {
+        await updateDoc(convoRef, { unreadCount: 0 });
+      }
+
+      return true;
     } catch (error: any) {
       console.error(error);
       setStatus(error?.message || "Failed to load conversation.");
+      return false;
     }
   }
 
   async function handleManualRefresh() {
     setStatus("");
-    await loadConversationMeta();
-    scrollToBottom(false);
+    const ok = await loadConversationMeta();
+    if (ok) {
+      scrollToBottom(false);
+    }
   }
 
   useEffect(() => {
-    if (!conversationId) return;
+    if (!routePhone) return;
 
     let unsubMessages: (() => void) | undefined;
 
-    const start = async () => {
+    const unsubAuth = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        await signOut(auth).catch(() => {});
+        router.push("/login");
+        return;
+      }
+
       try {
-        setLoading(true);
-        setStatus("");
-        await loadConversationMeta();
+        const userSnap = await getDoc(doc(db, "users", user.uid));
+
+        if (!userSnap.exists() || userSnap.data().isActive !== true) {
+          await signOut(auth).catch(() => {});
+          router.push("/login");
+          return;
+        }
+
+        setChecking(false);
+
+        const hasAccess = await loadConversationMeta(user.uid);
+        if (!hasAccess) {
+          setLoading(false);
+          setMessages([]);
+          return;
+        }
+
+        const foundConversationId = await findConversationId(user.uid);
+        if (!foundConversationId) {
+          setLoading(false);
+          setMessages([]);
+          return;
+        }
 
         const q = query(
-          collection(db, "conversations", conversationId, "messages"),
+          collection(db, "conversations", foundConversationId, "messages"),
           orderBy("createdAt", "asc")
         );
 
@@ -145,14 +228,13 @@ export default function ReplyThreadPage({
         setMessages([]);
         setLoading(false);
       }
-    };
-
-    void start();
+    });
 
     return () => {
+      unsubAuth();
       if (unsubMessages) unsubMessages();
     };
-  }, [conversationId, routePhone]);
+  }, [routePhone, router]);
 
   async function handleSendReply() {
     if (!routePhone) {
@@ -166,6 +248,14 @@ export default function ReplyThreadPage({
     }
 
     try {
+      const currentUser = auth.currentUser;
+      const idToken = currentUser ? await currentUser.getIdToken() : "";
+
+      if (!idToken) {
+        setStatus("You are not signed in.");
+        return;
+      }
+
       setSending(true);
       setStatus("Sending reply...");
 
@@ -173,9 +263,11 @@ export default function ReplyThreadPage({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({
           to: routePhone,
+          phone: routePhone,
           body: replyBody.trim(),
         }),
       });
@@ -199,6 +291,34 @@ export default function ReplyThreadPage({
     } finally {
       setSending(false);
     }
+  }
+
+  if (checking) {
+    return (
+      <>
+        <style jsx global>{`
+          @keyframes spin {
+            0% {
+              transform: rotate(0deg);
+            }
+            100% {
+              transform: rotate(360deg);
+            }
+          }
+        `}</style>
+
+        <main style={pageStyle}>
+          <div style={pageWrapStyle}>
+            <section style={threadPanelStyle}>
+              <div style={emptyStateStyle}>
+                <div style={loadingSpinnerStyle} />
+                <div style={emptyTitleStyle}>Checking account access...</div>
+              </div>
+            </section>
+          </div>
+        </main>
+      </>
+    );
   }
 
   return (

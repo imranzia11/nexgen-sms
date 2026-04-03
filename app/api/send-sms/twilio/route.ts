@@ -16,6 +16,13 @@ function phoneDocId(phone: string) {
   return String(phone || "").replace(/[^\d+]/g, "");
 }
 
+function toE164(raw: string) {
+  const cleaned = String(raw || "").replace(/[^\d+]/g, "");
+  if (!cleaned) return "";
+  if (cleaned.startsWith("+")) return cleaned;
+  return `+${cleaned}`;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -45,27 +52,51 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const from = String(params.From || "").trim();
-    const to = String(params.To || "").trim();
+    const from = toE164(String(params.From || "").trim());
+    const to = toE164(String(params.To || "").trim());
     const body = String(params.Body || "").trim();
     const messageSid = String(params.MessageSid || "").trim();
+    const messagingServiceSid = String(params.MessagingServiceSid || "").trim();
 
-    if (!from || !messageSid) {
+    if (!from || !messageSid || !to) {
       return xmlResponse();
     }
 
-    const convoId = phoneDocId(from);
+    const usersSnap = await adminDb
+      .collection("users")
+      .where("twilioNumber", "==", to)
+      .limit(1)
+      .get();
+
+    if (usersSnap.empty) {
+      console.error("No user mapped to Twilio number:", to);
+      return xmlResponse();
+    }
+
+    const userDoc = usersSnap.docs[0];
+    const ownerUid = userDoc.id;
+    const userData = userDoc.data() || {};
+
+    if (userData.isActive !== true) {
+      console.error("Inactive user for Twilio number:", to);
+      return xmlResponse();
+    }
+
+    const convoId = `${ownerUid}_${phoneDocId(from)}`;
     const convoRef = adminDb.collection("conversations").doc(convoId);
     const messageRef = convoRef.collection("messages").doc(messageSid);
 
     await messageRef.set(
       {
         sid: messageSid,
+        ownerUid,
         from,
         to,
         body,
         direction: "inbound",
         read: false,
+        messagingServiceSid: messagingServiceSid || "",
+        twilioNumber: to,
         createdAt: FieldValue.serverTimestamp(),
       },
       { merge: true }
@@ -73,11 +104,15 @@ export async function POST(req: NextRequest) {
 
     await convoRef.set(
       {
+        ownerUid,
         phone: from,
+        twilioNumber: to,
+        messagingServiceSid: messagingServiceSid || "",
         lastMessage: body,
         lastDirection: "inbound",
         unreadCount: FieldValue.increment(1),
         lastMessageAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true }
     );

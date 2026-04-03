@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import twilio from "twilio";
+import { getAuth } from "firebase-admin/auth";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../../../lib/firebaseAdmin";
 
@@ -31,9 +32,24 @@ function formatLeadName(name?: string) {
     .join(" ");
 }
 
-async function hasPreviouslySentSuccessfulSms(phone: string) {
+async function getUserFromRequest(req: NextRequest) {
+  const authHeader = req.headers.get("authorization") || "";
+  const token = authHeader.startsWith("Bearer ")
+    ? authHeader.slice(7)
+    : "";
+
+  if (!token) {
+    throw new Error("Missing authorization token.");
+  }
+
+  const decoded = await getAuth().verifyIdToken(token);
+  return decoded;
+}
+
+async function hasPreviouslySentSuccessfulSms(ownerUid: string, phone: string) {
   const snap = await adminDb
     .collection("messages")
+    .where("ownerUid", "==", ownerUid)
     .where("to", "==", phone)
     .where("direction", "==", "outbound")
     .limit(1)
@@ -57,7 +73,11 @@ async function hasPreviouslySentSuccessfulSms(phone: string) {
   });
 }
 
-function buildPersonalizedMessage(baseMessage: string, leadName?: string, isFirstMessage?: boolean) {
+function buildPersonalizedMessage(
+  baseMessage: string,
+  leadName?: string,
+  isFirstMessage?: boolean
+) {
   const trimmedBase = String(baseMessage || "").trim();
   if (!trimmedBase) return "";
 
@@ -72,13 +92,38 @@ function buildPersonalizedMessage(baseMessage: string, leadName?: string, isFirs
 
 export async function POST(req: NextRequest) {
   try {
+    const decodedUser = await getUserFromRequest(req);
+    const uid = decodedUser.uid;
+
+    const userSnap = await adminDb.collection("users").doc(uid).get();
+
+    if (!userSnap.exists) {
+      return NextResponse.json(
+        { ok: false, error: "User profile not found." },
+        { status: 404 }
+      );
+    }
+
+    const userData = userSnap.data() || {};
+
+    if (userData.isActive !== true) {
+      return NextResponse.json(
+        { ok: false, error: "User account is inactive." },
+        { status: 403 }
+      );
+    }
+
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken = process.env.TWILIO_AUTH_TOKEN;
-    const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+
+    const messagingServiceSid =
+      userData.messagingServiceSid || process.env.TWILIO_MESSAGING_SERVICE_SID;
+
+    const twilioNumber = userData.twilioNumber || "";
 
     if (!accountSid || !authToken || !messagingServiceSid) {
       return NextResponse.json(
-        { ok: false, error: "Missing Twilio environment variables." },
+        { ok: false, error: "Missing Twilio configuration." },
         { status: 500 }
       );
     }
@@ -142,7 +187,7 @@ export async function POST(req: NextRequest) {
       }
 
       try {
-        const alreadyMessaged = await hasPreviouslySentSuccessfulSms(formattedPhone);
+        const alreadyMessaged = await hasPreviouslySentSuccessfulSms(uid, formattedPhone);
         const isFirstMessage = !alreadyMessaged;
         const finalMessage = buildPersonalizedMessage(
           message.trim(),
@@ -156,12 +201,13 @@ export async function POST(req: NextRequest) {
           messagingServiceSid,
         });
 
-        const convoId = phoneDocId(formattedPhone);
+        const convoId = `${uid}_${phoneDocId(formattedPhone)}`;
         const convoRef = adminDb.collection("conversations").doc(convoId);
         const threadMessageRef = convoRef.collection("messages").doc(res.sid);
 
         await threadMessageRef.set({
           sid: res.sid,
+          ownerUid: uid,
           from: res.from || "",
           to: formattedPhone,
           body: finalMessage,
@@ -169,31 +215,41 @@ export async function POST(req: NextRequest) {
           status: res.status || "sent",
           read: true,
           isFirstMessage,
+          messagingServiceSid,
+          twilioNumber,
           createdAt: FieldValue.serverTimestamp(),
         });
 
         await convoRef.set(
           {
+            ownerUid: uid,
             phone: formattedPhone,
             name: lead.name || "",
+            twilioNumber,
+            messagingServiceSid,
             lastMessage: finalMessage,
             lastDirection: "outbound",
             lastMessageAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
           },
           { merge: true }
         );
 
         await adminDb.collection("messages").add({
+          ownerUid: uid,
           campaignName: campaignName || "",
           fileId: fileId || "",
           fileName: fileName || "",
           name: lead.name || "",
           to: formattedPhone,
+          from: res.from || "",
           body: finalMessage,
           sid: res.sid,
           status: res.status || "sent",
           direction: "outbound",
           isFirstMessage,
+          messagingServiceSid,
+          twilioNumber,
           createdAt: FieldValue.serverTimestamp(),
         });
 

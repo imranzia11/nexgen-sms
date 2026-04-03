@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import twilio from "twilio";
+import { getAuth } from "firebase-admin/auth";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../../../lib/firebaseAdmin";
 
@@ -7,15 +8,54 @@ function phoneDocId(phone: string) {
   return String(phone || "").replace(/[^\d+]/g, "");
 }
 
+async function getUserFromRequest(req: NextRequest) {
+  const authHeader = req.headers.get("authorization") || "";
+  const token = authHeader.startsWith("Bearer ")
+    ? authHeader.slice(7)
+    : "";
+
+  if (!token) {
+    throw new Error("Missing authorization token.");
+  }
+
+  const decoded = await getAuth().verifyIdToken(token);
+  return decoded;
+}
+
 export async function POST(req: NextRequest) {
   try {
+    const decodedUser = await getUserFromRequest(req);
+    const uid = decodedUser.uid;
+
+    const userSnap = await adminDb.collection("users").doc(uid).get();
+
+    if (!userSnap.exists) {
+      return NextResponse.json(
+        { ok: false, error: "User profile not found." },
+        { status: 404 }
+      );
+    }
+
+    const userData = userSnap.data() || {};
+
+    if (userData.isActive !== true) {
+      return NextResponse.json(
+        { ok: false, error: "User account is inactive." },
+        { status: 403 }
+      );
+    }
+
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken = process.env.TWILIO_AUTH_TOKEN;
-    const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+
+    const messagingServiceSid =
+      userData.messagingServiceSid || process.env.TWILIO_MESSAGING_SERVICE_SID;
+
+    const twilioNumber = userData.twilioNumber || "";
 
     if (!accountSid || !authToken || !messagingServiceSid) {
       return NextResponse.json(
-        { ok: false, error: "Missing Twilio environment variables." },
+        { ok: false, error: "Missing Twilio configuration." },
         { status: 500 }
       );
     }
@@ -37,7 +77,7 @@ export async function POST(req: NextRequest) {
       messagingServiceSid,
     });
 
-    const convoId = phoneDocId(to);
+    const convoId = `${uid}_${phoneDocId(to)}`;
     const convoRef = adminDb.collection("conversations").doc(convoId);
     const messageRef = convoRef.collection("messages").doc(msg.sid);
 
@@ -49,15 +89,22 @@ export async function POST(req: NextRequest) {
       direction: "outbound",
       status: msg.status || "queued",
       read: true,
+      ownerUid: uid,
+      messagingServiceSid,
+      twilioNumber,
       createdAt: FieldValue.serverTimestamp(),
     });
 
     await convoRef.set(
       {
+        ownerUid: uid,
         phone: to,
         lastMessage: body.trim(),
         lastDirection: "outbound",
         lastMessageAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        messagingServiceSid,
+        twilioNumber,
       },
       { merge: true }
     );

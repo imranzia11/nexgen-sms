@@ -2,8 +2,18 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import { collection, getDocs, orderBy, query } from "firebase/firestore";
-import { db } from "../../lib/firebase";
+import { useRouter } from "next/navigation";
+import { onAuthStateChanged, signOut } from "firebase/auth";
+import {
+  collection,
+  getDoc,
+  getDocs,
+  orderBy,
+  query,
+  where,
+  doc,
+} from "firebase/firestore";
+import { auth, db } from "../../lib/firebase";
 import { formatFirestoreDateNY } from "../../lib/date";
 
 type ConversationItem = {
@@ -21,21 +31,35 @@ function truncateText(value: string, max = 110) {
 }
 
 export default function RepliesPage() {
+  const router = useRouter();
+
   const [items, setItems] = useState<ConversationItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [checking, setChecking] = useState(true);
   const [search, setSearch] = useState("");
   const [blockedPhones, setBlockedPhones] = useState<string[]>([]);
 
-  async function loadConversations() {
+  async function loadConversations(uid?: string) {
     try {
       setLoading(true);
 
+      const currentUid = uid || auth.currentUser?.uid;
+      if (!currentUid) {
+        setItems([]);
+        setBlockedPhones([]);
+        return;
+      }
+
       const conversationsQuery = query(
         collection(db, "conversations"),
+        where("ownerUid", "==", currentUid),
         orderBy("lastMessageAt", "desc")
       );
 
-      const blacklistQuery = collection(db, "blacklisted_numbers");
+      const blacklistQuery = query(
+        collection(db, "blacklisted_numbers"),
+        where("ownerUid", "==", currentUid)
+      );
 
       const [conversationSnap, blacklistSnap] = await Promise.all([
         getDocs(conversationsQuery),
@@ -47,7 +71,7 @@ export default function RepliesPage() {
           const data = d.data();
           const status = String(data.status || "").toLowerCase();
           if (status !== "blocked") return "";
-          return String(data.phone || d.id || "").trim();
+          return String(data.phone || "").trim();
         })
         .filter(Boolean);
 
@@ -59,9 +83,9 @@ export default function RepliesPage() {
           const data = d.data();
           return {
             id: d.id,
-            phone: data.phone || d.id,
+            phone: data.phone || "-",
             lastMessage: data.lastMessage || "",
-            unreadCount: data.unreadCount || 0,
+            unreadCount: Number(data.unreadCount || 0),
             lastMessageAtLabel: formatFirestoreDateNY(data.lastMessageAt),
           };
         })
@@ -70,14 +94,41 @@ export default function RepliesPage() {
       setItems(rows);
     } catch (error) {
       console.error("Failed to load conversations", error);
+      setItems([]);
+      setBlockedPhones([]);
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    void loadConversations();
-  }, []);
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        await signOut(auth).catch(() => {});
+        router.push("/login");
+        return;
+      }
+
+      try {
+        const userSnap = await getDoc(doc(db, "users", user.uid));
+
+        if (!userSnap.exists() || userSnap.data().isActive !== true) {
+          await signOut(auth).catch(() => {});
+          router.push("/login");
+          return;
+        }
+
+        setChecking(false);
+        await loadConversations(user.uid);
+      } catch (error) {
+        console.error("Failed to validate user access", error);
+        await signOut(auth).catch(() => {});
+        router.push("/login");
+      }
+    });
+
+    return () => unsub();
+  }, [router]);
 
   const filteredItems = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -92,6 +143,34 @@ export default function RepliesPage() {
   }, [items, search]);
 
   const totalUnread = items.reduce((sum, item) => sum + (item.unreadCount || 0), 0);
+
+  if (checking) {
+    return (
+      <>
+        <style jsx global>{`
+          @keyframes spin {
+            0% {
+              transform: rotate(0deg);
+            }
+            100% {
+              transform: rotate(360deg);
+            }
+          }
+        `}</style>
+
+        <main style={pageStyle}>
+          <div style={pageWrapStyle}>
+            <section style={panelStyle}>
+              <div style={emptyStateStyle}>
+                <div style={loadingSpinnerStyle} />
+                <div style={emptyTitleStyle}>Checking account access...</div>
+              </div>
+            </section>
+          </div>
+        </main>
+      </>
+    );
+  }
 
   return (
     <>
@@ -158,7 +237,7 @@ export default function RepliesPage() {
                 </p>
               </div>
 
-              <button onClick={loadConversations} style={refreshButtonStyle}>
+              <button onClick={() => loadConversations()} style={refreshButtonStyle}>
                 Refresh
               </button>
             </div>
@@ -198,9 +277,7 @@ export default function RepliesPage() {
                         <div style={timeStyle}>{item.lastMessageAtLabel}</div>
 
                         {item.unreadCount > 0 ? (
-                          <div style={unreadBadgeStyle}>
-                            {item.unreadCount} unread
-                          </div>
+                          <div style={unreadBadgeStyle}>{item.unreadCount} unread</div>
                         ) : (
                           <div style={readBadgeStyle}>Seen</div>
                         )}

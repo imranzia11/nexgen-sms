@@ -68,25 +68,39 @@ export default function UploadDetailsPage() {
         return;
       }
 
-      const userSnap = await getDoc(doc(db, "users", user.uid));
+      try {
+        const userSnap = await getDoc(doc(db, "users", user.uid));
 
-      if (!userSnap.exists() || userSnap.data().role !== "admin") {
+        if (!userSnap.exists() || userSnap.data().isActive !== true) {
+          await signOut(auth);
+          router.push("/login");
+          return;
+        }
+
+        setChecking(false);
+        await loadUploadDetails(user.uid);
+      } catch (error) {
+        console.error("Failed to validate user access", error);
         await signOut(auth);
         router.push("/login");
-        return;
       }
-
-      setChecking(false);
-      await loadUploadDetails();
     });
 
     return () => unsub();
   }, [router, uploadId]);
 
-  const loadUploadDetails = async () => {
+  const loadUploadDetails = async (uid?: string) => {
     try {
       setLoading(true);
       setErrorText("");
+
+      const currentUid = uid || auth.currentUser?.uid;
+      if (!currentUid) {
+        setUpload(null);
+        setLeads([]);
+        setLoading(false);
+        return;
+      }
 
       const uploadSnap = await getDoc(doc(db, "uploads", uploadId));
       if (!uploadSnap.exists()) {
@@ -97,6 +111,14 @@ export default function UploadDetailsPage() {
       }
 
       const uploadData = uploadSnap.data();
+
+      if (uploadData.uploadedBy !== currentUid) {
+        setUpload(null);
+        setLeads([]);
+        setLoading(false);
+        return;
+      }
+
       setUpload({
         id: uploadSnap.id,
         fileName: uploadData.fileName || "-",
@@ -110,7 +132,8 @@ export default function UploadDetailsPage() {
 
       const leadQuery = query(
         collection(db, "leads"),
-        where("uploadId", "==", uploadId)
+        where("uploadId", "==", uploadId),
+        where("uploadedBy", "==", currentUid)
       );
 
       const leadSnap = await getDocs(leadQuery);

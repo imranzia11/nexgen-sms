@@ -74,8 +74,45 @@ export async function POST(req: NextRequest) {
       eventType = "HELP";
     }
 
+    const usersSnap = await adminDb
+      .collection("users")
+      .where("twilioNumber", "==", to)
+      .limit(1)
+      .get();
+
+    if (usersSnap.empty) {
+      console.error("No user found for Twilio number:", to);
+
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `No portal user mapped to Twilio number ${to}`,
+        },
+        { status: 404 }
+      );
+    }
+
+    const userDoc = usersSnap.docs[0];
+    const ownerUid = userDoc.id;
+    const userData = userDoc.data() || {};
+
+    if (userData.isActive !== true) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Mapped user account is inactive.",
+        },
+        { status: 403 }
+      );
+    }
+
+    const conversationId = `${ownerUid}_${phoneDocId(from)}`;
+    const blacklistDocId = `${ownerUid}_${phoneDocId(from)}`;
+
     await adminDb.collection("replies").add({
+      ownerUid,
       phone: from,
+      from,
       to,
       body,
       normalizedBody,
@@ -83,19 +120,20 @@ export async function POST(req: NextRequest) {
       messageSid,
       messagingServiceSid,
       accountSid,
+      twilioNumber: to,
       optOutType: optOutType || null,
       eventType,
       createdAt: FieldValue.serverTimestamp(),
     });
 
     if (from) {
-      const conversationId = phoneDocId(from);
       const convoRef = adminDb.collection("conversations").doc(conversationId);
       const convoMessageId = messageSid || adminDb.collection("_tmp").doc().id;
       const convoMessageRef = convoRef.collection("messages").doc(convoMessageId);
 
       await convoMessageRef.set({
         sid: messageSid || "",
+        ownerUid,
         from,
         to,
         body,
@@ -107,16 +145,21 @@ export async function POST(req: NextRequest) {
         optOutType: optOutType || null,
         messagingServiceSid: messagingServiceSid || "",
         accountSid: accountSid || "",
+        twilioNumber: to,
         createdAt: FieldValue.serverTimestamp(),
       });
 
       const convoSnap = await convoRef.get();
-      const currentUnreadCount = convoSnap.exists ? Number(convoSnap.data()?.unreadCount || 0) : 0;
+      const currentUnreadCount = convoSnap.exists
+        ? Number(convoSnap.data()?.unreadCount || 0)
+        : 0;
 
       await convoRef.set(
         {
+          ownerUid,
           phone: from,
           twilioNumber: to,
+          messagingServiceSid: messagingServiceSid || "",
           lastMessage: body,
           lastDirection: "inbound",
           lastMessageAt: FieldValue.serverTimestamp(),
@@ -128,14 +171,16 @@ export async function POST(req: NextRequest) {
 
       const blacklistRef = adminDb
         .collection("blacklisted_numbers")
-        .doc(phoneDocId(from));
+        .doc(blacklistDocId);
 
       const blacklistEventRef = adminDb.collection("blacklist_events").doc();
 
       if (eventType === "STOP") {
         await blacklistRef.set(
           {
+            ownerUid,
             phone: from,
+            twilioNumber: to,
             status: "blocked",
             source: "twilio_inbound",
             reason: "user_opt_out",
@@ -151,7 +196,9 @@ export async function POST(req: NextRequest) {
         );
 
         await blacklistEventRef.set({
+          ownerUid,
           phone: from,
+          twilioNumber: to,
           eventType: "STOP",
           body,
           normalizedBody,
@@ -162,7 +209,9 @@ export async function POST(req: NextRequest) {
       } else if (eventType === "START") {
         await blacklistRef.set(
           {
+            ownerUid,
             phone: from,
+            twilioNumber: to,
             status: "active",
             source: "twilio_inbound",
             reason: "user_opt_in",
@@ -177,7 +226,9 @@ export async function POST(req: NextRequest) {
         );
 
         await blacklistEventRef.set({
+          ownerUid,
           phone: from,
+          twilioNumber: to,
           eventType: "START",
           body,
           normalizedBody,
@@ -187,7 +238,9 @@ export async function POST(req: NextRequest) {
         });
       } else if (eventType === "HELP") {
         await blacklistEventRef.set({
+          ownerUid,
           phone: from,
+          twilioNumber: to,
           eventType: "HELP",
           body,
           normalizedBody,
@@ -198,7 +251,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ ok: true, eventType });
+    return NextResponse.json({ ok: true, eventType, ownerUid });
   } catch (error: any) {
     console.error("Twilio inbound webhook error:", error);
     return NextResponse.json(

@@ -11,6 +11,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  where,
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
 import { formatFirestoreDateNY } from "../../lib/date";
@@ -74,7 +75,7 @@ export default function BlacklistedPage() {
   const router = useRouter();
 
   const [checking, setChecking] = useState(true);
-  const [adminName, setAdminName] = useState("Admin");
+  const [adminName, setAdminName] = useState("User");
   const [loadingList, setLoadingList] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [items, setItems] = useState<BlacklistedItem[]>([]);
@@ -101,16 +102,22 @@ export default function BlacklistedPage() {
         return;
       }
 
-      const snap = await getDoc(doc(db, "users", user.uid));
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
 
-      if (!snap.exists() || snap.data().role !== "admin") {
+        if (!snap.exists() || snap.data().isActive !== true) {
+          await signOut(auth);
+          router.push("/login");
+          return;
+        }
+
+        setAdminName(snap.data().name || "User");
+        setChecking(false);
+      } catch (error) {
+        console.error("Failed to validate user access", error);
         await signOut(auth);
         router.push("/login");
-        return;
       }
-
-      setAdminName(snap.data().name || "Admin");
-      setChecking(false);
     });
 
     return () => unsub();
@@ -119,8 +126,12 @@ export default function BlacklistedPage() {
   useEffect(() => {
     if (checking) return;
 
+    const currentUid = auth.currentUser?.uid;
+    if (!currentUid) return;
+
     const q = query(
       collection(db, "blacklisted_numbers"),
+      where("ownerUid", "==", currentUid),
       orderBy("updatedAt", "desc")
     );
 
@@ -163,7 +174,14 @@ export default function BlacklistedPage() {
   useEffect(() => {
     if (checking) return;
 
-    const q = query(collection(db, "replies"), orderBy("createdAt", "desc"));
+    const currentUid = auth.currentUser?.uid;
+    if (!currentUid) return;
+
+    const q = query(
+      collection(db, "replies"),
+      where("ownerUid", "==", currentUid),
+      orderBy("createdAt", "desc")
+    );
 
     const unsub = onSnapshot(
       q,
@@ -173,7 +191,7 @@ export default function BlacklistedPage() {
 
           return {
             id: d.id,
-            phone: data.phone || "",
+            phone: data.phone || data.from || "",
             body: data.body || "",
             eventType: data.eventType || "",
             optOutType: data.optOutType || "",
@@ -242,7 +260,7 @@ export default function BlacklistedPage() {
         <div style={loadingCardStyle}>
           <div style={spinnerStyle} />
           <p style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#e6fffb" }}>
-            Checking admin access...
+            Checking account access...
           </p>
         </div>
       </main>
@@ -299,13 +317,13 @@ export default function BlacklistedPage() {
                 <div style={brandIconStyle}>N</div>
                 <div>
                   <div style={brandTitleStyle}>Nexgen SMS</div>
-                  <div style={brandSubStyle}>Admin Portal</div>
+                  <div style={brandSubStyle}>User Portal</div>
                 </div>
               </div>
 
               <div style={adminMiniCardStyle}>
                 <div style={avatarStyle}>
-                  {adminName?.slice(0, 1)?.toUpperCase() || "A"}
+                  {adminName?.slice(0, 1)?.toUpperCase() || "U"}
                 </div>
                 <div>
                   <div style={sidebarSmallLabelStyle}>Signed in as</div>
@@ -352,7 +370,7 @@ export default function BlacklistedPage() {
                   <div style={sidebarSupportIconStyle}>?</div>
                   <div style={{ textAlign: "left" }}>
                     <div style={sidebarRepliesTitleStyle}>Contact Support</div>
-                    <div style={sidebarRepliesTextStyle}>Get help for admin portal setup</div>
+                    <div style={sidebarRepliesTextStyle}>Get help for portal setup</div>
                   </div>
                 </button>
               </div>
