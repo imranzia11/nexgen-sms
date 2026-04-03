@@ -64,6 +64,16 @@ export async function POST(req: NextRequest) {
     const normalizedBody = normalizeKeyword(body);
     const optOutType = normalizeKeyword(optOutTypeRaw);
 
+    if (!from || !to) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Missing From or To number.",
+        },
+        { status: 400 }
+      );
+    }
+
     let eventType = "MESSAGE";
 
     if (optOutType === "STOP" || STOP_KEYWORDS.has(normalizedBody)) {
@@ -82,7 +92,6 @@ export async function POST(req: NextRequest) {
 
     if (usersSnap.empty) {
       console.error("No user found for Twilio number:", to);
-
       return NextResponse.json(
         {
           ok: false,
@@ -106,11 +115,30 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const ownerEmail = String(userData.email || "");
+    const ownerName = String(userData.name || "");
+    const ownerRole = String(userData.role || "user");
+
     const conversationId = `${ownerUid}_${phoneDocId(from)}`;
     const blacklistDocId = `${ownerUid}_${phoneDocId(from)}`;
 
+    const convoRef = adminDb.collection("conversations").doc(conversationId);
+    const convoSnap = await convoRef.get();
+    const convoData = convoSnap.exists ? convoSnap.data() || {} : {};
+
+    const currentUnreadCount = Number(convoData.unreadCount || 0);
+    const currentReplyCount = Number(convoData.replyCount || 0);
+    const currentOutboundCount = Number(convoData.outboundCount || 0);
+    const currentMessageCount = Number(convoData.messageCount || 0);
+    const existingName = String(convoData.name || "");
+    const existingFirstOutboundAt = convoData.firstOutboundAt || null;
+    const existingLastOutboundAt = convoData.lastOutboundAt || null;
+
     await adminDb.collection("replies").add({
       ownerUid,
+      ownerEmail,
+      ownerName,
+      ownerRole,
       phone: from,
       from,
       to,
@@ -124,136 +152,165 @@ export async function POST(req: NextRequest) {
       optOutType: optOutType || null,
       eventType,
       createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
 
-    if (from) {
-      const convoRef = adminDb.collection("conversations").doc(conversationId);
-      const convoMessageId = messageSid || adminDb.collection("_tmp").doc().id;
-      const convoMessageRef = convoRef.collection("messages").doc(convoMessageId);
+    const convoMessageId = messageSid || adminDb.collection("_tmp").doc().id;
+    const convoMessageRef = convoRef.collection("messages").doc(convoMessageId);
 
-      await convoMessageRef.set({
-        sid: messageSid || "",
+    await convoMessageRef.set({
+      sid: messageSid || "",
+      ownerUid,
+      ownerEmail,
+      ownerName,
+      ownerRole,
+      phone: from,
+      from,
+      to,
+      body,
+      normalizedBody,
+      direction: "inbound",
+      status: "received",
+      read: false,
+      eventType,
+      optOutType: optOutType || null,
+      messagingServiceSid: messagingServiceSid || "",
+      accountSid: accountSid || "",
+      twilioNumber: to,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    await convoRef.set(
+      {
         ownerUid,
-        from,
-        to,
-        body,
-        normalizedBody,
-        direction: "inbound",
-        status: "received",
-        read: false,
-        eventType,
-        optOutType: optOutType || null,
-        messagingServiceSid: messagingServiceSid || "",
-        accountSid: accountSid || "",
+        ownerEmail,
+        ownerName,
+        ownerRole,
+        phone: from,
+        name: existingName,
         twilioNumber: to,
-        createdAt: FieldValue.serverTimestamp(),
-      });
+        assignedTwilioNumber: to,
+        messagingServiceSid: messagingServiceSid || "",
+        lastMessage: body,
+        lastDirection: "inbound",
+        lastMessageAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
 
-      const convoSnap = await convoRef.get();
-      const currentUnreadCount = convoSnap.exists
-        ? Number(convoSnap.data()?.unreadCount || 0)
-        : 0;
+        status: "replied",
+        hasReply: true,
+        unreadCount: currentUnreadCount + 1,
+        replyCount: currentReplyCount + 1,
+        outboundCount: currentOutboundCount,
+        messageCount: currentMessageCount + 1,
 
-      await convoRef.set(
+        firstOutboundAt: existingFirstOutboundAt || null,
+        lastOutboundAt: existingLastOutboundAt || null,
+        lastInboundAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    const blacklistRef = adminDb
+      .collection("blacklisted_numbers")
+      .doc(blacklistDocId);
+
+    const blacklistEventRef = adminDb.collection("blacklist_events").doc();
+
+    if (eventType === "STOP") {
+      await blacklistRef.set(
         {
           ownerUid,
+          ownerEmail,
+          ownerName,
           phone: from,
           twilioNumber: to,
-          messagingServiceSid: messagingServiceSid || "",
-          lastMessage: body,
-          lastDirection: "inbound",
-          lastMessageAt: FieldValue.serverTimestamp(),
-          unreadCount: currentUnreadCount + 1,
+          status: "blocked",
+          source: "twilio_inbound",
+          reason: "user_opt_out",
+          lastKeyword: optOutType || normalizedBody || "STOP",
+          lastBody: body,
+          lastMessageSid: messageSid || null,
+          messagingServiceSid: messagingServiceSid || null,
+          blockedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+          unblockedAt: null,
+        },
+        { merge: true }
+      );
+
+      await blacklistEventRef.set({
+        ownerUid,
+        ownerEmail,
+        ownerName,
+        phone: from,
+        twilioNumber: to,
+        eventType: "STOP",
+        body,
+        normalizedBody,
+        messageSid: messageSid || null,
+        messagingServiceSid: messagingServiceSid || null,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    } else if (eventType === "START") {
+      await blacklistRef.set(
+        {
+          ownerUid,
+          ownerEmail,
+          ownerName,
+          phone: from,
+          twilioNumber: to,
+          status: "active",
+          source: "twilio_inbound",
+          reason: "user_opt_in",
+          lastKeyword: optOutType || normalizedBody || "START",
+          lastBody: body,
+          lastMessageSid: messageSid || null,
+          messagingServiceSid: messagingServiceSid || null,
+          unblockedAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true }
       );
 
-      const blacklistRef = adminDb
-        .collection("blacklisted_numbers")
-        .doc(blacklistDocId);
-
-      const blacklistEventRef = adminDb.collection("blacklist_events").doc();
-
-      if (eventType === "STOP") {
-        await blacklistRef.set(
-          {
-            ownerUid,
-            phone: from,
-            twilioNumber: to,
-            status: "blocked",
-            source: "twilio_inbound",
-            reason: "user_opt_out",
-            lastKeyword: optOutType || normalizedBody || "STOP",
-            lastBody: body,
-            lastMessageSid: messageSid || null,
-            messagingServiceSid: messagingServiceSid || null,
-            blockedAt: FieldValue.serverTimestamp(),
-            updatedAt: FieldValue.serverTimestamp(),
-            unblockedAt: null,
-          },
-          { merge: true }
-        );
-
-        await blacklistEventRef.set({
-          ownerUid,
-          phone: from,
-          twilioNumber: to,
-          eventType: "STOP",
-          body,
-          normalizedBody,
-          messageSid: messageSid || null,
-          messagingServiceSid: messagingServiceSid || null,
-          createdAt: FieldValue.serverTimestamp(),
-        });
-      } else if (eventType === "START") {
-        await blacklistRef.set(
-          {
-            ownerUid,
-            phone: from,
-            twilioNumber: to,
-            status: "active",
-            source: "twilio_inbound",
-            reason: "user_opt_in",
-            lastKeyword: optOutType || normalizedBody || "START",
-            lastBody: body,
-            lastMessageSid: messageSid || null,
-            messagingServiceSid: messagingServiceSid || null,
-            unblockedAt: FieldValue.serverTimestamp(),
-            updatedAt: FieldValue.serverTimestamp(),
-          },
-          { merge: true }
-        );
-
-        await blacklistEventRef.set({
-          ownerUid,
-          phone: from,
-          twilioNumber: to,
-          eventType: "START",
-          body,
-          normalizedBody,
-          messageSid: messageSid || null,
-          messagingServiceSid: messagingServiceSid || null,
-          createdAt: FieldValue.serverTimestamp(),
-        });
-      } else if (eventType === "HELP") {
-        await blacklistEventRef.set({
-          ownerUid,
-          phone: from,
-          twilioNumber: to,
-          eventType: "HELP",
-          body,
-          normalizedBody,
-          messageSid: messageSid || null,
-          messagingServiceSid: messagingServiceSid || null,
-          createdAt: FieldValue.serverTimestamp(),
-        });
-      }
+      await blacklistEventRef.set({
+        ownerUid,
+        ownerEmail,
+        ownerName,
+        phone: from,
+        twilioNumber: to,
+        eventType: "START",
+        body,
+        normalizedBody,
+        messageSid: messageSid || null,
+        messagingServiceSid: messagingServiceSid || null,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    } else if (eventType === "HELP") {
+      await blacklistEventRef.set({
+        ownerUid,
+        ownerEmail,
+        ownerName,
+        phone: from,
+        twilioNumber: to,
+        eventType: "HELP",
+        body,
+        normalizedBody,
+        messageSid: messageSid || null,
+        messagingServiceSid: messagingServiceSid || null,
+        createdAt: FieldValue.serverTimestamp(),
+      });
     }
 
-    return NextResponse.json({ ok: true, eventType, ownerUid });
+    return NextResponse.json({
+      ok: true,
+      eventType,
+      ownerUid,
+      conversationId,
+    });
   } catch (error: any) {
     console.error("Twilio inbound webhook error:", error);
+
     return NextResponse.json(
       {
         ok: false,

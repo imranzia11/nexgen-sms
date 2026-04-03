@@ -137,77 +137,20 @@ export default function RepliesPage() {
           })
           .filter(Boolean);
       } else {
-        const blacklistDocs = new Map<string, Record<string, any>>();
-        const blacklistQueries: Query<DocumentData>[] = [];
-
-        if (currentProfile.messagingServiceSid) {
-          blacklistQueries.push(
-            query(
-              collection(db, "blacklisted_numbers"),
-              where(
-                "messagingServiceSid",
-                "==",
-                currentProfile.messagingServiceSid
-              )
-            )
-          );
-        }
-
-        if (currentProfile.twilioNumber) {
-          blacklistQueries.push(
-            query(
-              collection(db, "blacklisted_numbers"),
-              where("twilioNumber", "==", currentProfile.twilioNumber)
-            )
-          );
-          blacklistQueries.push(
-            query(
-              collection(db, "blacklisted_numbers"),
-              where(
-                "assignedTwilioNumber",
-                "==",
-                currentProfile.twilioNumber
-              )
-            )
-          );
-        }
-
-        if (currentProfile.assignedTwilioNumber) {
-          blacklistQueries.push(
-            query(
-              collection(db, "blacklisted_numbers"),
-              where(
-                "assignedTwilioNumber",
-                "==",
-                currentProfile.assignedTwilioNumber
-              )
-            )
-          );
-          blacklistQueries.push(
-            query(
-              collection(db, "blacklisted_numbers"),
-              where("twilioNumber", "==", currentProfile.assignedTwilioNumber)
-            )
-          );
-        }
-
-        for (const q of blacklistQueries) {
-          try {
-            const snap = await getDocs(q);
-            for (const d of snap.docs) {
-              blacklistDocs.set(d.id, d.data() as Record<string, any>);
-            }
-          } catch (error) {
-            console.error("Blacklist query failed", error);
-          }
-        }
-
-        blocked = Array.from(blacklistDocs.values())
-          .map((data) =>
-            String(data.status || "").toLowerCase() === "blocked"
-              ? String(data.phone || "").trim()
-              : ""
+        const blacklistSnap = await getDocs(
+          query(
+            collection(db, "blacklisted_numbers"),
+            where("ownerUid", "==", currentProfile.uid)
           )
+        );
+
+        blocked = blacklistSnap.docs
+          .map((d) => {
+            const data = d.data();
+            return String(data.status || "").toLowerCase() === "blocked"
+              ? String(data.phone || "").trim()
+              : "";
+          })
           .filter(Boolean);
       }
 
@@ -221,71 +164,12 @@ export default function RepliesPage() {
           query(collection(db, "conversations"), orderBy("lastMessageAt", "desc"))
         );
       } else {
-        const map = new Map<string, { id: string; data: Record<string, any> }>();
-        const queriesToTry: Query<DocumentData>[] = [];
-
-        queriesToTry.push(
+        docs = await runQuery(
           query(
             collection(db, "conversations"),
             where("ownerUid", "==", currentProfile.uid)
           )
         );
-
-        if (currentProfile.messagingServiceSid) {
-          queriesToTry.push(
-            query(
-              collection(db, "conversations"),
-              where(
-                "messagingServiceSid",
-                "==",
-                currentProfile.messagingServiceSid
-              )
-            )
-          );
-        }
-
-        if (currentProfile.twilioNumber) {
-          queriesToTry.push(
-            query(
-              collection(db, "conversations"),
-              where("twilioNumber", "==", currentProfile.twilioNumber)
-            )
-          );
-          queriesToTry.push(
-            query(
-              collection(db, "conversations"),
-              where(
-                "assignedTwilioNumber",
-                "==",
-                currentProfile.twilioNumber
-              )
-            )
-          );
-        }
-
-        if (currentProfile.assignedTwilioNumber) {
-          queriesToTry.push(
-            query(
-              collection(db, "conversations"),
-              where(
-                "assignedTwilioNumber",
-                "==",
-                currentProfile.assignedTwilioNumber
-              )
-            )
-          );
-        }
-
-        for (const q of queriesToTry) {
-          try {
-            const rows = await runQuery(q);
-            for (const row of rows) map.set(row.id, row);
-          } catch (error) {
-            console.error("Conversations query failed", error);
-          }
-        }
-
-        docs = Array.from(map.values());
       }
 
       const rows = docs
