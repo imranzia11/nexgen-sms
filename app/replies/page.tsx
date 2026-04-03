@@ -10,7 +10,6 @@ import {
   getDocs,
   orderBy,
   query,
-  where,
   doc,
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
@@ -52,14 +51,10 @@ export default function RepliesPage() {
 
       const conversationsQuery = query(
         collection(db, "conversations"),
-        where("ownerUid", "==", currentUid),
         orderBy("lastMessageAt", "desc")
       );
 
-      const blacklistQuery = query(
-        collection(db, "blacklisted_numbers"),
-        where("ownerUid", "==", currentUid)
-      );
+      const blacklistQuery = query(collection(db, "blacklisted_numbers"));
 
       const [conversationSnap, blacklistSnap] = await Promise.all([
         getDocs(conversationsQuery),

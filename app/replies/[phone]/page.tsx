@@ -4,7 +4,6 @@ import Link from "next/link";
 import {
   use,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -19,7 +18,6 @@ import {
   onSnapshot,
   orderBy,
   query,
-  updateDoc,
   where,
 } from "firebase/firestore";
 import { auth, db } from "../../../lib/firebase";
@@ -35,6 +33,7 @@ type MessageItem = {
   status?: string;
   read?: boolean;
   createdAtLabel: string;
+  createdAtMs: number;
 };
 
 export default function ReplyThreadPage({
@@ -55,8 +54,6 @@ export default function ReplyThreadPage({
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [replyBody, setReplyBody] = useState("");
   const [status, setStatus] = useState("");
-  const [conversationId, setConversationId] = useState("");
-  const [ownerUid, setOwnerUid] = useState("");
 
   function scrollToBottom(smooth = true) {
     requestAnimationFrame(() => {
@@ -67,71 +64,28 @@ export default function ReplyThreadPage({
     });
   }
 
-  async function findConversationId(uid?: string) {
-    const currentUid = uid || auth.currentUser?.uid;
-    if (!currentUid || !routePhone) {
-      return "";
+  function toMillis(value: any) {
+    if (value && typeof value.toMillis === "function") {
+      return value.toMillis();
     }
-
-    const convoQuery = query(
-      collection(db, "conversations"),
-      where("ownerUid", "==", currentUid),
-      where("phone", "==", routePhone)
-    );
-
-    const convoSnap = await getDocs(convoQuery);
-
-    if (convoSnap.empty) {
-      return "";
+    if (value instanceof Date) {
+      return value.getTime();
     }
-
-    return convoSnap.docs[0].id;
+    if (typeof value === "number") {
+      return value;
+    }
+    return 0;
   }
 
-  async function loadConversationMeta(uid?: string) {
+  async function loadConversationMeta() {
     try {
-      const currentUid = uid || auth.currentUser?.uid;
-      if (!currentUid) {
-        setStatus("You are not signed in.");
+      if (!routePhone) {
+        setStatus("Phone number is missing.");
         return false;
       }
 
-      const foundConversationId = await findConversationId(currentUid);
-
-      if (!foundConversationId) {
-        setThreadTitle(routePhone || "Conversation");
-        setConversationId("");
-        setStatus("Conversation not found.");
-        return false;
-      }
-
-      const convoRef = doc(db, "conversations", foundConversationId);
-      const convoSnap = await getDoc(convoRef);
-
-      if (!convoSnap.exists()) {
-        setThreadTitle(routePhone || "Conversation");
-        setConversationId("");
-        setStatus("Conversation not found.");
-        return false;
-      }
-
-      const data = convoSnap.data();
-
-      if (data.ownerUid !== currentUid) {
-        setThreadTitle("Conversation");
-        setConversationId("");
-        setStatus("You do not have access to this conversation.");
-        return false;
-      }
-
-      setConversationId(foundConversationId);
-      setOwnerUid(currentUid);
-      setThreadTitle(data.phone || routePhone || "Conversation");
-
-      if ((data.unreadCount || 0) > 0) {
-        await updateDoc(convoRef, { unreadCount: 0 });
-      }
-
+      setThreadTitle(routePhone || "Conversation");
+      setStatus("");
       return true;
     } catch (error: any) {
       console.error(error);
@@ -143,15 +97,111 @@ export default function ReplyThreadPage({
   async function handleManualRefresh() {
     setStatus("");
     const ok = await loadConversationMeta();
-    if (ok) {
-      scrollToBottom(false);
+    if (!ok) return;
+
+    try {
+      setLoading(true);
+
+      const outboundQuery = query(
+        collection(db, "messages"),
+        where("to", "==", routePhone),
+        orderBy("createdAt", "asc")
+      );
+
+      const inboundQueryPrimary = query(
+        collection(db, "replies"),
+        where("from", "==", routePhone),
+        orderBy("createdAt", "asc")
+      );
+
+      const inboundQueryFallback = query(
+        collection(db, "replies"),
+        where("phone", "==", routePhone),
+        orderBy("createdAt", "asc")
+      );
+
+      const [outboundSnap, inboundSnapPrimary, inboundSnapFallback] =
+        await Promise.all([
+          getDocs(outboundQuery),
+          getDocs(inboundQueryPrimary),
+          getDocs(inboundQueryFallback),
+        ]);
+
+      const outboundItems: MessageItem[] = outboundSnap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: `msg-${d.id}`,
+          sid: data.sid || "",
+          from: data.from || "",
+          to: data.to || "",
+          body: data.body || "",
+          direction: data.direction || "outbound",
+          status: data.status || "",
+          read: !!data.read,
+          createdAtLabel: formatFirestoreDateNY(data.createdAt),
+          createdAtMs: toMillis(data.createdAt),
+        };
+      });
+
+      const inboundMap = new Map<string, MessageItem>();
+
+      [...inboundSnapPrimary.docs, ...inboundSnapFallback.docs].forEach((d) => {
+        const data = d.data();
+        const id = `reply-${d.id}`;
+        inboundMap.set(id, {
+          id,
+          sid: data.sid || "",
+          from: data.from || data.phone || "",
+          to: data.to || "",
+          body: data.body || "",
+          direction: data.direction || "inbound",
+          status: data.status || "",
+          read: !!data.read,
+          createdAtLabel: formatFirestoreDateNY(data.createdAt),
+          createdAtMs: toMillis(data.createdAt),
+        });
+      });
+
+      const merged = [...outboundItems, ...Array.from(inboundMap.values())].sort(
+        (a, b) => a.createdAtMs - b.createdAtMs
+      );
+
+      setMessages(merged);
+    } catch (error: any) {
+      console.error(error);
+      setStatus(error?.message || "Failed to refresh conversation.");
+      setMessages([]);
+    } finally {
+      setLoading(false);
+      setTimeout(() => {
+        scrollToBottom(false);
+      }, 60);
     }
   }
 
   useEffect(() => {
     if (!routePhone) return;
 
-    let unsubMessages: (() => void) | undefined;
+    let unsubOutbound: (() => void) | undefined;
+    let unsubInboundPrimary: (() => void) | undefined;
+    let unsubInboundFallback: (() => void) | undefined;
+
+    const outboundStore = new Map<string, MessageItem>();
+    const inboundStore = new Map<string, MessageItem>();
+
+    function syncMergedMessages() {
+      const merged = [
+        ...Array.from(outboundStore.values()),
+        ...Array.from(inboundStore.values()),
+      ].sort((a, b) => a.createdAtMs - b.createdAtMs);
+
+      setMessages(merged);
+      setLoading(false);
+
+      setTimeout(() => {
+        scrollToBottom(false);
+      }, 60);
+    }
 
     const unsubAuth = onAuthStateChanged(auth, async (user) => {
       if (!user) {
@@ -171,54 +221,122 @@ export default function ReplyThreadPage({
 
         setChecking(false);
 
-        const hasAccess = await loadConversationMeta(user.uid);
-        if (!hasAccess) {
+        const ok = await loadConversationMeta();
+        if (!ok) {
           setLoading(false);
           setMessages([]);
           return;
         }
 
-        const foundConversationId = await findConversationId(user.uid);
-        if (!foundConversationId) {
-          setLoading(false);
-          setMessages([]);
-          return;
-        }
-
-        const q = query(
-          collection(db, "conversations", foundConversationId, "messages"),
+        const outboundQuery = query(
+          collection(db, "messages"),
+          where("to", "==", routePhone),
           orderBy("createdAt", "asc")
         );
 
-        unsubMessages = onSnapshot(
-          q,
+        const inboundQueryPrimary = query(
+          collection(db, "replies"),
+          where("from", "==", routePhone),
+          orderBy("createdAt", "asc")
+        );
+
+        const inboundQueryFallback = query(
+          collection(db, "replies"),
+          where("phone", "==", routePhone),
+          orderBy("createdAt", "asc")
+        );
+
+        unsubOutbound = onSnapshot(
+          outboundQuery,
           (snap) => {
-            const items: MessageItem[] = snap.docs.map((d) => {
+            outboundStore.clear();
+
+            snap.docs.forEach((d) => {
               const data = d.data();
-              return {
-                id: d.id,
+              outboundStore.set(`msg-${d.id}`, {
+                id: `msg-${d.id}`,
                 sid: data.sid || "",
                 from: data.from || "",
                 to: data.to || "",
                 body: data.body || "",
-                direction: data.direction || "",
+                direction: data.direction || "outbound",
                 status: data.status || "",
                 read: !!data.read,
                 createdAtLabel: formatFirestoreDateNY(data.createdAt),
-              };
+                createdAtMs: toMillis(data.createdAt),
+              });
             });
 
-            setMessages(items);
-            setLoading(false);
-
-            setTimeout(() => {
-              scrollToBottom(false);
-            }, 60);
+            syncMergedMessages();
           },
           (error: any) => {
             console.error(error);
-            setStatus(error?.message || "Failed to load conversation.");
-            setMessages([]);
+            setStatus(error?.message || "Failed to load outbound messages.");
+            setLoading(false);
+          }
+        );
+
+        unsubInboundPrimary = onSnapshot(
+          inboundQueryPrimary,
+          (snap) => {
+            // remove previous items that came from this source
+            Array.from(inboundStore.keys()).forEach((key) => {
+              if (key.startsWith("reply-primary-")) inboundStore.delete(key);
+            });
+
+            snap.docs.forEach((d) => {
+              const data = d.data();
+              inboundStore.set(`reply-primary-${d.id}`, {
+                id: `reply-primary-${d.id}`,
+                sid: data.sid || "",
+                from: data.from || data.phone || "",
+                to: data.to || "",
+                body: data.body || "",
+                direction: data.direction || "inbound",
+                status: data.status || "",
+                read: !!data.read,
+                createdAtLabel: formatFirestoreDateNY(data.createdAt),
+                createdAtMs: toMillis(data.createdAt),
+              });
+            });
+
+            syncMergedMessages();
+          },
+          (error: any) => {
+            console.error(error);
+            setStatus(error?.message || "Failed to load inbound replies.");
+            setLoading(false);
+          }
+        );
+
+        unsubInboundFallback = onSnapshot(
+          inboundQueryFallback,
+          (snap) => {
+            Array.from(inboundStore.keys()).forEach((key) => {
+              if (key.startsWith("reply-fallback-")) inboundStore.delete(key);
+            });
+
+            snap.docs.forEach((d) => {
+              const data = d.data();
+              inboundStore.set(`reply-fallback-${d.id}`, {
+                id: `reply-fallback-${d.id}`,
+                sid: data.sid || "",
+                from: data.from || data.phone || "",
+                to: data.to || "",
+                body: data.body || "",
+                direction: data.direction || "inbound",
+                status: data.status || "",
+                read: !!data.read,
+                createdAtLabel: formatFirestoreDateNY(data.createdAt),
+                createdAtMs: toMillis(data.createdAt),
+              });
+            });
+
+            syncMergedMessages();
+          },
+          (error: any) => {
+            console.error(error);
+            setStatus(error?.message || "Failed to load inbound replies.");
             setLoading(false);
           }
         );
@@ -232,7 +350,9 @@ export default function ReplyThreadPage({
 
     return () => {
       unsubAuth();
-      if (unsubMessages) unsubMessages();
+      if (unsubOutbound) unsubOutbound();
+      if (unsubInboundPrimary) unsubInboundPrimary();
+      if (unsubInboundFallback) unsubInboundFallback();
     };
   }, [routePhone, router]);
 
