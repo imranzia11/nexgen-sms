@@ -21,10 +21,14 @@ import { formatFirestoreDateNY } from "../../lib/date";
 type ConversationItem = {
   id: string;
   phone: string;
+  name?: string;
   lastMessage: string;
   unreadCount: number;
   lastMessageAtLabel: string;
   sortSeconds: number;
+  hasReply: boolean;
+  status: string;
+  lastDirection: string;
 };
 
 type AppUser = {
@@ -79,13 +83,44 @@ function makeConversationItem(
       "-"
   ).trim();
 
+  const hasReply = data.hasReply === true || String(data.lastDirection || "") === "inbound";
+  const lastDirection = String(data.lastDirection || "").toLowerCase();
+  const status = String(
+    data.status || (hasReply ? "replied" : "awaiting_reply")
+  ).toLowerCase();
+
   return {
     id,
     phone: customerPhone,
+    name: String(data.name || ""),
     lastMessage: String(data.lastMessage || ""),
     unreadCount: Number(data.unreadCount || 0),
     lastMessageAtLabel: formatFirestoreDateNY(data.lastMessageAt),
     sortSeconds: getSortSeconds(data),
+    hasReply,
+    status,
+    lastDirection,
+  };
+}
+
+function getBadge(item: ConversationItem) {
+  if (!item.hasReply || item.status === "awaiting_reply" || item.lastDirection === "outbound") {
+    return {
+      label: "Awaiting Reply",
+      style: awaitingReplyBadgeStyle,
+    };
+  }
+
+  if (item.unreadCount > 0) {
+    return {
+      label: `${item.unreadCount} unread`,
+      style: unreadBadgeStyle,
+    };
+  }
+
+  return {
+    label: "Seen",
+    style: readBadgeStyle,
   };
 }
 
@@ -334,7 +369,8 @@ export default function RepliesPage() {
     return items.filter((item) => {
       return (
         item.phone.toLowerCase().includes(term) ||
-        item.lastMessage.toLowerCase().includes(term)
+        item.lastMessage.toLowerCase().includes(term) ||
+        String(item.name || "").toLowerCase().includes(term)
       );
     });
   }, [items, search]);
@@ -398,7 +434,7 @@ export default function RepliesPage() {
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search by phone number or message"
+                    placeholder="Search by phone number, name or message"
                     style={searchInputStyle}
                   />
                 </div>
@@ -444,44 +480,45 @@ export default function RepliesPage() {
                 </div>
                 <div style={emptyTextStyle}>
                   {search.trim()
-                    ? "Try a different phone number or keyword."
+                    ? "Try a different phone number, name or keyword."
                     : "No conversations matched this user account yet."}
                 </div>
               </div>
             ) : (
               <div style={conversationGridStyle}>
-                {filteredItems.map((item) => (
-                  <Link
-                    key={item.id}
-                    href={`/replies/${encodeURIComponent(item.phone)}`}
-                    style={conversationCardStyle}
-                  >
-                    <div style={conversationTopStyle}>
-                      <div>
-                        <div style={phoneStyle}>{item.phone}</div>
-                        <div style={timeStyleMobile}>{item.lastMessageAtLabel}</div>
+                {filteredItems.map((item) => {
+                  const badge = getBadge(item);
+
+                  return (
+                    <Link
+                      key={item.id}
+                      href={`/replies/${encodeURIComponent(item.phone)}`}
+                      style={conversationCardStyle}
+                    >
+                      <div style={conversationTopStyle}>
+                        <div>
+                          <div style={phoneStyle}>{item.phone}</div>
+                          {item.name ? <div style={nameStyle}>{item.name}</div> : null}
+                          <div style={timeStyleMobile}>{item.lastMessageAtLabel}</div>
+                        </div>
+
+                        <div style={conversationRightStyle}>
+                          <div style={timeStyle}>{item.lastMessageAtLabel}</div>
+                          <div style={badge.style}>{badge.label}</div>
+                        </div>
                       </div>
 
-                      <div style={conversationRightStyle}>
-                        <div style={timeStyle}>{item.lastMessageAtLabel}</div>
-                        {item.unreadCount > 0 ? (
-                          <div style={unreadBadgeStyle}>{item.unreadCount} unread</div>
-                        ) : (
-                          <div style={readBadgeStyle}>Seen</div>
-                        )}
+                      <div style={messagePreviewStyle}>
+                        {truncateText(item.lastMessage || "-")}
                       </div>
-                    </div>
 
-                    <div style={messagePreviewStyle}>
-                      {truncateText(item.lastMessage || "-")}
-                    </div>
-
-                    <div style={openRowStyle}>
-                      <span style={openTextStyle}>Open conversation</span>
-                      <span style={openArrowStyle}>→</span>
-                    </div>
-                  </Link>
-                ))}
+                      <div style={openRowStyle}>
+                        <span style={openTextStyle}>Open conversation</span>
+                        <span style={openArrowStyle}>→</span>
+                      </div>
+                    </Link>
+                  );
+                })}
               </div>
             )}
           </section>
@@ -711,6 +748,13 @@ const phoneStyle: CSSProperties = {
   wordBreak: "break-word",
 };
 
+const nameStyle: CSSProperties = {
+  marginTop: 6,
+  color: "#0d9488",
+  fontSize: 14,
+  fontWeight: 700,
+};
+
 const conversationRightStyle: CSSProperties = {
   textAlign: "right",
 };
@@ -743,6 +787,18 @@ const readBadgeStyle: CSSProperties = {
   background: "rgba(16, 185, 129, 0.12)",
   color: "#059669",
   border: "1px solid rgba(16, 185, 129, 0.25)",
+  borderRadius: 999,
+  padding: "7px 11px",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const awaitingReplyBadgeStyle: CSSProperties = {
+  marginTop: 8,
+  display: "inline-block",
+  background: "rgba(245, 158, 11, 0.12)",
+  color: "#b45309",
+  border: "1px solid rgba(245, 158, 11, 0.25)",
   borderRadius: 999,
   padding: "7px 11px",
   fontSize: 12,
