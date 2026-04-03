@@ -11,7 +11,6 @@ import {
   onSnapshot,
   orderBy,
   query,
-  where,
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
 import { formatFirestoreDateNY } from "../../lib/date";
@@ -126,12 +125,8 @@ export default function BlacklistedPage() {
   useEffect(() => {
     if (checking) return;
 
-    const currentUid = auth.currentUser?.uid;
-    if (!currentUid) return;
-
     const q = query(
       collection(db, "blacklisted_numbers"),
-      where("ownerUid", "==", currentUid),
       orderBy("updatedAt", "desc")
     );
 
@@ -174,12 +169,8 @@ export default function BlacklistedPage() {
   useEffect(() => {
     if (checking) return;
 
-    const currentUid = auth.currentUser?.uid;
-    if (!currentUid) return;
-
     const q = query(
       collection(db, "replies"),
-      where("ownerUid", "==", currentUid),
       orderBy("createdAt", "desc")
     );
 
