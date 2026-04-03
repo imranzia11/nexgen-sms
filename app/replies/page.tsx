@@ -25,8 +25,8 @@ type SmsRow = {
   body: string;
   createdAtLabel: string;
   sortSeconds: number;
+  status: string;
   replied: boolean;
-  lastDirection: string;
 };
 
 type AppUser = {
@@ -40,6 +40,8 @@ type AppUser = {
   phoneNumber?: string;
   messagingServiceSid?: string;
 };
+
+type FilterMode = "all" | "replied" | "awaiting";
 
 function truncateText(value: string, max = 110) {
   if (!value) return "-";
@@ -71,22 +73,23 @@ function phoneKey(value: unknown) {
   return String(value || "").replace(/[^\d+]/g, "").trim();
 }
 
-function makeRow(id: string, data: Record<string, any>): SmsRow {
-  const phone = String(data.phone || data.to || "").trim();
-  const replied =
-    data.hasReply === true ||
-    String(data.status || "").toLowerCase() === "replied" ||
-    String(data.lastDirection || "").toLowerCase() === "inbound";
+function makeSmsRow(
+  id: string,
+  data: Record<string, any>,
+  repliedPhones: Set<string>
+): SmsRow {
+  const phone = String(data.to || data.phone || "").trim();
+  const normalizedPhone = phoneKey(phone);
 
   return {
     id,
     phone,
     name: String(data.name || ""),
-    body: String(data.lastMessage || ""),
-    createdAtLabel: formatFirestoreDateNY(data.lastMessageAt),
-    sortSeconds: getSortSeconds(data.lastMessageAt),
-    replied,
-    lastDirection: String(data.lastDirection || ""),
+    body: String(data.body || ""),
+    createdAtLabel: formatFirestoreDateNY(data.createdAt),
+    sortSeconds: getSortSeconds(data.createdAt),
+    status: String(data.status || "sent"),
+    replied: repliedPhones.has(normalizedPhone),
   };
 }
 
@@ -99,6 +102,7 @@ export default function RepliesPage() {
   const [search, setSearch] = useState("");
   const [blockedPhones, setBlockedPhones] = useState<string[]>([]);
   const [profile, setProfile] = useState<AppUser | null>(null);
+  const [filterMode, setFilterMode] = useState<FilterMode>("all");
 
   async function runQuery(q: Query<DocumentData>) {
     const snap = await getDocs(q);
@@ -120,6 +124,7 @@ export default function RepliesPage() {
       }
 
       let blocked: string[] = [];
+      const repliedPhones = new Set<string>();
 
       if (isAdmin(currentProfile.role)) {
         const blacklistSnap = await getDocs(query(collection(db, "blacklisted_numbers")));
@@ -159,21 +164,6 @@ export default function RepliesPage() {
           );
         }
 
-        if (currentProfile.assignedTwilioNumber) {
-          blacklistQueries.push(
-            query(
-              collection(db, "blacklisted_numbers"),
-              where("assignedTwilioNumber", "==", currentProfile.assignedTwilioNumber)
-            )
-          );
-          blacklistQueries.push(
-            query(
-              collection(db, "blacklisted_numbers"),
-              where("twilioNumber", "==", currentProfile.assignedTwilioNumber)
-            )
-          );
-        }
-
         for (const q of blacklistQueries) {
           try {
             const snap = await getDocs(q);
@@ -197,67 +187,113 @@ export default function RepliesPage() {
       const blockedSet = new Set(blocked.map((phone) => phoneKey(phone)));
       setBlockedPhones(blocked);
 
-      let docs: Array<{ id: string; data: Record<string, any> }> = [];
+      try {
+        let replyDocs: Array<{ id: string; data: Record<string, any> }> = [];
+
+        if (isAdmin(currentProfile.role)) {
+          replyDocs = await runQuery(query(collection(db, "replies")));
+        } else {
+          const replyQueries: Query<DocumentData>[] = [
+            query(collection(db, "replies"), where("ownerUid", "==", currentProfile.uid)),
+          ];
+
+          if (currentProfile.messagingServiceSid) {
+            replyQueries.push(
+              query(
+                collection(db, "replies"),
+                where("messagingServiceSid", "==", currentProfile.messagingServiceSid)
+              )
+            );
+          }
+
+          if (currentProfile.twilioNumber) {
+            replyQueries.push(
+              query(
+                collection(db, "replies"),
+                where("twilioNumber", "==", currentProfile.twilioNumber)
+              )
+            );
+          }
+
+          const replyMap = new Map<string, { id: string; data: Record<string, any> }>();
+
+          for (const q of replyQueries) {
+            try {
+              const rows = await runQuery(q);
+              for (const row of rows) replyMap.set(row.id, row);
+            } catch (error) {
+              console.error("Replies query failed", error);
+            }
+          }
+
+          replyDocs = Array.from(replyMap.values());
+        }
+
+        for (const row of replyDocs) {
+          const p = phoneKey(row.data.from || row.data.phone || "");
+          if (p) repliedPhones.add(p);
+        }
+      } catch (error) {
+        console.error("Failed to collect replied phones", error);
+      }
+
+      let messageDocs: Array<{ id: string; data: Record<string, any> }> = [];
 
       if (isAdmin(currentProfile.role)) {
-        docs = await runQuery(
-          query(collection(db, "conversations"), orderBy("lastMessageAt", "desc"))
+        messageDocs = await runQuery(
+          query(
+            collection(db, "messages"),
+            where("direction", "==", "outbound"),
+            orderBy("createdAt", "desc")
+          )
         );
       } else {
-        const map = new Map<string, { id: string; data: Record<string, any> }>();
-        const queriesToTry: Query<DocumentData>[] = [];
+        const messageQueries: Query<DocumentData>[] = [];
 
-        queriesToTry.push(
-          query(collection(db, "conversations"), where("ownerUid", "==", currentProfile.uid))
+        messageQueries.push(
+          query(
+            collection(db, "messages"),
+            where("ownerUid", "==", currentProfile.uid),
+            where("direction", "==", "outbound")
+          )
         );
 
         if (currentProfile.messagingServiceSid) {
-          queriesToTry.push(
+          messageQueries.push(
             query(
-              collection(db, "conversations"),
-              where("messagingServiceSid", "==", currentProfile.messagingServiceSid)
+              collection(db, "messages"),
+              where("messagingServiceSid", "==", currentProfile.messagingServiceSid),
+              where("direction", "==", "outbound")
             )
           );
         }
 
         if (currentProfile.twilioNumber) {
-          queriesToTry.push(
+          messageQueries.push(
             query(
-              collection(db, "conversations"),
-              where("twilioNumber", "==", currentProfile.twilioNumber)
-            )
-          );
-          queriesToTry.push(
-            query(
-              collection(db, "conversations"),
-              where("assignedTwilioNumber", "==", currentProfile.twilioNumber)
+              collection(db, "messages"),
+              where("twilioNumber", "==", currentProfile.twilioNumber),
+              where("direction", "==", "outbound")
             )
           );
         }
 
-        if (currentProfile.assignedTwilioNumber) {
-          queriesToTry.push(
-            query(
-              collection(db, "conversations"),
-              where("assignedTwilioNumber", "==", currentProfile.assignedTwilioNumber)
-            )
-          );
-        }
+        const messageMap = new Map<string, { id: string; data: Record<string, any> }>();
 
-        for (const q of queriesToTry) {
+        for (const q of messageQueries) {
           try {
             const rows = await runQuery(q);
-            for (const row of rows) map.set(row.id, row);
+            for (const row of rows) messageMap.set(row.id, row);
           } catch (error) {
-            console.error("Conversations query failed", error);
+            console.error("Messages query failed", error);
           }
         }
 
-        docs = Array.from(map.values());
+        messageDocs = Array.from(messageMap.values());
       }
 
-      const rows = docs
-        .map((row) => makeRow(row.id, row.data))
+      const rows = messageDocs
+        .map((row) => makeSmsRow(row.id, row.data, repliedPhones))
         .filter((item) => {
           const p = phoneKey(item.phone);
           if (!p) return false;
@@ -320,7 +356,7 @@ export default function RepliesPage() {
     return () => unsub();
   }, [router]);
 
-  const filteredItems = useMemo(() => {
+  const searchedItems = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return items;
 
@@ -333,161 +369,176 @@ export default function RepliesPage() {
     });
   }, [items, search]);
 
+  const filteredItems = useMemo(() => {
+    if (filterMode === "replied") {
+      return searchedItems.filter((item) => item.replied);
+    }
+    if (filterMode === "awaiting") {
+      return searchedItems.filter((item) => !item.replied);
+    }
+    return searchedItems;
+  }, [searchedItems, filterMode]);
+
   const repliedCount = items.filter((item) => item.replied).length;
   const awaitingCount = items.filter((item) => !item.replied).length;
 
   if (checking) {
     return (
-      <>
-        <style jsx global>{`
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-        `}</style>
-        <main style={pageStyle}>
-          <div style={pageWrapStyle}>
-            <section style={panelStyle}>
-              <div style={emptyStateStyle}>
-                <div style={loadingSpinnerStyle} />
-                <div style={emptyTitleStyle}>Checking account access...</div>
-              </div>
-            </section>
-          </div>
-        </main>
-      </>
+      <main style={pageStyle}>
+        <div style={pageWrapStyle}>
+          <section style={panelStyle}>
+            <div style={emptyStateStyle}>
+              <div style={loadingSpinnerStyle} />
+              <div style={emptyTitleStyle}>Checking account access...</div>
+            </div>
+          </section>
+        </div>
+      </main>
     );
   }
 
   return (
-    <>
-      <style jsx global>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-
-        input::placeholder {
-          color: rgba(236, 254, 255, 0.78);
-        }
-      `}</style>
-
-      <main style={pageStyle}>
-        <div style={pageWrapStyle}>
-          <div style={heroStyle}>
-            <div style={heroOverlayStyle} />
-            <div style={heroInnerStyle}>
-              <div>
-                <div style={heroBadgeStyle}>SMS Activity</div>
-                <h1 style={heroTitleStyle}>All Sent SMS</h1>
-                <p style={heroTextStyle}>
-                  This page shows every conversation touched by outbound SMS and marks each one as Replied or Awaiting Reply. STOP and blacklisted numbers are hidden.
-                </p>
-              </div>
-
-              <div style={heroActionsStyle}>
-                <div style={searchWrapStyle}>
-                  <span style={{ fontSize: 16, opacity: 0.85 }}>⌕</span>
-                  <input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search by phone number, name or message"
-                    style={searchInputStyle}
-                  />
-                </div>
-
-                <Link href="/dashboard" style={backButtonStyle}>
-                  Back to Dashboard
-                </Link>
-              </div>
-
-              <div style={statsGridStyle}>
-                <StatCard label="All Sent SMS" value={String(items.length)} />
-                <StatCard label="Replied" value={String(repliedCount)} />
-                <StatCard label="Awaiting Reply" value={String(awaitingCount)} />
-                <StatCard label="Blocked Hidden" value={String(blockedPhones.length)} />
-              </div>
+    <main style={pageStyle}>
+      <div style={pageWrapStyle}>
+        <div style={heroStyle}>
+          <div style={heroOverlayStyle} />
+          <div style={heroInnerStyle}>
+            <div>
+              <div style={heroBadgeStyle}>SMS Activity</div>
+              <h1 style={heroTitleStyle}>All Sent SMS</h1>
+              <p style={heroTextStyle}>
+                This page pulls all outbound SMS, then lets you filter them into All, Replied, and Awaiting Reply. STOP and blacklisted numbers are hidden.
+              </p>
             </div>
-          </div>
 
-          <section style={panelStyle}>
-            <div style={panelHeaderStyle}>
-              <div>
-                <h2 style={panelTitleStyle}>Outbound SMS Activity</h2>
-                <p style={panelDescStyle}>
-                  Each row below is one customer conversation marked as Replied or Awaiting Reply.
-                </p>
+            <div style={heroActionsStyle}>
+              <div style={searchWrapStyle}>
+                <span style={{ fontSize: 16, opacity: 0.85 }}>⌕</span>
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search by phone number, name or message"
+                  style={searchInputStyle}
+                />
               </div>
 
-              <button onClick={() => loadItems()} style={refreshButtonStyle}>
-                Refresh
+              <Link href="/dashboard" style={backButtonStyle}>
+                Back to Dashboard
+              </Link>
+            </div>
+
+            <div style={filterTabsStyle}>
+              <button
+                onClick={() => setFilterMode("all")}
+                style={{
+                  ...filterTabStyle,
+                  ...(filterMode === "all" ? activeFilterTabStyle : {}),
+                }}
+              >
+                All
+              </button>
+
+              <button
+                onClick={() => setFilterMode("replied")}
+                style={{
+                  ...filterTabStyle,
+                  ...(filterMode === "replied" ? activeFilterTabStyle : {}),
+                }}
+              >
+                Replied
+              </button>
+
+              <button
+                onClick={() => setFilterMode("awaiting")}
+                style={{
+                  ...filterTabStyle,
+                  ...(filterMode === "awaiting" ? activeFilterTabStyle : {}),
+                }}
+              >
+                Awaiting Reply
               </button>
             </div>
 
-            {loading ? (
-              <div style={emptyStateStyle}>
-                <div style={loadingSpinnerStyle} />
-                <div style={emptyTitleStyle}>Loading SMS activity...</div>
-              </div>
-            ) : filteredItems.length === 0 ? (
-              <div style={emptyStateStyle}>
-                <div style={emptyDotStyle} />
-                <div style={emptyTitleStyle}>
-                  {search.trim()
-                    ? "No matching SMS activity found."
-                    : "No sent SMS found."}
-                </div>
-                <div style={emptyTextStyle}>
-                  {search.trim()
-                    ? "Try a different phone number, name or keyword."
-                    : "No sent SMS matched this account yet."}
-                </div>
-              </div>
-            ) : (
-              <div style={conversationGridStyle}>
-                {filteredItems.map((item) => (
-                  <Link
-                    key={item.id}
-                    href={`/replies/${encodeURIComponent(item.phone)}`}
-                    style={conversationCardStyle}
-                  >
-                    <div style={conversationTopStyle}>
-                      <div>
-                        <div style={phoneStyle}>{item.phone}</div>
-                        {item.name ? <div style={nameStyle}>{item.name}</div> : null}
-                        <div style={timeStyleMobile}>{item.createdAtLabel}</div>
-                      </div>
-
-                      <div style={conversationRightStyle}>
-                        <div style={timeStyle}>{item.createdAtLabel}</div>
-                        <div
-                          style={
-                            item.replied
-                              ? repliedBadgeStyle
-                              : awaitingReplyBadgeStyle
-                          }
-                        >
-                          {item.replied ? "Replied" : "Awaiting Reply"}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={messagePreviewStyle}>
-                      {truncateText(item.body || "-")}
-                    </div>
-
-                    <div style={openRowStyle}>
-                      <span style={openTextStyle}>Open conversation</span>
-                      <span style={openArrowStyle}>→</span>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </section>
+            <div style={statsGridStyle}>
+              <StatCard label="All Sent SMS" value={String(items.length)} />
+              <StatCard label="Replied" value={String(repliedCount)} />
+              <StatCard label="Awaiting Reply" value={String(awaitingCount)} />
+              <StatCard label="Blocked Hidden" value={String(blockedPhones.length)} />
+            </div>
+          </div>
         </div>
-      </main>
-    </>
+
+        <section style={panelStyle}>
+          <div style={panelHeaderStyle}>
+            <div>
+              <h2 style={panelTitleStyle}>Outbound SMS Activity</h2>
+              <p style={panelDescStyle}>
+                All tab shows every sent SMS. Replied and Awaiting Reply tabs filter the same data.
+              </p>
+            </div>
+
+            <button onClick={() => loadItems()} style={refreshButtonStyle}>
+              Refresh
+            </button>
+          </div>
+
+          {loading ? (
+            <div style={emptyStateStyle}>
+              <div style={loadingSpinnerStyle} />
+              <div style={emptyTitleStyle}>Loading SMS activity...</div>
+            </div>
+          ) : filteredItems.length === 0 ? (
+            <div style={emptyStateStyle}>
+              <div style={emptyDotStyle} />
+              <div style={emptyTitleStyle}>No SMS found for this filter.</div>
+              <div style={emptyTextStyle}>
+                Try switching filters or refreshing the page.
+              </div>
+            </div>
+          ) : (
+            <div style={conversationGridStyle}>
+              {filteredItems.map((item) => (
+                <Link
+                  key={item.id}
+                  href={`/replies/${encodeURIComponent(item.phone)}`}
+                  style={conversationCardStyle}
+                >
+                  <div style={conversationTopStyle}>
+                    <div>
+                      <div style={phoneStyle}>{item.phone}</div>
+                      {item.name ? <div style={nameStyle}>{item.name}</div> : null}
+                      <div style={timeStyleMobile}>{item.createdAtLabel}</div>
+                    </div>
+
+                    <div style={conversationRightStyle}>
+                      <div style={timeStyle}>{item.createdAtLabel}</div>
+                      <div
+                        style={
+                          item.replied
+                            ? repliedBadgeStyle
+                            : awaitingReplyBadgeStyle
+                        }
+                      >
+                        {item.replied ? "Replied" : "Awaiting Reply"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={messagePreviewStyle}>
+                    {truncateText(item.body || "-")}
+                  </div>
+
+                  <div style={openRowStyle}>
+                    <span style={openTextStyle}>Open conversation</span>
+                    <span style={openArrowStyle}>→</span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </main>
   );
 }
 
@@ -574,6 +625,28 @@ const heroActionsStyle: CSSProperties = {
   gap: 14,
   alignItems: "center",
   flexWrap: "wrap",
+};
+
+const filterTabsStyle: CSSProperties = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+};
+
+const filterTabStyle: CSSProperties = {
+  border: "1px solid rgba(255,255,255,0.22)",
+  background: "rgba(255,255,255,0.10)",
+  color: "#ecfeff",
+  borderRadius: 999,
+  padding: "10px 16px",
+  fontSize: 14,
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const activeFilterTabStyle: CSSProperties = {
+  background: "#ecfeff",
+  color: "#0f766e",
 };
 
 const searchWrapStyle: CSSProperties = {
