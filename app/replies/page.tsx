@@ -25,8 +25,8 @@ type SmsRow = {
   body: string;
   createdAtLabel: string;
   sortSeconds: number;
-  status: string;
   replied: boolean;
+  lastDirection: string;
 };
 
 type AppUser = {
@@ -73,23 +73,22 @@ function phoneKey(value: unknown) {
   return String(value || "").replace(/[^\d+]/g, "").trim();
 }
 
-function makeSmsRow(
-  id: string,
-  data: Record<string, any>,
-  repliedPhones: Set<string>
-): SmsRow {
-  const phone = String(data.to || data.phone || "").trim();
-  const normalizedPhone = phoneKey(phone);
+function makeRow(id: string, data: Record<string, any>): SmsRow {
+  const phone = String(data.phone || data.to || "").trim();
+  const replied =
+    data.hasReply === true ||
+    String(data.status || "").toLowerCase() === "replied" ||
+    String(data.lastDirection || "").toLowerCase() === "inbound";
 
   return {
     id,
     phone,
     name: String(data.name || ""),
-    body: String(data.body || ""),
-    createdAtLabel: formatFirestoreDateNY(data.createdAt),
-    sortSeconds: getSortSeconds(data.createdAt),
-    status: String(data.status || "sent"),
-    replied: repliedPhones.has(normalizedPhone),
+    body: String(data.lastMessage || ""),
+    createdAtLabel: formatFirestoreDateNY(data.lastMessageAt),
+    sortSeconds: getSortSeconds(data.lastMessageAt),
+    replied,
+    lastDirection: String(data.lastDirection || ""),
   };
 }
 
@@ -124,9 +123,7 @@ export default function RepliesPage() {
       }
 
       let blocked: string[] = [];
-      const repliedPhones = new Set<string>();
 
-      // blacklist
       if (isAdmin(currentProfile.role)) {
         const blacklistSnap = await getDocs(
           query(collection(db, "blacklisted_numbers"))
@@ -217,161 +214,82 @@ export default function RepliesPage() {
       const blockedSet = new Set(blocked.map((phone) => phoneKey(phone)));
       setBlockedPhones(blocked);
 
-      // build replied phones from conversations, not replies
-      try {
-        let conversationDocs: Array<{ id: string; data: Record<string, any> }> =
-          [];
-
-        if (isAdmin(currentProfile.role)) {
-          conversationDocs = await runQuery(query(collection(db, "conversations")));
-        } else {
-          const conversationQueries: Query<DocumentData>[] = [
-            query(
-              collection(db, "conversations"),
-              where("ownerUid", "==", currentProfile.uid)
-            ),
-          ];
-
-          if (currentProfile.messagingServiceSid) {
-            conversationQueries.push(
-              query(
-                collection(db, "conversations"),
-                where(
-                  "messagingServiceSid",
-                  "==",
-                  currentProfile.messagingServiceSid
-                )
-              )
-            );
-          }
-
-          if (currentProfile.twilioNumber) {
-            conversationQueries.push(
-              query(
-                collection(db, "conversations"),
-                where("twilioNumber", "==", currentProfile.twilioNumber)
-              )
-            );
-            conversationQueries.push(
-              query(
-                collection(db, "conversations"),
-                where(
-                  "assignedTwilioNumber",
-                  "==",
-                  currentProfile.twilioNumber
-                )
-              )
-            );
-          }
-
-          if (currentProfile.assignedTwilioNumber) {
-            conversationQueries.push(
-              query(
-                collection(db, "conversations"),
-                where(
-                  "assignedTwilioNumber",
-                  "==",
-                  currentProfile.assignedTwilioNumber
-                )
-              )
-            );
-          }
-
-          const conversationMap = new Map<
-            string,
-            { id: string; data: Record<string, any> }
-          >();
-
-          for (const q of conversationQueries) {
-            try {
-              const rows = await runQuery(q);
-              for (const row of rows) conversationMap.set(row.id, row);
-            } catch (error) {
-              console.error("Conversations query failed", error);
-            }
-          }
-
-          conversationDocs = Array.from(conversationMap.values());
-        }
-
-        for (const row of conversationDocs) {
-          const data = row.data;
-          const p = phoneKey(data.phone || data.to || "");
-          const replied =
-            data.hasReply === true ||
-            String(data.status || "").toLowerCase() === "replied" ||
-            String(data.lastDirection || "").toLowerCase() === "inbound";
-
-          if (p && replied) {
-            repliedPhones.add(p);
-          }
-        }
-      } catch (error) {
-        console.error("Failed to collect replied phones from conversations", error);
-      }
-
-      // outbound messages
-      let messageDocs: Array<{ id: string; data: Record<string, any> }> = [];
+      let docs: Array<{ id: string; data: Record<string, any> }> = [];
 
       if (isAdmin(currentProfile.role)) {
-        messageDocs = await runQuery(
-          query(
-            collection(db, "messages"),
-            where("direction", "==", "outbound"),
-            orderBy("createdAt", "desc")
-          )
+        docs = await runQuery(
+          query(collection(db, "conversations"), orderBy("lastMessageAt", "desc"))
         );
       } else {
-        const messageQueries: Query<DocumentData>[] = [];
+        const map = new Map<string, { id: string; data: Record<string, any> }>();
+        const queriesToTry: Query<DocumentData>[] = [];
 
-        messageQueries.push(
+        queriesToTry.push(
           query(
-            collection(db, "messages"),
-            where("ownerUid", "==", currentProfile.uid),
-            where("direction", "==", "outbound")
+            collection(db, "conversations"),
+            where("ownerUid", "==", currentProfile.uid)
           )
         );
 
         if (currentProfile.messagingServiceSid) {
-          messageQueries.push(
+          queriesToTry.push(
             query(
-              collection(db, "messages"),
+              collection(db, "conversations"),
               where(
                 "messagingServiceSid",
                 "==",
                 currentProfile.messagingServiceSid
-              ),
-              where("direction", "==", "outbound")
+              )
             )
           );
         }
 
         if (currentProfile.twilioNumber) {
-          messageQueries.push(
+          queriesToTry.push(
             query(
-              collection(db, "messages"),
-              where("twilioNumber", "==", currentProfile.twilioNumber),
-              where("direction", "==", "outbound")
+              collection(db, "conversations"),
+              where("twilioNumber", "==", currentProfile.twilioNumber)
+            )
+          );
+          queriesToTry.push(
+            query(
+              collection(db, "conversations"),
+              where(
+                "assignedTwilioNumber",
+                "==",
+                currentProfile.twilioNumber
+              )
             )
           );
         }
 
-        const messageMap = new Map<string, { id: string; data: Record<string, any> }>();
+        if (currentProfile.assignedTwilioNumber) {
+          queriesToTry.push(
+            query(
+              collection(db, "conversations"),
+              where(
+                "assignedTwilioNumber",
+                "==",
+                currentProfile.assignedTwilioNumber
+              )
+            )
+          );
+        }
 
-        for (const q of messageQueries) {
+        for (const q of queriesToTry) {
           try {
             const rows = await runQuery(q);
-            for (const row of rows) messageMap.set(row.id, row);
+            for (const row of rows) map.set(row.id, row);
           } catch (error) {
-            console.error("Messages query failed", error);
+            console.error("Conversations query failed", error);
           }
         }
 
-        messageDocs = Array.from(messageMap.values());
+        docs = Array.from(map.values());
       }
 
-      const rows = messageDocs
-        .map((row) => makeSmsRow(row.id, row.data, repliedPhones))
+      const rows = docs
+        .map((row) => makeRow(row.id, row.data))
         .filter((item) => {
           const p = phoneKey(item.phone);
           if (!p) return false;
@@ -485,7 +403,7 @@ export default function RepliesPage() {
               <div style={heroBadgeStyle}>SMS Activity</div>
               <h1 style={heroTitleStyle}>All Sent SMS</h1>
               <p style={heroTextStyle}>
-                This page pulls all outbound SMS, then lets you filter them into All, Replied, and Awaiting Reply. STOP and blacklisted numbers are hidden.
+                This page shows all customer conversations touched by outbound SMS and lets you filter them into All, Replied, and Awaiting Reply. STOP and blacklisted numbers are hidden.
               </p>
             </div>
 
@@ -551,7 +469,7 @@ export default function RepliesPage() {
             <div>
               <h2 style={panelTitleStyle}>Outbound SMS Activity</h2>
               <p style={panelDescStyle}>
-                All tab shows every sent SMS. Replied and Awaiting Reply tabs filter the same data.
+                All tab shows every customer conversation. Replied and Awaiting Reply tabs filter the same data.
               </p>
             </div>
 
