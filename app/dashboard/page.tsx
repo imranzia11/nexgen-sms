@@ -205,6 +205,7 @@ export default function DashboardPage() {
 
   const [checking, setChecking] = useState(true);
   const [userName, setUserName] = useState("User");
+  const [profileUid, setProfileUid] = useState("");
 
   const [uploading, setUploading] = useState(false);
   const [sendingSms, setSendingSms] = useState(false);
@@ -275,6 +276,7 @@ export default function DashboardPage() {
           "User";
 
         setUserName(safeName);
+        setProfileUid(user.uid);
         setChecking(false);
         await loadUploads(user.uid);
       } catch (error) {
@@ -303,7 +305,7 @@ export default function DashboardPage() {
     try {
       setLoadingUploads(true);
 
-      const currentUid = uid || auth.currentUser?.uid;
+      const currentUid = uid || profileUid || auth.currentUser?.uid;
       if (!currentUid) {
         setUploads([]);
         return;
@@ -311,7 +313,7 @@ export default function DashboardPage() {
 
       const q = query(
         collection(db, "uploads"),
-        where("uploadedBy", "==", currentUid)
+        where("ownerUid", "==", currentUid)
       );
 
       const snap = await getDocs(q);
@@ -337,6 +339,8 @@ export default function DashboardPage() {
 
       if (!selectedUploadId && items.length > 0) {
         setSelectedUploadId(items[0].id);
+      } else if (selectedUploadId && !items.some((x) => x.id === selectedUploadId)) {
+        setSelectedUploadId(items[0]?.id || "");
       }
     } catch (error) {
       console.error("Failed to load uploads", error);
@@ -350,7 +354,7 @@ export default function DashboardPage() {
     try {
       setLoadingSelectedLeads(true);
 
-      const currentUid = auth.currentUser?.uid;
+      const currentUid = profileUid || auth.currentUser?.uid;
       if (!currentUid) {
         setSelectedLeads([]);
         return;
@@ -358,26 +362,25 @@ export default function DashboardPage() {
 
       const q = query(
         collection(db, "leads"),
-        where("uploadedBy", "==", currentUid)
+        where("ownerUid", "==", currentUid),
+        where("uploadId", "==", uploadId)
       );
 
       const snap = await getDocs(q);
 
-      const items: LeadItem[] = snap.docs
-        .map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            uploadId: data.uploadId || "",
-            name: data.name || "",
-            phone: data.phone || "",
-            rawPhone: data.rawPhone || "",
-            status: data.status || "",
-            validationNote: data.validationNote || "",
-            sourceFileName: data.sourceFileName || "",
-          };
-        })
-        .filter((lead) => lead.uploadId === uploadId);
+      const items: LeadItem[] = snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          uploadId: data.uploadId || "",
+          name: data.name || "",
+          phone: data.phone || "",
+          rawPhone: data.rawPhone || "",
+          status: data.status || "",
+          validationNote: data.validationNote || "",
+          sourceFileName: data.sourceFileName || "",
+        };
+      });
 
       setSelectedLeads(items);
     } catch (error) {
@@ -483,7 +486,7 @@ export default function DashboardPage() {
             }
           }
 
-          await loadUploads();
+          await loadUploads(user.uid);
           setSelectedUploadId(uploadRef.id);
           showToast(
             `Import complete. ${imported} verified US leads saved from ${file.name}.`,
