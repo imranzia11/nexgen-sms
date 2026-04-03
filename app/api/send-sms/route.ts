@@ -205,11 +205,18 @@ export async function POST(req: NextRequest) {
         const convoRef = adminDb.collection("conversations").doc(convoId);
         const threadMessageRef = convoRef.collection("messages").doc(res.sid);
 
+        const existingConvoSnap = await convoRef.get();
+        const existingConvo = existingConvoSnap.exists ? existingConvoSnap.data() || {} : {};
+        const existingUnreadCount = Number(existingConvo.unreadCount || 0);
+        const existingReplyCount = Number(existingConvo.replyCount || 0);
+        const existingHasReply = existingConvo.hasReply === true;
+
         await threadMessageRef.set({
           sid: res.sid,
           ownerUid: uid,
           from: res.from || "",
           to: formattedPhone,
+          phone: formattedPhone,
           body: finalMessage,
           direction: "outbound",
           status: res.status || "sent",
@@ -218,29 +225,51 @@ export async function POST(req: NextRequest) {
           messagingServiceSid,
           twilioNumber,
           createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
         });
 
         await convoRef.set(
           {
             ownerUid: uid,
+            ownerEmail: String(userData.email || ""),
+            ownerName: String(userData.name || ""),
+            ownerRole: String(userData.role || "user"),
             phone: formattedPhone,
-            name: lead.name || "",
+            name: formatLeadName(lead.name || ""),
             twilioNumber,
+            assignedTwilioNumber: twilioNumber,
             messagingServiceSid,
             lastMessage: finalMessage,
             lastDirection: "outbound",
             lastMessageAt: FieldValue.serverTimestamp(),
             updatedAt: FieldValue.serverTimestamp(),
+
+            // important for showing unreplied conversations
+            status: existingHasReply ? "replied" : "awaiting_reply",
+            hasReply: existingHasReply,
+            unreadCount: existingUnreadCount,
+            replyCount: existingReplyCount,
+            outboundCount: FieldValue.increment(1),
+            messageCount: FieldValue.increment(1),
+
+            // useful flags for UI
+            firstOutboundAt:
+              existingConvo.firstOutboundAt || FieldValue.serverTimestamp(),
+            lastOutboundAt: FieldValue.serverTimestamp(),
+            lastInboundAt: existingConvo.lastInboundAt || null,
           },
           { merge: true }
         );
 
         await adminDb.collection("messages").add({
           ownerUid: uid,
+          ownerEmail: String(userData.email || ""),
+          ownerName: String(userData.name || ""),
           campaignName: campaignName || "",
           fileId: fileId || "",
           fileName: fileName || "",
-          name: lead.name || "",
+          name: formatLeadName(lead.name || ""),
+          phone: formattedPhone,
           to: formattedPhone,
           from: res.from || "",
           body: finalMessage,
@@ -251,6 +280,7 @@ export async function POST(req: NextRequest) {
           messagingServiceSid,
           twilioNumber,
           createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
         });
 
         results.push({
