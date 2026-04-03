@@ -1,7 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type CSSProperties,
+} from "react";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
@@ -11,8 +18,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  limit,
-  orderBy,
   query,
   serverTimestamp,
   where,
@@ -41,6 +46,10 @@ type UploadItem = {
   totalRows: number;
   validPhoneRows: number;
   createdAtLabel: string;
+};
+
+type UploadItemWithSort = UploadItem & {
+  createdAtMs: number;
 };
 
 type ToastType = "success" | "error" | "info";
@@ -174,6 +183,21 @@ function statusChipTone(status?: string) {
   };
 }
 
+function getCreatedAtMs(value: any) {
+  try {
+    if (!value) return 0;
+    if (typeof value?.toDate === "function") {
+      return value.toDate().getTime();
+    }
+    if (typeof value?.seconds === "number") {
+      return value.seconds * 1000;
+    }
+    return 0;
+  } catch {
+    return 0;
+  }
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -239,7 +263,7 @@ export default function DashboardPage() {
         const snap = await getDoc(doc(db, "users", user.uid));
 
         if (!snap.exists() || snap.data().isActive !== true) {
-          await signOut(auth);
+          await signOut(auth).catch(() => {});
           router.push("/login");
           return;
         }
@@ -249,7 +273,7 @@ export default function DashboardPage() {
         await loadUploads(user.uid);
       } catch (error) {
         console.error("Failed to validate user access", error);
-        await signOut(auth);
+        await signOut(auth).catch(() => {});
         router.push("/login");
       }
     });
@@ -281,24 +305,27 @@ export default function DashboardPage() {
 
       const q = query(
         collection(db, "uploads"),
-        where("uploadedBy", "==", currentUid),
-        orderBy("createdAt", "desc"),
-        limit(50)
+        where("uploadedBy", "==", currentUid)
       );
 
       const snap = await getDocs(q);
 
-      const items: UploadItem[] = snap.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          fileName: data.fileName || "-",
-          status: data.status || "imported",
-          totalRows: data.totalRows || 0,
-          validPhoneRows: data.validPhoneRows || 0,
-          createdAtLabel: formatFirestoreDateNY(data.createdAt),
-        };
-      });
+      const items: UploadItem[] = snap.docs
+        .map((d) => {
+          const data = d.data();
+          const row: UploadItemWithSort = {
+            id: d.id,
+            fileName: data.fileName || "-",
+            status: data.status || "imported",
+            totalRows: Number(data.totalRows || 0),
+            validPhoneRows: Number(data.validPhoneRows || 0),
+            createdAtLabel: formatFirestoreDateNY(data.createdAt),
+            createdAtMs: getCreatedAtMs(data.createdAt),
+          };
+          return row;
+        })
+        .sort((a, b) => (b as UploadItemWithSort).createdAtMs - (a as UploadItemWithSort).createdAtMs)
+        .map(({ createdAtMs, ...rest }) => rest);
 
       setUploads(items);
 
@@ -325,25 +352,26 @@ export default function DashboardPage() {
 
       const q = query(
         collection(db, "leads"),
-        where("uploadId", "==", uploadId),
         where("uploadedBy", "==", currentUid)
       );
 
       const snap = await getDocs(q);
 
-      const items: LeadItem[] = snap.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          uploadId: data.uploadId || "",
-          name: data.name || "",
-          phone: data.phone || "",
-          rawPhone: data.rawPhone || "",
-          status: data.status || "",
-          validationNote: data.validationNote || "",
-          sourceFileName: data.sourceFileName || "",
-        };
-      });
+      const items: LeadItem[] = snap.docs
+        .map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            uploadId: data.uploadId || "",
+            name: data.name || "",
+            phone: data.phone || "",
+            rawPhone: data.rawPhone || "",
+            status: data.status || "",
+            validationNote: data.validationNote || "",
+            sourceFileName: data.sourceFileName || "",
+          };
+        })
+        .filter((lead) => lead.uploadId === uploadId);
 
       setSelectedLeads(items);
     } catch (error) {
@@ -356,7 +384,7 @@ export default function DashboardPage() {
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
+    await signOut(auth).catch(() => {});
     router.push("/login");
   };
 
@@ -415,6 +443,7 @@ export default function DashboardPage() {
           const uploadRef = await addDoc(collection(db, "uploads"), {
             fileName: file.name,
             uploadedBy: user.uid,
+            ownerUid: user.uid,
             uploadedByName: adminName,
             phoneColumn,
             totalRows: parsedRows.length,
@@ -433,6 +462,7 @@ export default function DashboardPage() {
             await addDoc(collection(db, "leads"), {
               uploadId: uploadRef.id,
               uploadedBy: user.uid,
+              ownerUid: user.uid,
               name: detectedName,
               phone: validation.valid ? validation.normalized : rawPhone,
               rawPhone,
@@ -566,24 +596,6 @@ export default function DashboardPage() {
         createdAt: serverTimestamp(),
       });
 
-      for (const result of data.results || []) {
-        await addDoc(collection(db, "messages"), {
-          ownerUid: user.uid,
-          uploadId: selectedUploadId,
-          createdBy: user.uid,
-          to: result.phone || "",
-          name: result.name || "",
-          body: result.personalizedBody || message.trim(),
-          status: result.ok ? result.status || "sent" : "failed",
-          twilioSid: result.sid || "",
-          error: result.error || "",
-          code: result.code ?? null,
-          sourceFileName: selectedUpload.fileName,
-          direction: "outbound",
-          createdAt: serverTimestamp(),
-        });
-      }
-
       showToast(
         `SMS finished. Sent: ${data.success}, Failed: ${data.failed}, Total Verified Sent Attempted: ${data.total}.`,
         data.failed > 0 ? "info" : "success"
@@ -631,7 +643,10 @@ export default function DashboardPage() {
     (lead) => String(lead.status || "").toLowerCase() === "verified"
   ).length;
   const totalUploads = uploads.length;
-  const totalValidNumbers = uploads.reduce((sum, item) => sum + (item.validPhoneRows || 0), 0);
+  const totalValidNumbers = uploads.reduce(
+    (sum, item) => sum + (item.validPhoneRows || 0),
+    0
+  );
 
   if (checking) {
     return (
@@ -639,7 +654,14 @@ export default function DashboardPage() {
         <GlobalStyles />
         <div style={loadingCardStyle}>
           <div style={spinnerStyle} />
-          <p style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#e6fffb" }}>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 18,
+              fontWeight: 700,
+              color: "#e6fffb",
+            }}
+          >
             Checking account access...
           </p>
         </div>
@@ -770,7 +792,9 @@ export default function DashboardPage() {
                   <div style={sidebarSupportIconStyle}>?</div>
                   <div style={{ textAlign: "left" }}>
                     <div style={sidebarRepliesTitleStyle}>Contact Support</div>
-                    <div style={sidebarRepliesTextStyle}>Get help for admin portal setup</div>
+                    <div style={sidebarRepliesTextStyle}>
+                      Get help for admin portal setup
+                    </div>
                   </div>
                 </button>
               </div>
@@ -797,7 +821,8 @@ export default function DashboardPage() {
                   <div style={heroBadgeStyle}>Premium User Workspace</div>
                   <h1 style={heroTitleStyle}>Fintech SMS Dashboard</h1>
                   <p style={heroTextStyle}>
-                    Upload lead files, review imported recipients, validate US numbers, and launch campaigns from one clean control center.
+                    Upload lead files, review imported recipients, validate US
+                    numbers, and launch campaigns from one clean control center.
                   </p>
                 </div>
 
@@ -818,7 +843,8 @@ export default function DashboardPage() {
                     style={{
                       ...heroPrimaryButtonStyle,
                       opacity: uploading || sendingSms ? 0.7 : 1,
-                      cursor: uploading || sendingSms ? "not-allowed" : "pointer",
+                      cursor:
+                        uploading || sendingSms ? "not-allowed" : "pointer",
                     }}
                   >
                     {uploading ? "Uploading..." : "Upload CSV"}
@@ -866,11 +892,15 @@ export default function DashboardPage() {
                     <div>
                       <h2 style={panelTitleStyle}>Imported Files</h2>
                       <p style={panelDescStyle}>
-                        Pick one imported file to load all leads into the SMS portal.
+                        Pick one imported file to load all leads into the SMS
+                        portal.
                       </p>
                     </div>
 
-                    <button onClick={() => loadUploads()} style={secondaryButtonStyle}>
+                    <button
+                      onClick={() => loadUploads()}
+                      style={secondaryButtonStyle}
+                    >
                       Refresh
                     </button>
                   </div>
@@ -924,15 +954,28 @@ export default function DashboardPage() {
                             </div>
 
                             <div style={fileStatsRowStyle}>
-                              <MiniData label="Imported" value={upload.createdAtLabel} />
-                              <MiniData label="Rows" value={String(upload.totalRows)} />
-                              <MiniData label="Valid Phones" value={String(upload.validPhoneRows)} />
+                              <MiniData
+                                label="Imported"
+                                value={upload.createdAtLabel}
+                              />
+                              <MiniData
+                                label="Rows"
+                                value={String(upload.totalRows)}
+                              />
+                              <MiniData
+                                label="Valid Phones"
+                                value={String(upload.validPhoneRows)}
+                              />
                             </div>
 
                             <div style={fileActionsStyle}>
                               <button
                                 onClick={() => setSelectedUploadId(upload.id)}
-                                style={selected ? selectedButtonStyle : primaryButtonStyle}
+                                style={
+                                  selected
+                                    ? selectedButtonStyle
+                                    : primaryButtonStyle
+                                }
                               >
                                 {selected ? "Selected" : "Select File"}
                               </button>
@@ -942,10 +985,13 @@ export default function DashboardPage() {
                                 disabled={deletingUploadId === upload.id}
                                 style={{
                                   ...dangerButtonStyle,
-                                  opacity: deletingUploadId === upload.id ? 0.65 : 1,
+                                  opacity:
+                                    deletingUploadId === upload.id ? 0.65 : 1,
                                 }}
                               >
-                                {deletingUploadId === upload.id ? "Deleting..." : "Delete"}
+                                {deletingUploadId === upload.id
+                                  ? "Deleting..."
+                                  : "Delete"}
                               </button>
                             </div>
                           </div>
@@ -972,7 +1018,9 @@ export default function DashboardPage() {
                         style={inlineSearchInputStyle}
                       />
                       <button
-                        onClick={() => selectedUploadId && loadLeadsForUpload(selectedUploadId)}
+                        onClick={() =>
+                          selectedUploadId && loadLeadsForUpload(selectedUploadId)
+                        }
                         style={secondaryButtonStyle}
                       >
                         Refresh
@@ -1021,8 +1069,12 @@ export default function DashboardPage() {
                                     {lead.status || "-"}
                                   </span>
                                 </td>
-                                <td style={tdStyle}>{lead.validationNote || "-"}</td>
-                                <td style={tdStyle}>{lead.sourceFileName || "-"}</td>
+                                <td style={tdStyle}>
+                                  {lead.validationNote || "-"}
+                                </td>
+                                <td style={tdStyle}>
+                                  {lead.sourceFileName || "-"}
+                                </td>
                               </tr>
                             );
                           })}
@@ -1039,7 +1091,8 @@ export default function DashboardPage() {
                     <div>
                       <h2 style={panelTitleStyle}>SMS Portal</h2>
                       <p style={panelDescStyle}>
-                        Create a campaign and send the message to all verified US recipients in the selected file.
+                        Create a campaign and send the message to all verified US
+                        recipients in the selected file.
                       </p>
                     </div>
                   </div>
@@ -1092,7 +1145,8 @@ export default function DashboardPage() {
                         uploading ||
                         !selectedUploadId ||
                         !selectedLeads.some(
-                          (lead) => String(lead.status || "").toLowerCase() === "verified"
+                          (lead) =>
+                            String(lead.status || "").toLowerCase() === "verified"
                         ) ||
                         !message.trim()
                       }
@@ -1103,7 +1157,8 @@ export default function DashboardPage() {
                           uploading ||
                           !selectedUploadId ||
                           !selectedLeads.some(
-                            (lead) => String(lead.status || "").toLowerCase() === "verified"
+                            (lead) =>
+                              String(lead.status || "").toLowerCase() === "verified"
                           ) ||
                           !message.trim()
                             ? 0.55
@@ -1113,7 +1168,8 @@ export default function DashboardPage() {
                           uploading ||
                           !selectedUploadId ||
                           !selectedLeads.some(
-                            (lead) => String(lead.status || "").toLowerCase() === "verified"
+                            (lead) =>
+                              String(lead.status || "").toLowerCase() === "verified"
                           ) ||
                           !message.trim()
                             ? "not-allowed"
@@ -1134,10 +1190,22 @@ export default function DashboardPage() {
                 <section style={rightMiniPanelStyle}>
                   <h3 style={miniPanelTitleStyle}>Quick Guide</h3>
                   <div style={guideListStyle}>
-                    <GuideItem number="1" text="Upload a CSV file containing lead data." />
-                    <GuideItem number="2" text="The system validates US numbers as +1 followed by 10 digits." />
-                    <GuideItem number="3" text="Only verified US leads will be used for the campaign." />
-                    <GuideItem number="4" text="Review validation status before sending SMS." />
+                    <GuideItem
+                      number="1"
+                      text="Upload a CSV file containing lead data."
+                    />
+                    <GuideItem
+                      number="2"
+                      text="The system validates US numbers as +1 followed by 10 digits."
+                    />
+                    <GuideItem
+                      number="3"
+                      text="Only verified US leads will be used for the campaign."
+                    />
+                    <GuideItem
+                      number="4"
+                      text="Review validation status before sending SMS."
+                    />
                   </div>
                 </section>
               </div>
@@ -1217,7 +1285,13 @@ function StatCard({
         minHeight: compact ? 88 : 96,
       }}
     >
-      <div style={{ color: "rgba(236, 254, 255, 0.72)", fontSize: 13, fontWeight: 600 }}>
+      <div
+        style={{
+          color: "rgba(236, 254, 255, 0.72)",
+          fontSize: 13,
+          fontWeight: 600,
+        }}
+      >
         {label}
       </div>
       <div
@@ -1258,7 +1332,9 @@ function EmptyState({ text }: { text: string }) {
   return (
     <div style={emptyStateStyle}>
       <div style={emptyStateIconStyle}>•</div>
-      <div style={{ fontSize: 15, color: "#64748b", fontWeight: 600 }}>{text}</div>
+      <div style={{ fontSize: 15, color: "#64748b", fontWeight: 600 }}>
+        {text}
+      </div>
     </div>
   );
 }
