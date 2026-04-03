@@ -2,7 +2,7 @@
 
 import { useState, type CSSProperties, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 
@@ -26,6 +26,7 @@ export default function LoginPage() {
       const snap = await getDoc(doc(db, "users", uid));
 
       if (!snap.exists()) {
+        await signOut(auth).catch(() => {});
         setError("User record not found in Firestore.");
         setLoading(false);
         return;
@@ -33,8 +34,9 @@ export default function LoginPage() {
 
       const data = snap.data();
 
-      if (data.role !== "admin") {
-        setError("Access denied. Admin only.");
+      if (data.isActive !== true) {
+        await signOut(auth).catch(() => {});
+        setError("Access denied. Account inactive.");
         setLoading(false);
         return;
       }
@@ -86,17 +88,17 @@ export default function LoginPage() {
               <div style={brandIconStyle}>N</div>
               <div>
                 <div style={brandTitleStyle}>Nexgen SMS</div>
-                <div style={brandSubStyle}>Admin Portal</div>
+                <div style={brandSubStyle}>Portal</div>
               </div>
             </div>
 
-            <div style={heroBadgeStyle}>Premium Admin Workspace</div>
+            <div style={heroBadgeStyle}>Premium User Workspace</div>
 
-            <h1 style={heroTitleStyle}>Sign in to your fintech admin portal</h1>
+            <h1 style={heroTitleStyle}>Sign in to your SMS portal</h1>
 
             <p style={heroTextStyle}>
               Manage imported lead files, launch SMS campaigns, monitor replies,
-              and keep your admin workflow in one premium control center.
+              and keep your workflow in one premium control center.
             </p>
 
             <div style={featureGridStyle}>
@@ -113,8 +115,8 @@ export default function LoginPage() {
                 text="Track incoming customer responses easily."
               />
               <FeatureCard
-                title="Admin Access"
-                text="Secure sign-in for authorized admin users only."
+                title="User Access"
+                text="Secure sign-in for active portal users."
               />
             </div>
           </section>
@@ -125,7 +127,7 @@ export default function LoginPage() {
                 <div style={loginIconWrapStyle}>
                   <div style={loginIconStyle}>↗</div>
                 </div>
-                <h2 style={cardTitleStyle}>Admin Login</h2>
+                <h2 style={cardTitleStyle}>Portal Login</h2>
                 <p style={cardTextStyle}>Sign in to continue to Nexgen SMS Portal</p>
               </div>
 
@@ -134,7 +136,7 @@ export default function LoginPage() {
                   <label style={labelStyle}>Email Address</label>
                   <input
                     type="email"
-                    placeholder="Enter admin email"
+                    placeholder="Enter your email"
                     style={inputStyle}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
