@@ -59,6 +59,7 @@ type ConversationMeta = {
   twilioNumber?: string;
   assignedTwilioNumber?: string;
   messagingServiceSid?: string;
+  ownerUid?: string;
 };
 
 function normalizeRole(value: unknown) {
@@ -151,7 +152,45 @@ export default function ReplyThreadPage({
 
       setStatus("");
 
-      // Try exact user-owned conversation doc first
+      if (!isAdmin(currentProfile.role)) {
+        const ownedConversationId = `${currentProfile.uid}_${phoneDocId(routePhone)}`;
+        const ownedConversationRef = doc(db, "conversations", ownedConversationId);
+        const ownedConversationSnap = await getDoc(ownedConversationRef);
+
+        if (!ownedConversationSnap.exists()) {
+          setStatus("Conversation not found.");
+          setConversationMeta(null);
+          setThreadTitle(routePhone || "Conversation");
+          return null;
+        }
+
+        const data = ownedConversationSnap.data() as Record<string, any>;
+
+        if (String(data.ownerUid || "") !== currentProfile.uid) {
+          setStatus("Access denied.");
+          setConversationMeta(null);
+          return null;
+        }
+
+        const meta: ConversationMeta = {
+          id: ownedConversationSnap.id,
+          phone: String(data.phone || routePhone),
+          name: String(data.name || ""),
+          status: String(data.status || ""),
+          hasReply: data.hasReply === true,
+          unreadCount: Number(data.unreadCount || 0),
+          lastDirection: String(data.lastDirection || ""),
+          twilioNumber: String(data.twilioNumber || ""),
+          assignedTwilioNumber: String(data.assignedTwilioNumber || ""),
+          messagingServiceSid: String(data.messagingServiceSid || ""),
+          ownerUid: String(data.ownerUid || ""),
+        };
+
+        setConversationMeta(meta);
+        setThreadTitle(meta.name ? `${meta.name} · ${meta.phone}` : meta.phone || "Conversation");
+        return meta;
+      }
+
       const ownedConversationId = `${currentProfile.uid}_${phoneDocId(routePhone)}`;
       const ownedConversationRef = doc(db, "conversations", ownedConversationId);
       const ownedConversationSnap = await getDoc(ownedConversationRef);
@@ -169,6 +208,7 @@ export default function ReplyThreadPage({
           twilioNumber: String(data.twilioNumber || ""),
           assignedTwilioNumber: String(data.assignedTwilioNumber || ""),
           messagingServiceSid: String(data.messagingServiceSid || ""),
+          ownerUid: String(data.ownerUid || ""),
         };
 
         setConversationMeta(meta);
@@ -176,40 +216,34 @@ export default function ReplyThreadPage({
         return meta;
       }
 
-      // Admin fallback: search conversation by phone
-      if (isAdmin(currentProfile.role)) {
-        const q = query(collection(db, "conversations"), where("phone", "==", routePhone));
-        const snap = await getDocs(q);
+      const q = query(collection(db, "conversations"), where("phone", "==", routePhone));
+      const snap = await getDocs(q);
 
-        if (!snap.empty) {
-          const first = snap.docs[0];
-          const data = first.data() as Record<string, any>;
-          const meta: ConversationMeta = {
-            id: first.id,
-            phone: String(data.phone || routePhone),
-            name: String(data.name || ""),
-            status: String(data.status || ""),
-            hasReply: data.hasReply === true,
-            unreadCount: Number(data.unreadCount || 0),
-            lastDirection: String(data.lastDirection || ""),
-            twilioNumber: String(data.twilioNumber || ""),
-            assignedTwilioNumber: String(data.assignedTwilioNumber || ""),
-            messagingServiceSid: String(data.messagingServiceSid || ""),
-          };
+      if (!snap.empty) {
+        const first = snap.docs[0];
+        const data = first.data() as Record<string, any>;
+        const meta: ConversationMeta = {
+          id: first.id,
+          phone: String(data.phone || routePhone),
+          name: String(data.name || ""),
+          status: String(data.status || ""),
+          hasReply: data.hasReply === true,
+          unreadCount: Number(data.unreadCount || 0),
+          lastDirection: String(data.lastDirection || ""),
+          twilioNumber: String(data.twilioNumber || ""),
+          assignedTwilioNumber: String(data.assignedTwilioNumber || ""),
+          messagingServiceSid: String(data.messagingServiceSid || ""),
+          ownerUid: String(data.ownerUid || ""),
+        };
 
-          setConversationMeta(meta);
-          setThreadTitle(meta.name ? `${meta.name} · ${meta.phone}` : meta.phone || "Conversation");
-          return meta;
-        }
+        setConversationMeta(meta);
+        setThreadTitle(meta.name ? `${meta.name} · ${meta.phone}` : meta.phone || "Conversation");
+        return meta;
       }
 
-      // Even if conversation doc not found, allow page to open with phone title
       setConversationMeta(null);
       setThreadTitle(routePhone || "Conversation");
-      return {
-        id: "",
-        phone: routePhone,
-      } as ConversationMeta;
+      return null;
     } catch (error: any) {
       console.error(error);
       setStatus(error?.message || "Failed to load conversation.");
@@ -225,92 +259,101 @@ export default function ReplyThreadPage({
       const currentMeta = metaArg || conversationMeta;
       const currentProfile = profileArg || profile;
 
-      if (!routePhone || !currentProfile) {
+      if (!routePhone || !currentProfile || !currentMeta?.id) {
         setMessages([]);
         return;
       }
 
-      const outboundStore = new Map<string, MessageItem>();
-      const inboundStore = new Map<string, MessageItem>();
+      const messageStore = new Map<string, MessageItem>();
 
-      // 1) conversation subcollection messages (best source)
-      if (currentMeta?.id) {
-        try {
-          const subMessagesQuery = query(
-            collection(db, "conversations", currentMeta.id, "messages"),
-            orderBy("createdAt", "asc")
-          );
-          const subMessagesSnap = await getDocs(subMessagesQuery);
-
-          subMessagesSnap.docs.forEach((d) => {
-            outboundStore.set(`conv-${d.id}`, makeMessageItem(`conv-${d.id}`, d.data() as Record<string, any>));
-          });
-        } catch (error) {
-          console.error("Failed to load conversation sub-messages", error);
-        }
-      }
-
-      // 2) root outbound messages fallback
       try {
-        const outboundQuery = isAdmin(currentProfile.role)
-          ? query(
-              collection(db, "messages"),
-              where("to", "==", routePhone),
-              orderBy("createdAt", "asc")
-            )
-          : query(
-              collection(db, "messages"),
-              where("ownerUid", "==", currentProfile.uid),
-              where("to", "==", routePhone)
-            );
+        const subMessagesQuery = query(
+          collection(db, "conversations", currentMeta.id, "messages"),
+          orderBy("createdAt", "asc")
+        );
+        const subMessagesSnap = await getDocs(subMessagesQuery);
 
-        const outboundSnap = await getDocs(outboundQuery);
+        subMessagesSnap.docs.forEach((d) => {
+          const data = d.data() as Record<string, any>;
 
-        outboundSnap.docs.forEach((d) => {
-          outboundStore.set(`msg-${d.id}`, makeMessageItem(`msg-${d.id}`, d.data() as Record<string, any>));
+          if (!isAdmin(currentProfile.role) && String(data.ownerUid || "") !== currentProfile.uid) {
+            return;
+          }
+
+          messageStore.set(
+            `conv-${d.id}`,
+            makeMessageItem(`conv-${d.id}`, data)
+          );
         });
       } catch (error) {
-        console.error("Failed to load outbound messages", error);
+        console.error("Failed to load conversation sub-messages", error);
       }
 
-      // 3) inbound replies
-      try {
-        const inboundQueries = isAdmin(currentProfile.role)
-          ? [
-              query(collection(db, "replies"), where("from", "==", routePhone)),
-              query(collection(db, "replies"), where("phone", "==", routePhone)),
-            ]
-          : [
-              query(
-                collection(db, "replies"),
+      if (messageStore.size === 0) {
+        try {
+          const outboundQuery = isAdmin(currentProfile.role)
+            ? query(
+                collection(db, "messages"),
+                where("to", "==", routePhone)
+              )
+            : query(
+                collection(db, "messages"),
                 where("ownerUid", "==", currentProfile.uid),
-                where("from", "==", routePhone)
-              ),
-              query(
-                collection(db, "replies"),
-                where("ownerUid", "==", currentProfile.uid),
-                where("phone", "==", routePhone)
-              ),
-            ];
+                where("to", "==", routePhone)
+              );
 
-        for (const q of inboundQueries) {
-          try {
-            const snap = await getDocs(q);
-            snap.docs.forEach((d) => {
-              inboundStore.set(`reply-${d.id}`, makeMessageItem(`reply-${d.id}`, d.data() as Record<string, any>));
-            });
-          } catch (error) {
-            console.error("Failed to load inbound replies query", error);
-          }
+          const outboundSnap = await getDocs(outboundQuery);
+
+          outboundSnap.docs.forEach((d) => {
+            messageStore.set(
+              `msg-${d.id}`,
+              makeMessageItem(`msg-${d.id}`, d.data() as Record<string, any>)
+            );
+          });
+        } catch (error) {
+          console.error("Failed to load outbound messages", error);
         }
-      } catch (error) {
-        console.error("Failed to load inbound replies", error);
+
+        try {
+          const inboundQueries = isAdmin(currentProfile.role)
+            ? [
+                query(collection(db, "replies"), where("from", "==", routePhone)),
+                query(collection(db, "replies"), where("phone", "==", routePhone)),
+              ]
+            : [
+                query(
+                  collection(db, "replies"),
+                  where("ownerUid", "==", currentProfile.uid),
+                  where("from", "==", routePhone)
+                ),
+                query(
+                  collection(db, "replies"),
+                  where("ownerUid", "==", currentProfile.uid),
+                  where("phone", "==", routePhone)
+                ),
+              ];
+
+          for (const q of inboundQueries) {
+            try {
+              const snap = await getDocs(q);
+              snap.docs.forEach((d) => {
+                messageStore.set(
+                  `reply-${d.id}`,
+                  makeMessageItem(`reply-${d.id}`, d.data() as Record<string, any>)
+                );
+              });
+            } catch (error) {
+              console.error("Failed to load inbound replies query", error);
+            }
+          }
+        } catch (error) {
+          console.error("Failed to load inbound replies", error);
+        }
       }
 
-      const merged = [
-        ...Array.from(outboundStore.values()),
-        ...Array.from(inboundStore.values()),
-      ].sort((a, b) => a.createdAtMs - b.createdAtMs);
+      const merged = Array.from(messageStore.values()).sort(
+        (a, b) => a.createdAtMs - b.createdAtMs
+      );
 
       setMessages(merged);
     } catch (error: any) {
@@ -379,43 +422,35 @@ export default function ReplyThreadPage({
         await loadThreadOnce(meta, safeProfile);
 
         if (meta.id) {
-          try {
-            const liveConversationMessagesQuery = query(
-              collection(db, "conversations", meta.id, "messages"),
-              orderBy("createdAt", "asc")
-            );
+          const liveConversationMessagesQuery = query(
+            collection(db, "conversations", meta.id, "messages"),
+            orderBy("createdAt", "asc")
+          );
 
-            unsubConversationMessages = onSnapshot(
-              liveConversationMessagesQuery,
-              (snap) => {
-                const liveItems = snap.docs.map((d) =>
-                  makeMessageItem(`live-${d.id}`, d.data() as Record<string, any>)
-                );
+          unsubConversationMessages = onSnapshot(
+            liveConversationMessagesQuery,
+            (snap) => {
+              const liveItems = snap.docs
+                .map((d) => {
+                  const data = d.data() as Record<string, any>;
+                  if (!isAdmin(safeProfile.role) && String(data.ownerUid || "") !== safeProfile.uid) {
+                    return null;
+                  }
+                  return makeMessageItem(`live-${d.id}`, data);
+                })
+                .filter(Boolean) as MessageItem[];
 
-                setMessages((prev) => {
-                  const fallbackNonConversationItems = prev.filter(
-                    (item) => !item.id.startsWith("live-") && !item.id.startsWith("conv-")
-                  );
+              setMessages(liveItems);
+              setLoading(false);
 
-                  const merged = [...fallbackNonConversationItems, ...liveItems].sort(
-                    (a, b) => a.createdAtMs - b.createdAtMs
-                  );
-
-                  return merged;
-                });
-
-                setLoading(false);
-                setTimeout(() => {
-                  scrollToBottom(false);
-                }, 60);
-              },
-              (error: any) => {
-                console.error(error);
-              }
-            );
-          } catch (error) {
-            console.error("Failed to attach live conversation listener", error);
-          }
+              setTimeout(() => {
+                scrollToBottom(false);
+              }, 60);
+            },
+            (error: any) => {
+              console.error(error);
+            }
+          );
         }
       } catch (error: any) {
         console.error(error);
