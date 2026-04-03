@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useEffect, useState, type CSSProperties } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
@@ -43,6 +43,9 @@ function getCreatedAtMs(value: any) {
     if (typeof value?.toDate === "function") {
       return value.toDate().getTime();
     }
+    if (typeof value?.seconds === "number") {
+      return value.seconds * 1000;
+    }
     return 0;
   } catch {
     return 0;
@@ -72,7 +75,7 @@ export default function UploadDetailsPage() {
         const userSnap = await getDoc(doc(db, "users", user.uid));
 
         if (!userSnap.exists() || userSnap.data().isActive !== true) {
-          await signOut(auth);
+          await signOut(auth).catch(() => {});
           router.push("/login");
           return;
         }
@@ -81,7 +84,7 @@ export default function UploadDetailsPage() {
         await loadUploadDetails(user.uid);
       } catch (error) {
         console.error("Failed to validate user access", error);
-        await signOut(auth);
+        await signOut(auth).catch(() => {});
         router.push("/login");
       }
     });
@@ -102,7 +105,9 @@ export default function UploadDetailsPage() {
         return;
       }
 
-      const uploadSnap = await getDoc(doc(db, "uploads", uploadId));
+      const uploadRef = doc(db, "uploads", uploadId);
+      const uploadSnap = await getDoc(uploadRef);
+
       if (!uploadSnap.exists()) {
         setUpload(null);
         setLeads([]);
@@ -112,7 +117,7 @@ export default function UploadDetailsPage() {
 
       const uploadData = uploadSnap.data();
 
-      if (uploadData.uploadedBy !== currentUid) {
+      if (String(uploadData.uploadedBy || "") !== currentUid) {
         setUpload(null);
         setLeads([]);
         setLoading(false);
@@ -123,33 +128,38 @@ export default function UploadDetailsPage() {
         id: uploadSnap.id,
         fileName: uploadData.fileName || "-",
         status: uploadData.status || "imported",
-        totalRows: uploadData.totalRows || 0,
-        validPhoneRows: uploadData.validPhoneRows || 0,
+        totalRows: Number(uploadData.totalRows || 0),
+        validPhoneRows: Number(uploadData.validPhoneRows || 0),
         phoneColumn: uploadData.phoneColumn || "-",
         uploadedByName: uploadData.uploadedByName || "-",
         createdAtLabel: formatFirestoreDateNY(uploadData.createdAt),
       });
 
+      // Query only by uploadedBy to stay compatible with your rules/data,
+      // then filter uploadId in JS.
       const leadQuery = query(
         collection(db, "leads"),
-        where("uploadId", "==", uploadId),
         where("uploadedBy", "==", currentUid)
       );
 
       const leadSnap = await getDocs(leadQuery);
 
-      const leadItems: LeadItem[] = leadSnap.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          name: data.name || "",
-          phone: data.phone || "",
-          rawPhone: data.rawPhone || "",
-          status: data.status || "",
-          sourceFileName: data.sourceFileName || "",
-          createdAtMs: getCreatedAtMs(data.createdAt),
-        };
-      });
+      const leadItems: LeadItem[] = leadSnap.docs
+        .map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            name: data.name || "",
+            phone: data.phone || "",
+            rawPhone: data.rawPhone || "",
+            status: data.status || "",
+            sourceFileName: data.sourceFileName || "",
+            createdAtMs: getCreatedAtMs(data.createdAt),
+            _uploadId: String(data.uploadId || ""),
+          } as LeadItem & { _uploadId: string };
+        })
+        .filter((lead) => lead._uploadId === uploadId)
+        .map(({ _uploadId, ...lead }) => lead);
 
       leadItems.sort((a, b) => b.createdAtMs - a.createdAtMs);
 
@@ -236,7 +246,10 @@ export default function UploadDetailsPage() {
     >
       <div style={{ maxWidth: 1200, margin: "0 auto", display: "grid", gap: 24 }}>
         <div>
-          <Link href="/dashboard" style={{ color: "#2563eb", textDecoration: "underline", fontWeight: 700 }}>
+          <Link
+            href="/dashboard"
+            style={{ color: "#2563eb", textDecoration: "underline", fontWeight: 700 }}
+          >
             ← Back to Dashboard
           </Link>
         </div>
@@ -333,7 +346,7 @@ export default function UploadDetailsPage() {
                   {leads.map((lead) => (
                     <tr key={lead.id}>
                       <td style={tdStyle}>{lead.name || "-"}</td>
-                      <td style={tdStyle}>{lead.phone}</td>
+                      <td style={tdStyle}>{lead.phone || "-"}</td>
                       <td style={{ ...tdStyle, textTransform: "capitalize" }}>
                         {lead.status || "imported"}
                       </td>
@@ -379,14 +392,23 @@ function InfoCard({ label, value }: { label: string; value: string }) {
       }}
     >
       <p style={{ margin: 0, fontSize: 14, color: "#64748b" }}>{label}</p>
-      <p style={{ marginTop: 10, marginBottom: 0, fontSize: 18, fontWeight: 700, color: "#0f172a" }}>
+      <p
+        style={{
+          marginTop: 10,
+          marginBottom: 0,
+          fontSize: 18,
+          fontWeight: 700,
+          color: "#0f172a",
+          wordBreak: "break-word",
+        }}
+      >
         {value}
       </p>
     </div>
   );
 }
 
-const thStyle: React.CSSProperties = {
+const thStyle: CSSProperties = {
   textAlign: "left",
   padding: "12px 14px",
   background: "#f8fafc",
@@ -395,7 +417,7 @@ const thStyle: React.CSSProperties = {
   fontSize: 14,
 };
 
-const tdStyle: React.CSSProperties = {
+const tdStyle: CSSProperties = {
   padding: "12px 14px",
   color: "#0f172a",
   borderBottom: "1px solid #f1f5f9",
