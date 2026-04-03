@@ -59,9 +59,8 @@ const DEFAULT_SMS_MESSAGE =
 
 function getUSPhoneValidation(raw: string) {
   const original = String(raw || "").trim();
-  const digits = original.replace(/\D/g, "");
 
-  if (!digits) {
+  if (!original) {
     return {
       valid: false,
       normalized: "",
@@ -69,6 +68,26 @@ function getUSPhoneValidation(raw: string) {
     };
   }
 
+  const digits = original.replace(/\D/g, "");
+
+  // already has +1, keep it
+  if (original.startsWith("+1")) {
+    if (digits.length === 11 && digits.startsWith("1")) {
+      return {
+        valid: true,
+        normalized: `+${digits}`,
+        reason: "Valid US number",
+      };
+    }
+
+    return {
+      valid: false,
+      normalized: "",
+      reason: "Format does not match US +1XXXXXXXXXX",
+    };
+  }
+
+  // 10 digits without country code -> add +1
   if (digits.length === 10) {
     return {
       valid: true,
@@ -77,10 +96,11 @@ function getUSPhoneValidation(raw: string) {
     };
   }
 
+  // 11 digits starting with 1 but without +
   if (digits.length === 11 && digits.startsWith("1")) {
     return {
       valid: true,
-      normalized: `+${digits}`,
+      normalized: `+1${digits.slice(1)}`,
       reason: "Valid US number",
     };
   }
