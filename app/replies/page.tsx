@@ -126,8 +126,11 @@ export default function RepliesPage() {
       let blocked: string[] = [];
       const repliedPhones = new Set<string>();
 
+      // blacklist
       if (isAdmin(currentProfile.role)) {
-        const blacklistSnap = await getDocs(query(collection(db, "blacklisted_numbers")));
+        const blacklistSnap = await getDocs(
+          query(collection(db, "blacklisted_numbers"))
+        );
         blocked = blacklistSnap.docs
           .map((d) => {
             const data = d.data();
@@ -144,7 +147,11 @@ export default function RepliesPage() {
           blacklistQueries.push(
             query(
               collection(db, "blacklisted_numbers"),
-              where("messagingServiceSid", "==", currentProfile.messagingServiceSid)
+              where(
+                "messagingServiceSid",
+                "==",
+                currentProfile.messagingServiceSid
+              )
             )
           );
         }
@@ -159,7 +166,30 @@ export default function RepliesPage() {
           blacklistQueries.push(
             query(
               collection(db, "blacklisted_numbers"),
-              where("assignedTwilioNumber", "==", currentProfile.twilioNumber)
+              where(
+                "assignedTwilioNumber",
+                "==",
+                currentProfile.twilioNumber
+              )
+            )
+          );
+        }
+
+        if (currentProfile.assignedTwilioNumber) {
+          blacklistQueries.push(
+            query(
+              collection(db, "blacklisted_numbers"),
+              where(
+                "assignedTwilioNumber",
+                "==",
+                currentProfile.assignedTwilioNumber
+              )
+            )
+          );
+          blacklistQueries.push(
+            query(
+              collection(db, "blacklisted_numbers"),
+              where("twilioNumber", "==", currentProfile.assignedTwilioNumber)
             )
           );
         }
@@ -187,56 +217,100 @@ export default function RepliesPage() {
       const blockedSet = new Set(blocked.map((phone) => phoneKey(phone)));
       setBlockedPhones(blocked);
 
+      // build replied phones from conversations, not replies
       try {
-        let replyDocs: Array<{ id: string; data: Record<string, any> }> = [];
+        let conversationDocs: Array<{ id: string; data: Record<string, any> }> =
+          [];
 
         if (isAdmin(currentProfile.role)) {
-          replyDocs = await runQuery(query(collection(db, "replies")));
+          conversationDocs = await runQuery(query(collection(db, "conversations")));
         } else {
-          const replyQueries: Query<DocumentData>[] = [
-            query(collection(db, "replies"), where("ownerUid", "==", currentProfile.uid)),
+          const conversationQueries: Query<DocumentData>[] = [
+            query(
+              collection(db, "conversations"),
+              where("ownerUid", "==", currentProfile.uid)
+            ),
           ];
 
           if (currentProfile.messagingServiceSid) {
-            replyQueries.push(
+            conversationQueries.push(
               query(
-                collection(db, "replies"),
-                where("messagingServiceSid", "==", currentProfile.messagingServiceSid)
+                collection(db, "conversations"),
+                where(
+                  "messagingServiceSid",
+                  "==",
+                  currentProfile.messagingServiceSid
+                )
               )
             );
           }
 
           if (currentProfile.twilioNumber) {
-            replyQueries.push(
+            conversationQueries.push(
               query(
-                collection(db, "replies"),
+                collection(db, "conversations"),
                 where("twilioNumber", "==", currentProfile.twilioNumber)
+              )
+            );
+            conversationQueries.push(
+              query(
+                collection(db, "conversations"),
+                where(
+                  "assignedTwilioNumber",
+                  "==",
+                  currentProfile.twilioNumber
+                )
               )
             );
           }
 
-          const replyMap = new Map<string, { id: string; data: Record<string, any> }>();
+          if (currentProfile.assignedTwilioNumber) {
+            conversationQueries.push(
+              query(
+                collection(db, "conversations"),
+                where(
+                  "assignedTwilioNumber",
+                  "==",
+                  currentProfile.assignedTwilioNumber
+                )
+              )
+            );
+          }
 
-          for (const q of replyQueries) {
+          const conversationMap = new Map<
+            string,
+            { id: string; data: Record<string, any> }
+          >();
+
+          for (const q of conversationQueries) {
             try {
               const rows = await runQuery(q);
-              for (const row of rows) replyMap.set(row.id, row);
+              for (const row of rows) conversationMap.set(row.id, row);
             } catch (error) {
-              console.error("Replies query failed", error);
+              console.error("Conversations query failed", error);
             }
           }
 
-          replyDocs = Array.from(replyMap.values());
+          conversationDocs = Array.from(conversationMap.values());
         }
 
-        for (const row of replyDocs) {
-          const p = phoneKey(row.data.from || row.data.phone || "");
-          if (p) repliedPhones.add(p);
+        for (const row of conversationDocs) {
+          const data = row.data;
+          const p = phoneKey(data.phone || data.to || "");
+          const replied =
+            data.hasReply === true ||
+            String(data.status || "").toLowerCase() === "replied" ||
+            String(data.lastDirection || "").toLowerCase() === "inbound";
+
+          if (p && replied) {
+            repliedPhones.add(p);
+          }
         }
       } catch (error) {
-        console.error("Failed to collect replied phones", error);
+        console.error("Failed to collect replied phones from conversations", error);
       }
 
+      // outbound messages
       let messageDocs: Array<{ id: string; data: Record<string, any> }> = [];
 
       if (isAdmin(currentProfile.role)) {
@@ -262,7 +336,11 @@ export default function RepliesPage() {
           messageQueries.push(
             query(
               collection(db, "messages"),
-              where("messagingServiceSid", "==", currentProfile.messagingServiceSid),
+              where(
+                "messagingServiceSid",
+                "==",
+                currentProfile.messagingServiceSid
+              ),
               where("direction", "==", "outbound")
             )
           );
