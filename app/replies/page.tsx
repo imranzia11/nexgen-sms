@@ -27,9 +27,12 @@ type AppUser = {
   uid: string;
   role: string;
   isActive: boolean;
+  email?: string;
+  name?: string;
   assignedTwilioNumber?: string;
   twilioNumber?: string;
   phoneNumber?: string;
+  messagingServiceSid?: string;
 };
 
 function truncateText(value: string, max = 110) {
@@ -42,20 +45,38 @@ function normalizePhone(value: unknown) {
   return String(value || "").replace(/[^\d+]/g, "").trim();
 }
 
-function normalizeRole(value: unknown) {
+function normalizeValue(value: unknown) {
   return String(value || "").trim().toLowerCase();
 }
 
 function isAdmin(role?: string) {
-  const r = normalizeRole(role);
-  return r === "admin" || r === "superadmin" || r === "super_admin";
+  const normalized = normalizeValue(role);
+  return (
+    normalized === "admin" ||
+    normalized === "superadmin" ||
+    normalized === "super_admin"
+  );
 }
 
-function conversationMatchesUserNumber(
+function conversationMatchesUser(
   data: Record<string, any>,
-  assignedNumbers: Set<string>
+  profile: AppUser
 ) {
-  const possibleSystemNumbers = [
+  const allowedNumbers = new Set(
+    [
+      profile.assignedTwilioNumber,
+      profile.twilioNumber,
+      profile.phoneNumber,
+    ]
+      .map(normalizePhone)
+      .filter(Boolean)
+  );
+
+  const allowedServiceSids = new Set(
+    [profile.messagingServiceSid].map(normalizeValue).filter(Boolean)
+  );
+
+  const docNumbers = [
     data.twilioNumber,
     data.assignedTwilioNumber,
     data.from,
@@ -63,11 +84,26 @@ function conversationMatchesUserNumber(
     data.accountPhone,
     data.systemNumber,
     data.messagingServiceNumber,
+    data.messagingNumber,
+    data.phoneNumber,
   ]
     .map(normalizePhone)
     .filter(Boolean);
 
-  return possibleSystemNumbers.some((num) => assignedNumbers.has(num));
+  const docServiceSids = [
+    data.messagingServiceSid,
+    data.serviceSid,
+    data.messagingSid,
+  ]
+    .map(normalizeValue)
+    .filter(Boolean);
+
+  const numberMatch = docNumbers.some((value) => allowedNumbers.has(value));
+  const serviceMatch = docServiceSids.some((value) =>
+    allowedServiceSids.has(value)
+  );
+
+  return numberMatch || serviceMatch;
 }
 
 export default function RepliesPage() {
@@ -112,30 +148,25 @@ export default function RepliesPage() {
         })
         .filter(Boolean);
 
-      const blockedSet = new Set(blocked.map((p) => String(p).trim()));
+      const blockedSet = new Set(blocked.map((phone) => String(phone).trim()));
       setBlockedPhones(blocked);
-
-      const assignedNumbers = new Set(
-        [
-          currentProfile.assignedTwilioNumber,
-          currentProfile.twilioNumber,
-          currentProfile.phoneNumber,
-        ]
-          .map(normalizePhone)
-          .filter(Boolean)
-      );
 
       const rows: ConversationItem[] = conversationSnap.docs
         .map((d) => {
           const data = d.data() as Record<string, any>;
 
           if (!isAdmin(currentProfile.role)) {
-            const allowed = conversationMatchesUserNumber(data, assignedNumbers);
+            const allowed = conversationMatchesUser(data, currentProfile);
             if (!allowed) return null;
           }
 
           const customerPhone = String(
-            data.phone || data.customerPhone || data.leadPhone || data.to || "-"
+            data.phone ||
+              data.customerPhone ||
+              data.leadPhone ||
+              data.to ||
+              data.contactPhone ||
+              "-"
           ).trim();
 
           return {
@@ -182,9 +213,12 @@ export default function RepliesPage() {
           uid: user.uid,
           role: String(userData.role || "user"),
           isActive: userData.isActive === true,
+          email: String(userData.email || user.email || ""),
+          name: String(userData.name || ""),
           assignedTwilioNumber: String(userData.assignedTwilioNumber || ""),
           twilioNumber: String(userData.twilioNumber || ""),
           phoneNumber: String(userData.phoneNumber || ""),
+          messagingServiceSid: String(userData.messagingServiceSid || ""),
         };
 
         setProfile(safeProfile);
@@ -212,7 +246,10 @@ export default function RepliesPage() {
     });
   }, [items, search]);
 
-  const totalUnread = items.reduce((sum, item) => sum + (item.unreadCount || 0), 0);
+  const totalUnread = items.reduce(
+    (sum, item) => sum + (item.unreadCount || 0),
+    0
+  );
 
   if (checking) {
     return (
@@ -294,8 +331,14 @@ export default function RepliesPage() {
               <div style={statsGridStyle}>
                 <StatCard label="Total Conversations" value={String(items.length)} />
                 <StatCard label="Unread Replies" value={String(totalUnread)} />
-                <StatCard label="Visible Results" value={String(filteredItems.length)} />
-                <StatCard label="Blocked Hidden" value={String(blockedPhones.length)} />
+                <StatCard
+                  label="Visible Results"
+                  value={String(filteredItems.length)}
+                />
+                <StatCard
+                  label="Blocked Hidden"
+                  value={String(blockedPhones.length)}
+                />
               </div>
             </div>
           </div>
@@ -328,7 +371,7 @@ export default function RepliesPage() {
                 <div style={emptyTextStyle}>
                   {search.trim()
                     ? "Try a different phone number or keyword."
-                    : "No conversations matched this user account yet. Check assignedTwilioNumber on the user record."}
+                    : "No conversations matched this user account yet. Check twilioNumber and messagingServiceSid on both the user record and conversation docs."}
                 </div>
               </div>
             ) : (
