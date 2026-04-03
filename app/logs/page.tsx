@@ -95,7 +95,7 @@ export default function LogsPage() {
 
   const [checking, setChecking] = useState(true);
   const [loading, setLoading] = useState(true);
-  const [adminName, setAdminName] = useState("Admin");
+  const [userName, setUserName] = useState("User");
 
   const [campaigns, setCampaigns] = useState<CampaignLogItem[]>([]);
   const [messages, setMessages] = useState<MessageLogItem[]>([]);
@@ -109,17 +109,29 @@ export default function LogsPage() {
         return;
       }
 
-      const snap = await getDoc(doc(db, "users", user.uid));
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
 
-      if (!snap.exists() || snap.data().role !== "admin") {
-        await signOut(auth);
+        if (!snap.exists() || snap.data().isActive !== true) {
+          await signOut(auth).catch(() => {});
+          router.push("/login");
+          return;
+        }
+
+        const safeName =
+          String(snap.data().name || "").trim() ||
+          String(user.displayName || "").trim() ||
+          String(user.email || "").split("@")[0] ||
+          "User";
+
+        setUserName(safeName);
+        setChecking(false);
+        await loadLogs();
+      } catch (error) {
+        console.error("Failed to validate user access", error);
+        await signOut(auth).catch(() => {});
         router.push("/login");
-        return;
       }
-
-      setAdminName(snap.data().name || "Admin");
-      setChecking(false);
-      await loadLogs();
     });
 
     return () => unsub();
@@ -170,7 +182,7 @@ export default function LogsPage() {
           name: data.name || "",
           body: data.body || "",
           status: data.status || "-",
-          twilioSid: data.twilioSid || "",
+          twilioSid: data.twilioSid || data.sid || "",
           error: data.error || "",
           sourceFileName: data.sourceFileName || "-",
           createdAtLabel: formatFirestoreDateNY(data.createdAt),
@@ -188,7 +200,7 @@ export default function LogsPage() {
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
+    await signOut(auth).catch(() => {});
     router.push("/login");
   };
 
@@ -255,17 +267,17 @@ export default function LogsPage() {
               <div style={brandIconStyle}>N</div>
               <div>
                 <div style={brandTitleStyle}>Nexgen SMS</div>
-                <div style={brandSubStyle}>Admin Portal</div>
+                <div style={brandSubStyle}>User Portal</div>
               </div>
             </div>
 
             <div style={adminMiniCardStyle}>
               <div style={avatarStyle}>
-                {adminName?.slice(0, 1)?.toUpperCase() || "A"}
+                {userName?.slice(0, 1)?.toUpperCase() || "U"}
               </div>
               <div>
                 <div style={sidebarSmallLabelStyle}>Signed in as</div>
-                <div style={sidebarAdminNameStyle}>{adminName}</div>
+                <div style={sidebarAdminNameStyle}>{userName}</div>
               </div>
             </div>
 
@@ -285,6 +297,16 @@ export default function LogsPage() {
                 <div>
                   <div style={sidebarRepliesTitleStyle}>Replies</div>
                   <div style={sidebarRepliesTextStyle}>Open incoming messages</div>
+                </div>
+              </Link>
+            </div>
+
+            <div style={sidebarRepliesWrapStyle}>
+              <Link href="/blacklisted" style={sidebarRepliesCardStyle}>
+                <div style={sidebarRepliesIconStyle}>⛔</div>
+                <div>
+                  <div style={sidebarRepliesTitleStyle}>Blacklisted</div>
+                  <div style={sidebarRepliesTextStyle}>View blocked numbers</div>
                 </div>
               </Link>
             </div>
