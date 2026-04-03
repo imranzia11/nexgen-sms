@@ -55,7 +55,7 @@ function isAdminRole(role: string) {
   return normalized === "admin" || normalized === "super_admin" || normalized === "superadmin";
 }
 
-function conversationBelongsToUser(data: Record<string, any>, profile: AppUser, authUser: User) {
+function belongsToUser(data: Record<string, any>, profile: AppUser, authUser: User) {
   if (isAdminRole(profile.role)) return true;
 
   const userKeys = new Set(
@@ -72,7 +72,7 @@ function conversationBelongsToUser(data: Record<string, any>, profile: AppUser, 
       .filter(Boolean)
   );
 
-  const numberKeys = new Set(
+  const twilioKeys = new Set(
     [
       profile.assignedTwilioNumber,
       profile.twilioNumber,
@@ -82,50 +82,43 @@ function conversationBelongsToUser(data: Record<string, any>, profile: AppUser, 
       .filter(Boolean)
   );
 
-  const possibleOwnerValues = [
-    data.userId,
-    data.uid,
+  const ownerFields = [
     data.ownerUid,
-    data.createdBy,
-    data.createdByUid,
-    data.createdByUserId,
-    data.uploadedBy,
-    data.assignedTo,
     data.assignedUserId,
     data.assignedUid,
-    data.accountUserId,
-    data.owner,
+    data.createdBy,
+    data.createdByUid,
+    data.uploadedBy,
+    data.userId,
+    data.uid,
     data.userEmail,
     data.email,
     data.ownerEmail,
     data.createdByEmail,
-    data.accountEmail,
     data.userName,
-    data.name,
     data.ownerName,
     data.createdByName,
-    data.accountName,
   ]
     .map(normalizeValue)
     .filter(Boolean);
 
-  const possibleNumbers = [
-    data.from,
-    data.to,
+  const numberFields = [
     data.twilioNumber,
     data.assignedTwilioNumber,
-    data.accountPhone,
+    data.from,
+    data.to,
     data.phoneNumber,
+    data.accountPhone,
     data.sender,
     data.receiver,
   ]
     .map(normalizePhone)
     .filter(Boolean);
 
-  const matchedOwner = possibleOwnerValues.some((value) => userKeys.has(value));
-  const matchedNumber = possibleNumbers.some((value) => numberKeys.has(value));
-
-  return matchedOwner || matchedNumber;
+  return (
+    ownerFields.some((v) => userKeys.has(v)) ||
+    numberFields.some((v) => twilioKeys.has(v))
+  );
 }
 
 export default function RepliesPage() {
@@ -175,15 +168,15 @@ export default function RepliesPage() {
       const blockedSet = new Set(blocked.map((p) => String(p).trim()));
       setBlockedPhones(blocked);
 
-      const rows: ConversationItem[] = conversationSnap.docs
+      let rows: ConversationItem[] = conversationSnap.docs
         .map((d) => {
           const data = d.data() as Record<string, any>;
 
-          if (!conversationBelongsToUser(data, currentProfile, currentAuthUser)) {
+          if (!belongsToUser(data, currentProfile, currentAuthUser)) {
             return null;
           }
 
-          const phone = String(data.phone || data.from || data.to || "-").trim();
+          const phone = String(data.phone || data.customerPhone || data.leadPhone || "-").trim();
 
           return {
             id: d.id,
@@ -195,6 +188,50 @@ export default function RepliesPage() {
         })
         .filter((item): item is ConversationItem => Boolean(item))
         .filter((item) => !blockedSet.has(String(item.phone || "").trim()));
+
+      // emergency fallback for non-admin users:
+      // if no conversations found by owner fields, show conversations linked to assigned Twilio number
+      if (!isAdminRole(currentProfile.role) && rows.length === 0) {
+        const assignedNumbers = new Set(
+          [
+            currentProfile.assignedTwilioNumber,
+            currentProfile.twilioNumber,
+            currentProfile.phoneNumber,
+          ]
+            .map(normalizePhone)
+            .filter(Boolean)
+        );
+
+        rows = conversationSnap.docs
+          .map((d) => {
+            const data = d.data() as Record<string, any>;
+
+            const docTwilioNumbers = [
+              data.twilioNumber,
+              data.assignedTwilioNumber,
+              data.from,
+              data.receiver,
+              data.accountPhone,
+            ]
+              .map(normalizePhone)
+              .filter(Boolean);
+
+            const matchesNumber = docTwilioNumbers.some((n) => assignedNumbers.has(n));
+            if (!matchesNumber) return null;
+
+            const phone = String(data.phone || data.customerPhone || data.leadPhone || "-").trim();
+
+            return {
+              id: d.id,
+              phone,
+              lastMessage: String(data.lastMessage || ""),
+              unreadCount: Number(data.unreadCount || 0),
+              lastMessageAtLabel: formatFirestoreDateNY(data.lastMessageAt),
+            };
+          })
+          .filter((item): item is ConversationItem => Boolean(item))
+          .filter((item) => !blockedSet.has(String(item.phone || "").trim()));
+      }
 
       setItems(rows);
     } catch (error) {
@@ -215,8 +252,7 @@ export default function RepliesPage() {
       }
 
       try {
-        const userRef = doc(db, "users", user.uid);
-        const userSnap = await getDoc(userRef);
+        const userSnap = await getDoc(doc(db, "users", user.uid));
 
         if (!userSnap.exists()) {
           await signOut(auth).catch(() => {});
@@ -235,7 +271,7 @@ export default function RepliesPage() {
         const safeProfile: AppUser = {
           uid: user.uid,
           role: String(userData.role || "user"),
-          isActive: userData.isActive === true,
+          isActive: true,
           email: String(userData.email || user.email || ""),
           name: String(userData.name || ""),
           fullName: String(userData.fullName || ""),
@@ -277,12 +313,8 @@ export default function RepliesPage() {
       <>
         <style jsx global>{`
           @keyframes spin {
-            0% {
-              transform: rotate(0deg);
-            }
-            100% {
-              transform: rotate(360deg);
-            }
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
           }
         `}</style>
 
@@ -304,12 +336,8 @@ export default function RepliesPage() {
     <>
       <style jsx global>{`
         @keyframes spin {
-          0% {
-            transform: rotate(0deg);
-          }
-          100% {
-            transform: rotate(360deg);
-          }
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
         }
 
         input::placeholder {
@@ -321,15 +349,14 @@ export default function RepliesPage() {
         <div style={pageWrapStyle}>
           <div style={heroStyle}>
             <div style={heroOverlayStyle} />
-
             <div style={heroInnerStyle}>
               <div>
                 <div style={heroBadgeStyle}>Incoming SMS Center</div>
                 <h1 style={heroTitleStyle}>Replies</h1>
                 <p style={heroTextStyle}>
                   {isAdminRole(profile?.role || "")
-                    ? "View all active customer SMS conversations. STOP and blacklisted numbers are hidden from this page and kept in the blacklist area."
-                    : "View only your assigned SMS conversations. STOP and blacklisted numbers are hidden from this page and kept in the blacklist area."}
+                    ? "View all active customer SMS conversations."
+                    : "View your assigned SMS conversations."}
                 </p>
               </div>
 
@@ -362,9 +389,7 @@ export default function RepliesPage() {
             <div style={panelHeaderStyle}>
               <div>
                 <h2 style={panelTitleStyle}>Customer Conversations</h2>
-                <p style={panelDescStyle}>
-                  Open any visible conversation to view the full reply thread.
-                </p>
+                <p style={panelDescStyle}>Open any visible conversation to view the full reply thread.</p>
               </div>
 
               <button onClick={() => loadConversations()} style={refreshButtonStyle}>
@@ -386,7 +411,7 @@ export default function RepliesPage() {
                 <div style={emptyTextStyle}>
                   {search.trim()
                     ? "Try a different phone number or keyword."
-                    : "Only active non-blacklisted conversations assigned to this account show here. STOP opt-out conversations stay in the blacklist section."}
+                    : "No conversations matched this account yet."}
                 </div>
               </div>
             ) : (
@@ -405,7 +430,6 @@ export default function RepliesPage() {
 
                       <div style={conversationRightStyle}>
                         <div style={timeStyle}>{item.lastMessageAtLabel}</div>
-
                         {item.unreadCount > 0 ? (
                           <div style={unreadBadgeStyle}>{item.unreadCount} unread</div>
                         ) : (
@@ -414,9 +438,7 @@ export default function RepliesPage() {
                       </div>
                     </div>
 
-                    <div style={messagePreviewStyle}>
-                      {truncateText(item.lastMessage || "-")}
-                    </div>
+                    <div style={messagePreviewStyle}>{truncateText(item.lastMessage || "-")}</div>
 
                     <div style={openRowStyle}>
                       <span style={openTextStyle}>Open conversation</span>
