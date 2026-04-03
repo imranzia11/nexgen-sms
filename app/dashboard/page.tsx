@@ -55,7 +55,7 @@ type UploadItemWithSort = UploadItem & {
 type ToastType = "success" | "error" | "info";
 
 const DEFAULT_SMS_MESSAGE =
-  "NexGen Merchant Solutions: Funding options from USD 5,000 to USD 5,000,000 may be available for eligible businesses. Reply for more information. Reply STOP to opt out, HELP for help.";
+  "Quick question - does your business need extra capital right now? We can approve $10K-$500K within hours. Reply STOP to opt out, Reply YES to get Funds.";
 
 function getUSPhoneValidation(raw: string) {
   const original = String(raw || "").trim();
@@ -204,7 +204,7 @@ export default function DashboardPage() {
   const toastTimerRef = useRef<number | null>(null);
 
   const [checking, setChecking] = useState(true);
-  const [adminName, setAdminName] = useState("User");
+  const [userName, setUserName] = useState("User");
 
   const [uploading, setUploading] = useState(false);
   const [sendingSms, setSendingSms] = useState(false);
@@ -268,7 +268,13 @@ export default function DashboardPage() {
           return;
         }
 
-        setAdminName(snap.data().name || "User");
+        const safeName =
+          String(snap.data().name || "").trim() ||
+          String(user.displayName || "").trim() ||
+          String(user.email || "").split("@")[0] ||
+          "User";
+
+        setUserName(safeName);
         setChecking(false);
         await loadUploads(user.uid);
       } catch (error) {
@@ -324,7 +330,7 @@ export default function DashboardPage() {
           };
           return row;
         })
-        .sort((a, b) => (b as UploadItemWithSort).createdAtMs - (a as UploadItemWithSort).createdAtMs)
+        .sort((a, b) => b.createdAtMs - a.createdAtMs)
         .map(({ createdAtMs, ...rest }) => rest);
 
       setUploads(items);
@@ -444,7 +450,7 @@ export default function DashboardPage() {
             fileName: file.name,
             uploadedBy: user.uid,
             ownerUid: user.uid,
-            uploadedByName: adminName,
+            uploadedByName: userName,
             phoneColumn,
             totalRows: parsedRows.length,
             validPhoneRows,
@@ -583,6 +589,7 @@ export default function DashboardPage() {
 
       await addDoc(collection(db, "campaigns"), {
         ownerUid: user.uid,
+        createdBy: user.uid,
         uploadId: selectedUploadId,
         fileName: selectedUpload.fileName,
         name: campaignName.trim() || `Campaign for ${selectedUpload.fileName}`,
@@ -591,8 +598,7 @@ export default function DashboardPage() {
         successCount: data.success || 0,
         failedCount: data.failed || 0,
         status: data.failed > 0 ? "completed_with_failures" : "completed",
-        createdBy: user.uid,
-        createdByName: adminName,
+        createdByName: userName,
         createdAt: serverTimestamp(),
       });
 
@@ -751,11 +757,11 @@ export default function DashboardPage() {
 
               <div style={adminMiniCardStyle}>
                 <div style={avatarStyle}>
-                  {adminName?.slice(0, 1)?.toUpperCase() || "U"}
+                  {userName?.slice(0, 1)?.toUpperCase() || "U"}
                 </div>
                 <div>
                   <div style={sidebarSmallLabelStyle}>Signed in as</div>
-                  <div style={sidebarAdminNameStyle}>{adminName}</div>
+                  <div style={sidebarAdminNameStyle}>{userName}</div>
                 </div>
               </div>
 
