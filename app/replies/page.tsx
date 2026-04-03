@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
-import { onAuthStateChanged, signOut, type User } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
   collection,
   getDoc,
@@ -27,10 +27,6 @@ type AppUser = {
   uid: string;
   role: string;
   isActive: boolean;
-  email?: string;
-  name?: string;
-  fullName?: string;
-  displayName?: string;
   assignedTwilioNumber?: string;
   twilioNumber?: string;
   phoneNumber?: string;
@@ -42,83 +38,36 @@ function truncateText(value: string, max = 110) {
   return `${value.slice(0, max)}...`;
 }
 
-function normalizeValue(value: unknown) {
-  return String(value || "").trim().toLowerCase();
-}
-
 function normalizePhone(value: unknown) {
   return String(value || "").replace(/[^\d+]/g, "").trim();
 }
 
-function isAdminRole(role: string) {
-  const normalized = normalizeValue(role);
-  return normalized === "admin" || normalized === "super_admin" || normalized === "superadmin";
+function normalizeRole(value: unknown) {
+  return String(value || "").trim().toLowerCase();
 }
 
-function belongsToUser(data: Record<string, any>, profile: AppUser, authUser: User) {
-  if (isAdminRole(profile.role)) return true;
+function isAdmin(role?: string) {
+  const r = normalizeRole(role);
+  return r === "admin" || r === "superadmin" || r === "super_admin";
+}
 
-  const userKeys = new Set(
-    [
-      profile.uid,
-      authUser.uid,
-      authUser.email,
-      profile.email,
-      profile.name,
-      profile.fullName,
-      profile.displayName,
-    ]
-      .map(normalizeValue)
-      .filter(Boolean)
-  );
-
-  const twilioKeys = new Set(
-    [
-      profile.assignedTwilioNumber,
-      profile.twilioNumber,
-      profile.phoneNumber,
-    ]
-      .map(normalizePhone)
-      .filter(Boolean)
-  );
-
-  const ownerFields = [
-    data.ownerUid,
-    data.assignedUserId,
-    data.assignedUid,
-    data.createdBy,
-    data.createdByUid,
-    data.uploadedBy,
-    data.userId,
-    data.uid,
-    data.userEmail,
-    data.email,
-    data.ownerEmail,
-    data.createdByEmail,
-    data.userName,
-    data.ownerName,
-    data.createdByName,
-  ]
-    .map(normalizeValue)
-    .filter(Boolean);
-
-  const numberFields = [
+function conversationMatchesUserNumber(
+  data: Record<string, any>,
+  assignedNumbers: Set<string>
+) {
+  const possibleSystemNumbers = [
     data.twilioNumber,
     data.assignedTwilioNumber,
     data.from,
-    data.to,
-    data.phoneNumber,
-    data.accountPhone,
-    data.sender,
     data.receiver,
+    data.accountPhone,
+    data.systemNumber,
+    data.messagingServiceNumber,
   ]
     .map(normalizePhone)
     .filter(Boolean);
 
-  return (
-    ownerFields.some((v) => userKeys.has(v)) ||
-    numberFields.some((v) => twilioKeys.has(v))
-  );
+  return possibleSystemNumbers.some((num) => assignedNumbers.has(num));
 }
 
 export default function RepliesPage() {
@@ -131,14 +80,12 @@ export default function RepliesPage() {
   const [blockedPhones, setBlockedPhones] = useState<string[]>([]);
   const [profile, setProfile] = useState<AppUser | null>(null);
 
-  async function loadConversations(profileArg?: AppUser, authUserArg?: User) {
+  async function loadConversations(profileArg?: AppUser) {
     try {
       setLoading(true);
 
-      const currentAuthUser = authUserArg || auth.currentUser;
       const currentProfile = profileArg || profile;
-
-      if (!currentAuthUser || !currentProfile) {
+      if (!currentProfile) {
         setItems([]);
         setBlockedPhones([]);
         return;
@@ -168,19 +115,32 @@ export default function RepliesPage() {
       const blockedSet = new Set(blocked.map((p) => String(p).trim()));
       setBlockedPhones(blocked);
 
-      let rows: ConversationItem[] = conversationSnap.docs
+      const assignedNumbers = new Set(
+        [
+          currentProfile.assignedTwilioNumber,
+          currentProfile.twilioNumber,
+          currentProfile.phoneNumber,
+        ]
+          .map(normalizePhone)
+          .filter(Boolean)
+      );
+
+      const rows: ConversationItem[] = conversationSnap.docs
         .map((d) => {
           const data = d.data() as Record<string, any>;
 
-          if (!belongsToUser(data, currentProfile, currentAuthUser)) {
-            return null;
+          if (!isAdmin(currentProfile.role)) {
+            const allowed = conversationMatchesUserNumber(data, assignedNumbers);
+            if (!allowed) return null;
           }
 
-          const phone = String(data.phone || data.customerPhone || data.leadPhone || "-").trim();
+          const customerPhone = String(
+            data.phone || data.customerPhone || data.leadPhone || data.to || "-"
+          ).trim();
 
           return {
             id: d.id,
-            phone,
+            phone: customerPhone,
             lastMessage: String(data.lastMessage || ""),
             unreadCount: Number(data.unreadCount || 0),
             lastMessageAtLabel: formatFirestoreDateNY(data.lastMessageAt),
@@ -188,50 +148,6 @@ export default function RepliesPage() {
         })
         .filter((item): item is ConversationItem => Boolean(item))
         .filter((item) => !blockedSet.has(String(item.phone || "").trim()));
-
-      // emergency fallback for non-admin users:
-      // if no conversations found by owner fields, show conversations linked to assigned Twilio number
-      if (!isAdminRole(currentProfile.role) && rows.length === 0) {
-        const assignedNumbers = new Set(
-          [
-            currentProfile.assignedTwilioNumber,
-            currentProfile.twilioNumber,
-            currentProfile.phoneNumber,
-          ]
-            .map(normalizePhone)
-            .filter(Boolean)
-        );
-
-        rows = conversationSnap.docs
-          .map((d) => {
-            const data = d.data() as Record<string, any>;
-
-            const docTwilioNumbers = [
-              data.twilioNumber,
-              data.assignedTwilioNumber,
-              data.from,
-              data.receiver,
-              data.accountPhone,
-            ]
-              .map(normalizePhone)
-              .filter(Boolean);
-
-            const matchesNumber = docTwilioNumbers.some((n) => assignedNumbers.has(n));
-            if (!matchesNumber) return null;
-
-            const phone = String(data.phone || data.customerPhone || data.leadPhone || "-").trim();
-
-            return {
-              id: d.id,
-              phone,
-              lastMessage: String(data.lastMessage || ""),
-              unreadCount: Number(data.unreadCount || 0),
-              lastMessageAtLabel: formatFirestoreDateNY(data.lastMessageAt),
-            };
-          })
-          .filter((item): item is ConversationItem => Boolean(item))
-          .filter((item) => !blockedSet.has(String(item.phone || "").trim()));
-      }
 
       setItems(rows);
     } catch (error) {
@@ -254,7 +170,7 @@ export default function RepliesPage() {
       try {
         const userSnap = await getDoc(doc(db, "users", user.uid));
 
-        if (!userSnap.exists()) {
+        if (!userSnap.exists() || userSnap.data().isActive !== true) {
           await signOut(auth).catch(() => {});
           router.push("/login");
           return;
@@ -262,20 +178,10 @@ export default function RepliesPage() {
 
         const userData = userSnap.data() as Record<string, any>;
 
-        if (userData.isActive !== true) {
-          await signOut(auth).catch(() => {});
-          router.push("/login");
-          return;
-        }
-
         const safeProfile: AppUser = {
           uid: user.uid,
           role: String(userData.role || "user"),
-          isActive: true,
-          email: String(userData.email || user.email || ""),
-          name: String(userData.name || ""),
-          fullName: String(userData.fullName || ""),
-          displayName: String(userData.displayName || user.displayName || ""),
+          isActive: userData.isActive === true,
           assignedTwilioNumber: String(userData.assignedTwilioNumber || ""),
           twilioNumber: String(userData.twilioNumber || ""),
           phoneNumber: String(userData.phoneNumber || ""),
@@ -283,7 +189,7 @@ export default function RepliesPage() {
 
         setProfile(safeProfile);
         setChecking(false);
-        await loadConversations(safeProfile, user);
+        await loadConversations(safeProfile);
       } catch (error) {
         console.error("Failed to validate user access", error);
         await signOut(auth).catch(() => {});
@@ -313,8 +219,12 @@ export default function RepliesPage() {
       <>
         <style jsx global>{`
           @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+              transform: rotate(0deg);
+            }
+            100% {
+              transform: rotate(360deg);
+            }
           }
         `}</style>
 
@@ -336,8 +246,12 @@ export default function RepliesPage() {
     <>
       <style jsx global>{`
         @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
+          0% {
+            transform: rotate(0deg);
+          }
+          100% {
+            transform: rotate(360deg);
+          }
         }
 
         input::placeholder {
@@ -349,14 +263,15 @@ export default function RepliesPage() {
         <div style={pageWrapStyle}>
           <div style={heroStyle}>
             <div style={heroOverlayStyle} />
+
             <div style={heroInnerStyle}>
               <div>
                 <div style={heroBadgeStyle}>Incoming SMS Center</div>
                 <h1 style={heroTitleStyle}>Replies</h1>
                 <p style={heroTextStyle}>
-                  {isAdminRole(profile?.role || "")
-                    ? "View all active customer SMS conversations."
-                    : "View your assigned SMS conversations."}
+                  {isAdmin(profile?.role)
+                    ? "View all active customer SMS conversations. STOP and blacklisted numbers are hidden from this page and kept in the blacklist area."
+                    : "View only your assigned SMS conversations. STOP and blacklisted numbers are hidden from this page and kept in the blacklist area."}
                 </p>
               </div>
 
@@ -389,7 +304,9 @@ export default function RepliesPage() {
             <div style={panelHeaderStyle}>
               <div>
                 <h2 style={panelTitleStyle}>Customer Conversations</h2>
-                <p style={panelDescStyle}>Open any visible conversation to view the full reply thread.</p>
+                <p style={panelDescStyle}>
+                  Open any visible conversation to view the full reply thread.
+                </p>
               </div>
 
               <button onClick={() => loadConversations()} style={refreshButtonStyle}>
@@ -411,7 +328,7 @@ export default function RepliesPage() {
                 <div style={emptyTextStyle}>
                   {search.trim()
                     ? "Try a different phone number or keyword."
-                    : "No conversations matched this account yet."}
+                    : "No conversations matched this user account yet. Check assignedTwilioNumber on the user record."}
                 </div>
               </div>
             ) : (
@@ -430,6 +347,7 @@ export default function RepliesPage() {
 
                       <div style={conversationRightStyle}>
                         <div style={timeStyle}>{item.lastMessageAtLabel}</div>
+
                         {item.unreadCount > 0 ? (
                           <div style={unreadBadgeStyle}>{item.unreadCount} unread</div>
                         ) : (
@@ -438,7 +356,9 @@ export default function RepliesPage() {
                       </div>
                     </div>
 
-                    <div style={messagePreviewStyle}>{truncateText(item.lastMessage || "-")}</div>
+                    <div style={messagePreviewStyle}>
+                      {truncateText(item.lastMessage || "-")}
+                    </div>
 
                     <div style={openRowStyle}>
                       <span style={openTextStyle}>Open conversation</span>
