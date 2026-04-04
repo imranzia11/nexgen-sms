@@ -104,7 +104,7 @@ export default function RepliesPage() {
   const [profile, setProfile] = useState<AppUser | null>(null);
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [deletingId, setDeletingId] = useState("");
-  const [openActionId, setOpenActionId] = useState("");
+  const [openMenuId, setOpenMenuId] = useState("");
 
   async function runQuery(q: Query<DocumentData>) {
     const snap = await getDocs(q);
@@ -201,13 +201,10 @@ export default function RepliesPage() {
 
     try {
       setDeletingId(itemId);
-
       await deleteDoc(doc(db, "conversations", itemId));
-
       setItems((prev) => prev.filter((item) => item.id !== itemId));
-
-      if (openActionId === itemId) {
-        setOpenActionId("");
+      if (openMenuId === itemId) {
+        setOpenMenuId("");
       }
     } catch (error) {
       console.error("Failed to delete conversation", error);
@@ -260,6 +257,20 @@ export default function RepliesPage() {
 
     return () => unsub();
   }, [router]);
+
+  useEffect(() => {
+    function handleGlobalClick() {
+      setOpenMenuId("");
+    }
+
+    if (openMenuId) {
+      window.addEventListener("click", handleGlobalClick);
+    }
+
+    return () => {
+      window.removeEventListener("click", handleGlobalClick);
+    };
+  }, [openMenuId]);
 
   const searchedItems = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -403,73 +414,87 @@ export default function RepliesPage() {
           ) : (
             <div style={conversationGridStyle}>
               {filteredItems.map((item) => (
-                <div key={item.id} style={swipeRowStyle}>
-                  <div style={deleteActionWrapStyle}>
-                    <button
-                      onClick={() => handleDeleteConversation(item.id)}
-                      disabled={deletingId === item.id}
-                      style={{
-                        ...deleteActionButtonStyle,
-                        opacity: deletingId === item.id ? 0.6 : 1,
-                      }}
-                    >
-                      {deletingId === item.id ? "Deleting..." : "Delete"}
-                    </button>
-                  </div>
-
-                  <div
-                    style={{
-                      ...swipeCardShellStyle,
-                      transform:
-                        openActionId === item.id
-                          ? "translateX(-112px)"
-                          : "translateX(0)",
-                    }}
+                <div key={item.id} style={conversationShellStyle}>
+                  <Link
+                    href={`/replies/${encodeURIComponent(item.phone)}`}
+                    style={conversationCardStyle}
                   >
-                    <Link
-                      href={`/replies/${encodeURIComponent(item.phone)}`}
-                      style={conversationCardStyle}
-                    >
-                      <div style={conversationTopStyle}>
-                        <div>
-                          <div style={phoneStyle}>{item.phone}</div>
-                          {item.name ? <div style={nameStyle}>{item.name}</div> : null}
-                          <div style={timeStyleMobile}>{item.createdAtLabel}</div>
-                        </div>
+                    <div style={conversationTopStyle}>
+                      <div>
+                        <div style={phoneStyle}>{item.phone}</div>
+                        {item.name ? <div style={nameStyle}>{item.name}</div> : null}
+                        <div style={timeStyleMobile}>{item.createdAtLabel}</div>
+                      </div>
 
-                        <div style={conversationRightStyle}>
-                          <div style={timeStyle}>{item.createdAtLabel}</div>
-                          <div
-                            style={
-                              item.replied
-                                ? repliedBadgeStyle
-                                : awaitingReplyBadgeStyle
-                            }
-                          >
-                            {item.replied ? "Replied" : "Awaiting Reply"}
-                          </div>
+                      <div style={conversationRightStyle}>
+                        <div style={timeStyle}>{item.createdAtLabel}</div>
+                        <div
+                          style={
+                            item.replied
+                              ? repliedBadgeStyle
+                              : awaitingReplyBadgeStyle
+                          }
+                        >
+                          {item.replied ? "Replied" : "Awaiting Reply"}
                         </div>
                       </div>
+                    </div>
 
-                      <div style={messagePreviewStyle}>
-                        {truncateText(item.body || "-")}
-                      </div>
+                    <div style={messagePreviewStyle}>
+                      {truncateText(item.body || "-")}
+                    </div>
 
-                      <div style={openRowStyle}>
-                        <span style={openTextStyle}>Open conversation</span>
-                        <span style={openArrowStyle}>→</span>
-                      </div>
-                    </Link>
+                    <div style={openRowStyle}>
+                      <span style={openTextStyle}>Open conversation</span>
+                      <span style={openArrowStyle}>→</span>
+                    </div>
+                  </Link>
 
+                  <div style={actionWrapStyle}>
                     <button
                       type="button"
-                      onClick={() =>
-                        setOpenActionId((prev) => (prev === item.id ? "" : item.id))
-                      }
-                      style={swipeToggleButtonStyle}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setOpenMenuId((prev) => (prev === item.id ? "" : item.id));
+                      }}
+                      style={actionButtonStyle}
                     >
-                      {openActionId === item.id ? "Close" : "Slide"}
+                      ⋯
                     </button>
+
+                    {openMenuId === item.id ? (
+                      <div
+                        style={actionMenuStyle}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenMenuId("");
+                            router.push(`/replies/${encodeURIComponent(item.phone)}`);
+                          }}
+                          style={menuItemStyle}
+                        >
+                          Open
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteConversation(item.id)}
+                          disabled={deletingId === item.id}
+                          style={{
+                            ...menuItemStyle,
+                            ...dangerMenuItemStyle,
+                            opacity: deletingId === item.id ? 0.6 : 1,
+                          }}
+                        >
+                          {deletingId === item.id ? "Deleting..." : "Delete"}
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -698,55 +723,8 @@ const conversationGridStyle: CSSProperties = {
   gap: 14,
 };
 
-const swipeRowStyle: CSSProperties = {
+const conversationShellStyle: CSSProperties = {
   position: "relative",
-  overflow: "hidden",
-  borderRadius: 22,
-};
-
-const deleteActionWrapStyle: CSSProperties = {
-  position: "absolute",
-  top: 0,
-  right: 0,
-  bottom: 0,
-  width: 124,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: 10,
-  background: "linear-gradient(135deg, #b91c1c 0%, #dc2626 100%)",
-  borderRadius: 22,
-};
-
-const deleteActionButtonStyle: CSSProperties = {
-  border: "none",
-  borderRadius: 14,
-  padding: "12px 16px",
-  background: "#ffffff",
-  color: "#b91c1c",
-  fontWeight: 900,
-  fontSize: 14,
-  cursor: "pointer",
-};
-
-const swipeCardShellStyle: CSSProperties = {
-  position: "relative",
-  transition: "transform 0.25s ease",
-};
-
-const swipeToggleButtonStyle: CSSProperties = {
-  position: "absolute",
-  top: 14,
-  right: 14,
-  border: "1px solid rgba(15,23,42,0.08)",
-  borderRadius: 12,
-  padding: "8px 12px",
-  background: "#ffffff",
-  color: "#0f172a",
-  fontWeight: 800,
-  fontSize: 12,
-  cursor: "pointer",
-  zIndex: 2,
 };
 
 const conversationCardStyle: CSSProperties = {
@@ -756,8 +734,61 @@ const conversationCardStyle: CSSProperties = {
   border: "1px solid rgba(15, 23, 42, 0.06)",
   borderRadius: 22,
   padding: 20,
+  paddingRight: 78,
   display: "block",
   boxShadow: "0 8px 20px rgba(15, 23, 42, 0.05)",
+};
+
+const actionWrapStyle: CSSProperties = {
+  position: "absolute",
+  top: 16,
+  right: 16,
+  zIndex: 5,
+};
+
+const actionButtonStyle: CSSProperties = {
+  width: 40,
+  height: 40,
+  borderRadius: 12,
+  border: "1px solid rgba(15,23,42,0.08)",
+  background: "#ffffff",
+  color: "#0f172a",
+  fontSize: 22,
+  fontWeight: 900,
+  lineHeight: 1,
+  cursor: "pointer",
+  boxShadow: "0 8px 18px rgba(15,23,42,0.08)",
+};
+
+const actionMenuStyle: CSSProperties = {
+  position: "absolute",
+  top: 48,
+  right: 0,
+  minWidth: 140,
+  borderRadius: 14,
+  border: "1px solid rgba(15,23,42,0.08)",
+  background: "#ffffff",
+  boxShadow: "0 16px 34px rgba(15,23,42,0.12)",
+  padding: 8,
+  display: "grid",
+  gap: 6,
+};
+
+const menuItemStyle: CSSProperties = {
+  border: "none",
+  borderRadius: 10,
+  padding: "10px 12px",
+  background: "#ffffff",
+  color: "#0f172a",
+  fontSize: 14,
+  fontWeight: 800,
+  textAlign: "left",
+  cursor: "pointer",
+};
+
+const dangerMenuItemStyle: CSSProperties = {
+  color: "#b91c1c",
+  background: "rgba(220,38,38,0.04)",
 };
 
 const conversationTopStyle: CSSProperties = {
