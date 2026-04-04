@@ -111,7 +111,8 @@ export default function ReplyThreadPage({
   const [replyBody, setReplyBody] = useState("");
   const [status, setStatus] = useState("");
   const [profile, setProfile] = useState<AppUser | null>(null);
-  const [conversationMeta, setConversationMeta] = useState<ConversationMeta | null>(null);
+  const [conversationMeta, setConversationMeta] =
+    useState<ConversationMeta | null>(null);
 
   function scrollToBottom(smooth = true) {
     requestAnimationFrame(() => {
@@ -187,7 +188,9 @@ export default function ReplyThreadPage({
         };
 
         setConversationMeta(meta);
-        setThreadTitle(meta.name ? `${meta.name} · ${meta.phone}` : meta.phone || "Conversation");
+        setThreadTitle(
+          meta.name ? `${meta.name} · ${meta.phone}` : meta.phone || "Conversation"
+        );
         return meta;
       }
 
@@ -212,7 +215,9 @@ export default function ReplyThreadPage({
         };
 
         setConversationMeta(meta);
-        setThreadTitle(meta.name ? `${meta.name} · ${meta.phone}` : meta.phone || "Conversation");
+        setThreadTitle(
+          meta.name ? `${meta.name} · ${meta.phone}` : meta.phone || "Conversation"
+        );
         return meta;
       }
 
@@ -237,7 +242,9 @@ export default function ReplyThreadPage({
         };
 
         setConversationMeta(meta);
-        setThreadTitle(meta.name ? `${meta.name} · ${meta.phone}` : meta.phone || "Conversation");
+        setThreadTitle(
+          meta.name ? `${meta.name} · ${meta.phone}` : meta.phone || "Conversation"
+        );
         return meta;
       }
 
@@ -276,14 +283,14 @@ export default function ReplyThreadPage({
         subMessagesSnap.docs.forEach((d) => {
           const data = d.data() as Record<string, any>;
 
-          if (!isAdmin(currentProfile.role) && String(data.ownerUid || "") !== currentProfile.uid) {
+          if (
+            !isAdmin(currentProfile.role) &&
+            String(data.ownerUid || "") !== currentProfile.uid
+          ) {
             return;
           }
 
-          messageStore.set(
-            `conv-${d.id}`,
-            makeMessageItem(`conv-${d.id}`, data)
-          );
+          messageStore.set(`conv-${d.id}`, makeMessageItem(`conv-${d.id}`, data));
         });
       } catch (error) {
         console.error("Failed to load conversation sub-messages", error);
@@ -292,10 +299,7 @@ export default function ReplyThreadPage({
       if (messageStore.size === 0) {
         try {
           const outboundQuery = isAdmin(currentProfile.role)
-            ? query(
-                collection(db, "messages"),
-                where("to", "==", routePhone)
-              )
+            ? query(collection(db, "messages"), where("to", "==", routePhone))
             : query(
                 collection(db, "messages"),
                 where("ownerUid", "==", currentProfile.uid),
@@ -433,14 +437,28 @@ export default function ReplyThreadPage({
               const liveItems = snap.docs
                 .map((d) => {
                   const data = d.data() as Record<string, any>;
-                  if (!isAdmin(safeProfile.role) && String(data.ownerUid || "") !== safeProfile.uid) {
+                  if (
+                    !isAdmin(safeProfile.role) &&
+                    String(data.ownerUid || "") !== safeProfile.uid
+                  ) {
                     return null;
                   }
                   return makeMessageItem(`live-${d.id}`, data);
                 })
                 .filter(Boolean) as MessageItem[];
 
-              setMessages(liveItems);
+              setMessages((prev) => {
+                const fallbackItems = prev.filter(
+                  (item) => !item.id.startsWith("live-") && !item.id.startsWith("conv-")
+                );
+
+                const merged = [...fallbackItems, ...liveItems].sort(
+                  (a, b) => a.createdAtMs - b.createdAtMs
+                );
+
+                return merged;
+              });
+
               setLoading(false);
 
               setTimeout(() => {
@@ -467,7 +485,7 @@ export default function ReplyThreadPage({
   }, [routePhone, router]);
 
   async function handleSendReply() {
-    if (!routePhone) {
+    if (!conversationMeta?.phone) {
       setStatus("Phone number is missing.");
       return;
     }
@@ -496,8 +514,8 @@ export default function ReplyThreadPage({
           Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({
-          to: routePhone,
-          phone: routePhone,
+          to: conversationMeta.phone,
+          phone: conversationMeta.phone,
           body: replyBody.trim(),
         }),
       });
@@ -579,14 +597,17 @@ export default function ReplyThreadPage({
                 <div style={heroBadgeStyle}>Conversation Workspace</div>
                 <h1 style={heroTitleStyle}>{threadTitle}</h1>
                 <p style={heroTextStyle}>
-                  View the full SMS thread, monitor inbound and outbound messages, and send replies from the same premium panel.
+                  View the full SMS thread, monitor inbound and outbound messages,
+                  and send replies from the same premium panel.
                 </p>
               </div>
 
               <div style={heroActionsStyle}>
                 <div style={heroInfoChipStyle}>
                   <span style={heroInfoLabelStyle}>Phone</span>
-                  <span style={heroInfoValueStyle}>{routePhone || "-"}</span>
+                  <span style={heroInfoValueStyle}>
+                    {conversationMeta?.phone || routePhone || "-"}
+                  </span>
                 </div>
 
                 <Link href="/replies" style={backButtonStyle}>
@@ -601,9 +622,7 @@ export default function ReplyThreadPage({
               <div style={panelHeaderStyle}>
                 <div>
                   <h2 style={panelTitleStyle}>Message Thread</h2>
-                  <p style={panelDescStyle}>
-                    Full customer conversation history.
-                  </p>
+                  <p style={panelDescStyle}>Full customer conversation history.</p>
                 </div>
 
                 <button onClick={() => void handleManualRefresh()} style={refreshButtonStyle}>
@@ -648,7 +667,9 @@ export default function ReplyThreadPage({
                             <span
                               style={{
                                 ...bubbleDirectionStyle,
-                                ...(inbound ? inboundDirectionStyle : outboundDirectionStyle),
+                                ...(inbound
+                                  ? inboundDirectionStyle
+                                  : outboundDirectionStyle),
                               }}
                             >
                               {msg.direction || "message"}
@@ -658,7 +679,9 @@ export default function ReplyThreadPage({
                               <span
                                 style={{
                                   ...bubbleStatusStyle,
-                                  color: inbound ? "#64748b" : "rgba(236,254,255,0.84)",
+                                  color: inbound
+                                    ? "#64748b"
+                                    : "rgba(236,254,255,0.84)",
                                 }}
                               >
                                 {msg.status}
@@ -671,7 +694,9 @@ export default function ReplyThreadPage({
                           <div
                             style={{
                               ...bubbleTimeStyle,
-                              color: inbound ? "#64748b" : "rgba(236,254,255,0.8)",
+                              color: inbound
+                                ? "#64748b"
+                                : "rgba(236,254,255,0.8)",
                             }}
                           >
                             {msg.createdAtLabel}
@@ -697,7 +722,10 @@ export default function ReplyThreadPage({
               </div>
 
               <div style={miniInfoGridStyle}>
-                <MiniInfoCard label="Recipient" value={routePhone || "-"} />
+                <MiniInfoCard
+                  label="Recipient"
+                  value={conversationMeta?.phone || routePhone || "-"}
+                />
                 <MiniInfoCard label="Messages" value={String(messages.length)} />
               </div>
 
