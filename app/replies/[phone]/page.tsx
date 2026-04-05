@@ -20,6 +20,8 @@ import {
   query,
   where,
   updateDoc,
+  type Query,
+  type DocumentData,
 } from "firebase/firestore";
 import { auth, db } from "../../../lib/firebase";
 import { formatFirestoreDateNY } from "../../../lib/date";
@@ -78,8 +80,12 @@ function isAdmin(role?: string) {
   );
 }
 
+function normalizePhone(value: string) {
+  return String(value || "").replace(/[^\d+]/g, "").trim();
+}
+
 function phoneDocId(phone: string) {
-  return String(phone || "").replace(/[^\d+]/g, "");
+  return normalizePhone(phone);
 }
 
 function toMillis(value: any) {
@@ -92,7 +98,14 @@ function toMillis(value: any) {
   if (typeof value === "number") {
     return value;
   }
+  if (value?.seconds && typeof value.seconds === "number") {
+    return value.seconds * 1000;
+  }
   return 0;
+}
+
+function safeString(value: any) {
+  return String(value || "").trim();
 }
 
 export default function ReplyThreadPage({
@@ -103,6 +116,7 @@ export default function ReplyThreadPage({
   const router = useRouter();
   const resolved = use(params);
   const routePhone = decodeURIComponent(resolved.phone || "").trim();
+  const normalizedRoutePhone = normalizePhone(routePhone);
 
   const threadEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -129,12 +143,12 @@ export default function ReplyThreadPage({
   function makeMessageItem(id: string, data: Record<string, any>): MessageItem {
     return {
       id,
-      sid: String(data.sid || data.messageSid || ""),
-      from: String(data.from || ""),
-      to: String(data.to || ""),
-      body: String(data.body || ""),
-      direction: String(data.direction || ""),
-      status: String(data.status || ""),
+      sid: safeString(data.sid || data.messageSid),
+      from: safeString(data.from),
+      to: safeString(data.to),
+      body: safeString(data.body || data.message || data.text),
+      direction: safeString(data.direction || data.type).toLowerCase(),
+      status: safeString(data.status),
       read: !!data.read,
       createdAtLabel: formatFirestoreDateNY(data.createdAt),
       createdAtMs: toMillis(data.createdAt),
@@ -142,16 +156,17 @@ export default function ReplyThreadPage({
   }
 
   function buildFallbackConversationMessage(meta: ConversationMeta): MessageItem[] {
-    const fallbackBody = String(meta.lastMessage || "").trim();
+    const fallbackBody = safeString(meta.lastMessage);
     if (!fallbackBody) return [];
 
     const fallbackDirection =
-      String(meta.lastDirection || "").trim().toLowerCase() === "inbound"
+      safeString(meta.lastDirection).toLowerCase() === "inbound"
         ? "inbound"
         : "outbound";
 
-    const twilioSideNumber =
-      String(meta.twilioNumber || meta.assignedTwilioNumber || "").trim();
+    const twilioSideNumber = safeString(
+      meta.twilioNumber || meta.assignedTwilioNumber
+    );
 
     return [
       {
@@ -167,6 +182,47 @@ export default function ReplyThreadPage({
         createdAtMs: toMillis(meta.lastMessageAt),
       },
     ];
+  }
+
+  function upsertMessage(
+    store: Map<string, MessageItem>,
+    prefix: string,
+    id: string,
+    data: Record<string, any>,
+    currentProfile: AppUser,
+    targetPhone: string
+  ) {
+    const ownerUid = safeString(data.ownerUid || data.userId);
+    const from = normalizePhone(safeString(data.from));
+    const to = normalizePhone(safeString(data.to));
+    const phone = normalizePhone(safeString(data.phone));
+    const matchesPhone =
+      from === targetPhone || to === targetPhone || phone === targetPhone;
+
+    if (!matchesPhone) return;
+
+    if (!isAdmin(currentProfile.role) && ownerUid && ownerUid !== currentProfile.uid) {
+      return;
+    }
+
+    const item = makeMessageItem(`${prefix}-${id}`, data);
+    const dedupeKey =
+      item.sid ||
+      `${item.direction}_${normalizePhone(item.from || "")}_${normalizePhone(
+        item.to || ""
+      )}_${item.body}_${item.createdAtMs}`;
+
+    store.set(dedupeKey, item);
+  }
+
+  async function safeGetDocs(q: Query<DocumentData>) {
+    try {
+      const snap = await getDocs(q);
+      return snap.docs;
+    } catch (error) {
+      console.error("Query failed", error);
+      return [];
+    }
   }
 
   async function markConversationRead(metaArg?: ConversationMeta, profileArg?: AppUser) {
@@ -216,7 +272,7 @@ export default function ReplyThreadPage({
 
         const data = ownedConversationSnap.data() as Record<string, any>;
 
-        if (String(data.ownerUid || "") !== currentProfile.uid) {
+        if (safeString(data.ownerUid) !== currentProfile.uid) {
           setStatus("Access denied.");
           setConversationMeta(null);
           return null;
@@ -224,17 +280,17 @@ export default function ReplyThreadPage({
 
         const meta: ConversationMeta = {
           id: ownedConversationSnap.id,
-          phone: String(data.phone || routePhone),
-          name: String(data.name || ""),
-          status: String(data.status || ""),
+          phone: safeString(data.phone || routePhone),
+          name: safeString(data.name),
+          status: safeString(data.status),
           hasReply: data.hasReply === true,
           unreadCount: Number(data.unreadCount || 0),
-          lastDirection: String(data.lastDirection || ""),
-          twilioNumber: String(data.twilioNumber || ""),
-          assignedTwilioNumber: String(data.assignedTwilioNumber || ""),
-          messagingServiceSid: String(data.messagingServiceSid || ""),
-          ownerUid: String(data.ownerUid || ""),
-          lastMessage: String(data.lastMessage || ""),
+          lastDirection: safeString(data.lastDirection),
+          twilioNumber: safeString(data.twilioNumber),
+          assignedTwilioNumber: safeString(data.assignedTwilioNumber),
+          messagingServiceSid: safeString(data.messagingServiceSid),
+          ownerUid: safeString(data.ownerUid),
+          lastMessage: safeString(data.lastMessage),
           lastMessageAt: data.lastMessageAt || null,
         };
 
@@ -253,17 +309,17 @@ export default function ReplyThreadPage({
         const data = ownedConversationSnap.data() as Record<string, any>;
         const meta: ConversationMeta = {
           id: ownedConversationSnap.id,
-          phone: String(data.phone || routePhone),
-          name: String(data.name || ""),
-          status: String(data.status || ""),
+          phone: safeString(data.phone || routePhone),
+          name: safeString(data.name),
+          status: safeString(data.status),
           hasReply: data.hasReply === true,
           unreadCount: Number(data.unreadCount || 0),
-          lastDirection: String(data.lastDirection || ""),
-          twilioNumber: String(data.twilioNumber || ""),
-          assignedTwilioNumber: String(data.assignedTwilioNumber || ""),
-          messagingServiceSid: String(data.messagingServiceSid || ""),
-          ownerUid: String(data.ownerUid || ""),
-          lastMessage: String(data.lastMessage || ""),
+          lastDirection: safeString(data.lastDirection),
+          twilioNumber: safeString(data.twilioNumber),
+          assignedTwilioNumber: safeString(data.assignedTwilioNumber),
+          messagingServiceSid: safeString(data.messagingServiceSid),
+          ownerUid: safeString(data.ownerUid),
+          lastMessage: safeString(data.lastMessage),
           lastMessageAt: data.lastMessageAt || null,
         };
 
@@ -282,17 +338,17 @@ export default function ReplyThreadPage({
         const data = first.data() as Record<string, any>;
         const meta: ConversationMeta = {
           id: first.id,
-          phone: String(data.phone || routePhone),
-          name: String(data.name || ""),
-          status: String(data.status || ""),
+          phone: safeString(data.phone || routePhone),
+          name: safeString(data.name),
+          status: safeString(data.status),
           hasReply: data.hasReply === true,
           unreadCount: Number(data.unreadCount || 0),
-          lastDirection: String(data.lastDirection || ""),
-          twilioNumber: String(data.twilioNumber || ""),
-          assignedTwilioNumber: String(data.assignedTwilioNumber || ""),
-          messagingServiceSid: String(data.messagingServiceSid || ""),
-          ownerUid: String(data.ownerUid || ""),
-          lastMessage: String(data.lastMessage || ""),
+          lastDirection: safeString(data.lastDirection),
+          twilioNumber: safeString(data.twilioNumber),
+          assignedTwilioNumber: safeString(data.assignedTwilioNumber),
+          messagingServiceSid: safeString(data.messagingServiceSid),
+          ownerUid: safeString(data.ownerUid),
+          lastMessage: safeString(data.lastMessage),
           lastMessageAt: data.lastMessageAt || null,
         };
 
@@ -326,76 +382,108 @@ export default function ReplyThreadPage({
         return;
       }
 
-      const targetPhone = String(currentMeta.phone || routePhone || "").trim();
-      const messageStore = new Map<string, MessageItem>();
+      const targetPhone = normalizePhone(currentMeta.phone || routePhone || "");
+      const store = new Map<string, MessageItem>();
 
-      try {
-        const subMessagesQuery = query(
+      const subMessagesDocs = await safeGetDocs(
+        query(
           collection(db, "conversations", currentMeta.id, "messages"),
           orderBy("createdAt", "asc")
+        )
+      );
+
+      subMessagesDocs.forEach((d) => {
+        upsertMessage(
+          store,
+          "conv",
+          d.id,
+          d.data() as Record<string, any>,
+          currentProfile,
+          targetPhone
         );
-        const subMessagesSnap = await getDocs(subMessagesQuery);
+      });
 
-        subMessagesSnap.docs.forEach((d) => {
-          const data = d.data() as Record<string, any>;
+      const rootMessageQueries: Query<DocumentData>[] = [
+        query(collection(db, "messages"), where("to", "==", currentMeta.phone)),
+        query(collection(db, "messages"), where("from", "==", currentMeta.phone)),
+        query(collection(db, "messages"), where("phone", "==", currentMeta.phone)),
+      ];
 
-          if (
-            !isAdmin(currentProfile.role) &&
-            String(data.ownerUid || "") !== currentProfile.uid
-          ) {
-            return;
-          }
-
-          messageStore.set(`conv-${d.id}`, makeMessageItem(`conv-${d.id}`, data));
-        });
-      } catch (error) {
-        console.error("Failed to load conversation sub-messages", error);
-      }
-
-      if (messageStore.size === 0 && isAdmin(currentProfile.role)) {
-        try {
-          const outboundQuery = query(
+      if (!isAdmin(currentProfile.role)) {
+        rootMessageQueries.push(
+          query(
             collection(db, "messages"),
-            where("to", "==", targetPhone)
-          );
-
-          const outboundSnap = await getDocs(outboundQuery);
-
-          outboundSnap.docs.forEach((d) => {
-            messageStore.set(
-              `msg-${d.id}`,
-              makeMessageItem(`msg-${d.id}`, d.data() as Record<string, any>)
-            );
-          });
-        } catch (error) {
-          console.error("Failed to load outbound messages", error);
-        }
-
-        try {
-          const inboundQueries = [
-            query(collection(db, "replies"), where("from", "==", targetPhone)),
-            query(collection(db, "replies"), where("phone", "==", targetPhone)),
-          ];
-
-          for (const q of inboundQueries) {
-            try {
-              const snap = await getDocs(q);
-              snap.docs.forEach((d) => {
-                messageStore.set(
-                  `reply-${d.id}`,
-                  makeMessageItem(`reply-${d.id}`, d.data() as Record<string, any>)
-                );
-              });
-            } catch (error) {
-              console.error("Failed to load inbound replies query", error);
-            }
-          }
-        } catch (error) {
-          console.error("Failed to load inbound replies", error);
-        }
+            where("ownerUid", "==", currentProfile.uid),
+            where("to", "==", currentMeta.phone)
+          ),
+          query(
+            collection(db, "messages"),
+            where("ownerUid", "==", currentProfile.uid),
+            where("from", "==", currentMeta.phone)
+          ),
+          query(
+            collection(db, "messages"),
+            where("ownerUid", "==", currentProfile.uid),
+            where("phone", "==", currentMeta.phone)
+          )
+        );
       }
 
-      let merged = Array.from(messageStore.values()).sort(
+      for (const q of rootMessageQueries) {
+        const docs = await safeGetDocs(q);
+        docs.forEach((d) => {
+          upsertMessage(
+            store,
+            "msg",
+            d.id,
+            d.data() as Record<string, any>,
+            currentProfile,
+            targetPhone
+          );
+        });
+      }
+
+      const replyQueries: Query<DocumentData>[] = [
+        query(collection(db, "replies"), where("from", "==", currentMeta.phone)),
+        query(collection(db, "replies"), where("phone", "==", currentMeta.phone)),
+        query(collection(db, "replies"), where("to", "==", currentMeta.phone)),
+      ];
+
+      if (!isAdmin(currentProfile.role)) {
+        replyQueries.push(
+          query(
+            collection(db, "replies"),
+            where("ownerUid", "==", currentProfile.uid),
+            where("from", "==", currentMeta.phone)
+          ),
+          query(
+            collection(db, "replies"),
+            where("ownerUid", "==", currentProfile.uid),
+            where("phone", "==", currentMeta.phone)
+          ),
+          query(
+            collection(db, "replies"),
+            where("ownerUid", "==", currentProfile.uid),
+            where("to", "==", currentMeta.phone)
+          )
+        );
+      }
+
+      for (const q of replyQueries) {
+        const docs = await safeGetDocs(q);
+        docs.forEach((d) => {
+          upsertMessage(
+            store,
+            "reply",
+            d.id,
+            d.data() as Record<string, any>,
+            currentProfile,
+            targetPhone
+          );
+        });
+      }
+
+      let merged = Array.from(store.values()).sort(
         (a, b) => a.createdAtMs - b.createdAtMs
       );
 
@@ -427,6 +515,8 @@ export default function ReplyThreadPage({
     if (!routePhone) return;
 
     let unsubConversationMessages: (() => void) | undefined;
+    let unsubRootMessages: (() => void) | undefined;
+    let unsubReplies: (() => void) | undefined;
     let unsubAuth: (() => void) | undefined;
 
     unsubAuth = onAuthStateChanged(auth, async (user) => {
@@ -470,59 +560,42 @@ export default function ReplyThreadPage({
 
         await loadThreadOnce(meta, safeProfile);
 
-        if (meta.id) {
-          const liveConversationMessagesQuery = query(
+        const refreshFromAnyChange = async () => {
+          await loadThreadOnce(meta, safeProfile);
+        };
+
+        unsubConversationMessages = onSnapshot(
+          query(
             collection(db, "conversations", meta.id, "messages"),
             orderBy("createdAt", "asc")
-          );
+          ),
+          async () => {
+            await refreshFromAnyChange();
+          },
+          (error: any) => {
+            console.error(error);
+          }
+        );
 
-          unsubConversationMessages = onSnapshot(
-            liveConversationMessagesQuery,
-            async (snap) => {
-              const liveItems = snap.docs
-                .map((d) => {
-                  const data = d.data() as Record<string, any>;
-                  if (
-                    !isAdmin(safeProfile.role) &&
-                    String(data.ownerUid || "") !== safeProfile.uid
-                  ) {
-                    return null;
-                  }
-                  return makeMessageItem(`live-${d.id}`, data);
-                })
-                .filter(Boolean) as MessageItem[];
+        unsubRootMessages = onSnapshot(
+          query(collection(db, "messages"), where("phone", "==", meta.phone)),
+          async () => {
+            await refreshFromAnyChange();
+          },
+          (error: any) => {
+            console.error(error);
+          }
+        );
 
-              const fallbackItems =
-                liveItems.length === 0 && meta.lastMessage
-                  ? buildFallbackConversationMessage(meta)
-                  : [];
-
-              setMessages((prev) => {
-                const nonLiveItems = prev.filter(
-                  (item) =>
-                    !item.id.startsWith("live-") &&
-                    !item.id.startsWith("conv-") &&
-                    !item.id.startsWith("fallback-")
-                );
-
-                return [...nonLiveItems, ...fallbackItems, ...liveItems].sort(
-                  (a, b) => a.createdAtMs - b.createdAtMs
-                );
-              });
-
-              await markConversationRead(meta, safeProfile);
-
-              setLoading(false);
-
-              setTimeout(() => {
-                scrollToBottom(false);
-              }, 60);
-            },
-            (error: any) => {
-              console.error(error);
-            }
-          );
-        }
+        unsubReplies = onSnapshot(
+          query(collection(db, "replies"), where("phone", "==", meta.phone)),
+          async () => {
+            await refreshFromAnyChange();
+          },
+          (error: any) => {
+            console.error(error);
+          }
+        );
       } catch (error: any) {
         console.error(error);
         setStatus(error?.message || "Failed to load conversation.");
@@ -534,6 +607,8 @@ export default function ReplyThreadPage({
     return () => {
       if (unsubAuth) unsubAuth();
       if (unsubConversationMessages) unsubConversationMessages();
+      if (unsubRootMessages) unsubRootMessages();
+      if (unsubReplies) unsubReplies();
     };
   }, [routePhone, router]);
 
