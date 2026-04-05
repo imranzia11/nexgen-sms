@@ -116,7 +116,6 @@ export default function ReplyThreadPage({
   const router = useRouter();
   const resolved = use(params);
   const routePhone = decodeURIComponent(resolved.phone || "").trim();
-  const normalizedRoutePhone = normalizePhone(routePhone);
 
   const threadEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -190,19 +189,25 @@ export default function ReplyThreadPage({
     id: string,
     data: Record<string, any>,
     currentProfile: AppUser,
-    targetPhone: string
+    currentMeta: ConversationMeta
   ) {
     const ownerUid = safeString(data.ownerUid || data.userId);
+    const conversationId = safeString(data.conversationId);
+    const expectedConversationId = safeString(currentMeta.id);
+
     const from = normalizePhone(safeString(data.from));
     const to = normalizePhone(safeString(data.to));
     const phone = normalizePhone(safeString(data.phone));
+    const targetPhone = normalizePhone(safeString(currentMeta.phone));
+
     const matchesPhone =
       from === targetPhone || to === targetPhone || phone === targetPhone;
 
     if (!matchesPhone) return;
 
-    if (!isAdmin(currentProfile.role) && ownerUid && ownerUid !== currentProfile.uid) {
-      return;
+    if (!isAdmin(currentProfile.role)) {
+      if (ownerUid && ownerUid !== currentProfile.uid) return;
+      if (conversationId && conversationId !== expectedConversationId) return;
     }
 
     const item = makeMessageItem(`${prefix}-${id}`, data);
@@ -382,7 +387,6 @@ export default function ReplyThreadPage({
         return;
       }
 
-      const targetPhone = normalizePhone(currentMeta.phone || routePhone || "");
       const store = new Map<string, MessageItem>();
 
       const subMessagesDocs = await safeGetDocs(
@@ -399,35 +403,22 @@ export default function ReplyThreadPage({
           d.id,
           d.data() as Record<string, any>,
           currentProfile,
-          targetPhone
+          currentMeta
         );
       });
 
-      const rootMessageQueries: Query<DocumentData>[] = [
-        query(collection(db, "messages"), where("to", "==", currentMeta.phone)),
-        query(collection(db, "messages"), where("from", "==", currentMeta.phone)),
-        query(collection(db, "messages"), where("phone", "==", currentMeta.phone)),
-      ];
-
-      if (!isAdmin(currentProfile.role)) {
-        rootMessageQueries.push(
-          query(
-            collection(db, "messages"),
-            where("ownerUid", "==", currentProfile.uid),
-            where("to", "==", currentMeta.phone)
-          ),
-          query(
-            collection(db, "messages"),
-            where("ownerUid", "==", currentProfile.uid),
-            where("from", "==", currentMeta.phone)
-          ),
-          query(
-            collection(db, "messages"),
-            where("ownerUid", "==", currentProfile.uid),
-            where("phone", "==", currentMeta.phone)
-          )
-        );
-      }
+      const rootMessageQueries: Query<DocumentData>[] = isAdmin(currentProfile.role)
+        ? [
+            query(collection(db, "messages"), where("phone", "==", currentMeta.phone)),
+            query(collection(db, "messages"), where("to", "==", currentMeta.phone)),
+            query(collection(db, "messages"), where("from", "==", currentMeta.phone)),
+          ]
+        : [
+            query(
+              collection(db, "messages"),
+              where("conversationId", "==", currentMeta.id)
+            ),
+          ];
 
       for (const q of rootMessageQueries) {
         const docs = await safeGetDocs(q);
@@ -438,36 +429,23 @@ export default function ReplyThreadPage({
             d.id,
             d.data() as Record<string, any>,
             currentProfile,
-            targetPhone
+            currentMeta
           );
         });
       }
 
-      const replyQueries: Query<DocumentData>[] = [
-        query(collection(db, "replies"), where("from", "==", currentMeta.phone)),
-        query(collection(db, "replies"), where("phone", "==", currentMeta.phone)),
-        query(collection(db, "replies"), where("to", "==", currentMeta.phone)),
-      ];
-
-      if (!isAdmin(currentProfile.role)) {
-        replyQueries.push(
-          query(
-            collection(db, "replies"),
-            where("ownerUid", "==", currentProfile.uid),
-            where("from", "==", currentMeta.phone)
-          ),
-          query(
-            collection(db, "replies"),
-            where("ownerUid", "==", currentProfile.uid),
-            where("phone", "==", currentMeta.phone)
-          ),
-          query(
-            collection(db, "replies"),
-            where("ownerUid", "==", currentProfile.uid),
-            where("to", "==", currentMeta.phone)
-          )
-        );
-      }
+      const replyQueries: Query<DocumentData>[] = isAdmin(currentProfile.role)
+        ? [
+            query(collection(db, "replies"), where("phone", "==", currentMeta.phone)),
+            query(collection(db, "replies"), where("from", "==", currentMeta.phone)),
+            query(collection(db, "replies"), where("to", "==", currentMeta.phone)),
+          ]
+        : [
+            query(
+              collection(db, "replies"),
+              where("conversationId", "==", currentMeta.id)
+            ),
+          ];
 
       for (const q of replyQueries) {
         const docs = await safeGetDocs(q);
@@ -478,7 +456,7 @@ export default function ReplyThreadPage({
             d.id,
             d.data() as Record<string, any>,
             currentProfile,
-            targetPhone
+            currentMeta
           );
         });
       }
@@ -577,25 +555,47 @@ export default function ReplyThreadPage({
           }
         );
 
-        unsubRootMessages = onSnapshot(
-          query(collection(db, "messages"), where("phone", "==", meta.phone)),
-          async () => {
-            await refreshFromAnyChange();
-          },
-          (error: any) => {
-            console.error(error);
-          }
-        );
+        if (isAdmin(safeProfile.role)) {
+          unsubRootMessages = onSnapshot(
+            query(collection(db, "messages"), where("phone", "==", meta.phone)),
+            async () => {
+              await refreshFromAnyChange();
+            },
+            (error: any) => {
+              console.error(error);
+            }
+          );
 
-        unsubReplies = onSnapshot(
-          query(collection(db, "replies"), where("phone", "==", meta.phone)),
-          async () => {
-            await refreshFromAnyChange();
-          },
-          (error: any) => {
-            console.error(error);
-          }
-        );
+          unsubReplies = onSnapshot(
+            query(collection(db, "replies"), where("phone", "==", meta.phone)),
+            async () => {
+              await refreshFromAnyChange();
+            },
+            (error: any) => {
+              console.error(error);
+            }
+          );
+        } else {
+          unsubRootMessages = onSnapshot(
+            query(collection(db, "messages"), where("conversationId", "==", meta.id)),
+            async () => {
+              await refreshFromAnyChange();
+            },
+            (error: any) => {
+              console.error(error);
+            }
+          );
+
+          unsubReplies = onSnapshot(
+            query(collection(db, "replies"), where("conversationId", "==", meta.id)),
+            async () => {
+              await refreshFromAnyChange();
+            },
+            (error: any) => {
+              console.error(error);
+            }
+          );
+        }
       } catch (error: any) {
         console.error(error);
         setStatus(error?.message || "Failed to load conversation.");
