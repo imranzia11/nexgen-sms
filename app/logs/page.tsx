@@ -29,6 +29,7 @@ type CampaignLogItem = {
   failedCount: number;
   createdByName: string;
   createdAtLabel: string;
+  sortMs: number;
 };
 
 type MessageLogItem = {
@@ -74,6 +75,19 @@ function isAdmin(role?: string) {
     normalized === "superadmin" ||
     normalized === "super_admin"
   );
+}
+
+function toSortMs(value: any) {
+  if (value && typeof value.toMillis === "function") {
+    return value.toMillis();
+  }
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  if (typeof value === "number") {
+    return value;
+  }
+  return 0;
 }
 
 function statusChipTone(status?: string) {
@@ -204,7 +218,6 @@ export default function LogsPage() {
         campaignsQuery = query(
           collection(db, "campaigns"),
           where("createdBy", "==", currentProfile.uid),
-          orderBy("createdAt", "desc"),
           limit(50)
         );
 
@@ -221,20 +234,23 @@ export default function LogsPage() {
         getDocs(messagesQuery),
       ]);
 
-      const campaignRows: CampaignLogItem[] = campaignSnap.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          name: data.name || "-",
-          fileName: data.fileName || "-",
-          status: data.status || "-",
-          totalRecipients: Number(data.totalRecipients || 0),
-          successCount: Number(data.successCount || 0),
-          failedCount: Number(data.failedCount || 0),
-          createdByName: data.createdByName || "-",
-          createdAtLabel: formatFirestoreDateNY(data.createdAt),
-        };
-      });
+      const campaignRows: CampaignLogItem[] = campaignSnap.docs
+        .map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            name: data.name || "-",
+            fileName: data.fileName || "-",
+            status: data.status || "-",
+            totalRecipients: Number(data.totalRecipients || 0),
+            successCount: Number(data.successCount || 0),
+            failedCount: Number(data.failedCount || 0),
+            createdByName: data.createdByName || "-",
+            createdAtLabel: formatFirestoreDateNY(data.createdAt),
+            sortMs: toSortMs(data.createdAt),
+          };
+        })
+        .sort((a, b) => b.sortMs - a.sortMs);
 
       const messageRows: MessageLogItem[] = messageSnap.docs.map((d) => {
         const data = d.data();
