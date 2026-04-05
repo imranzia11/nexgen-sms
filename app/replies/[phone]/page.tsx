@@ -19,6 +19,7 @@ import {
   orderBy,
   query,
   where,
+  updateDoc,
 } from "firebase/firestore";
 import { auth, db } from "../../../lib/firebase";
 import { formatFirestoreDateNY } from "../../../lib/date";
@@ -166,6 +167,24 @@ export default function ReplyThreadPage({
         createdAtMs: toMillis(meta.lastMessageAt),
       },
     ];
+  }
+
+  async function markConversationRead(metaArg?: ConversationMeta, profileArg?: AppUser) {
+    try {
+      const currentMeta = metaArg || conversationMeta;
+      const currentProfile = profileArg || profile;
+
+      if (!currentMeta?.id || !currentProfile || isAdmin(currentProfile.role)) {
+        return;
+      }
+
+      const convoRef = doc(db, "conversations", currentMeta.id);
+      await updateDoc(convoRef, {
+        unreadCount: 0,
+      });
+    } catch (error) {
+      console.error("Failed to mark conversation read", error);
+    }
   }
 
   async function loadConversationMeta(profileArg?: AppUser) {
@@ -333,15 +352,12 @@ export default function ReplyThreadPage({
         console.error("Failed to load conversation sub-messages", error);
       }
 
-      if (messageStore.size === 0) {
+      if (messageStore.size === 0 && isAdmin(currentProfile.role)) {
         try {
-          const outboundQuery = isAdmin(currentProfile.role)
-            ? query(collection(db, "messages"), where("to", "==", targetPhone))
-            : query(
-                collection(db, "messages"),
-                where("ownerUid", "==", currentProfile.uid),
-                where("to", "==", targetPhone)
-              );
+          const outboundQuery = query(
+            collection(db, "messages"),
+            where("to", "==", targetPhone)
+          );
 
           const outboundSnap = await getDocs(outboundQuery);
 
@@ -356,23 +372,10 @@ export default function ReplyThreadPage({
         }
 
         try {
-          const inboundQueries = isAdmin(currentProfile.role)
-            ? [
-                query(collection(db, "replies"), where("from", "==", targetPhone)),
-                query(collection(db, "replies"), where("phone", "==", targetPhone)),
-              ]
-            : [
-                query(
-                  collection(db, "replies"),
-                  where("ownerUid", "==", currentProfile.uid),
-                  where("from", "==", targetPhone)
-                ),
-                query(
-                  collection(db, "replies"),
-                  where("ownerUid", "==", currentProfile.uid),
-                  where("phone", "==", targetPhone)
-                ),
-              ];
+          const inboundQueries = [
+            query(collection(db, "replies"), where("from", "==", targetPhone)),
+            query(collection(db, "replies"), where("phone", "==", targetPhone)),
+          ];
 
           for (const q of inboundQueries) {
             try {
@@ -401,6 +404,7 @@ export default function ReplyThreadPage({
       }
 
       setMessages(merged);
+      await markConversationRead(currentMeta, currentProfile);
     } catch (error: any) {
       console.error(error);
       setStatus(error?.message || "Failed to refresh conversation.");
@@ -474,7 +478,7 @@ export default function ReplyThreadPage({
 
           unsubConversationMessages = onSnapshot(
             liveConversationMessagesQuery,
-            (snap) => {
+            async (snap) => {
               const liveItems = snap.docs
                 .map((d) => {
                   const data = d.data() as Record<string, any>;
@@ -505,6 +509,8 @@ export default function ReplyThreadPage({
                   (a, b) => a.createdAtMs - b.createdAtMs
                 );
               });
+
+              await markConversationRead(meta, safeProfile);
 
               setLoading(false);
 
@@ -1207,4 +1213,4 @@ const loadingSpinnerStyle: CSSProperties = {
   border: "3px solid rgba(15,118,110,0.18)",
   borderTop: "3px solid #0f766e",
   animation: "spin 1s linear infinite",
-}; 
+};
