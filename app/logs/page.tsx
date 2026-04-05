@@ -35,6 +35,7 @@ type CampaignLogItem = {
 type MessageLogItem = {
   id: string;
   to: string;
+  from: string;
   name: string;
   body: string;
   status: string;
@@ -50,6 +51,8 @@ type AppUser = {
   isActive: boolean;
   email?: string;
   name?: string;
+  twilioNumber?: string;
+  assignedTwilioNumber?: string;
 };
 
 function truncateText(value: string, max = 120) {
@@ -78,16 +81,14 @@ function isAdmin(role?: string) {
 }
 
 function toSortMs(value: any) {
-  if (value && typeof value.toMillis === "function") {
-    return value.toMillis();
-  }
-  if (value instanceof Date) {
-    return value.getTime();
-  }
-  if (typeof value === "number") {
-    return value;
-  }
+  if (value && typeof value.toMillis === "function") return value.toMillis();
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "number") return value;
   return 0;
+}
+
+function normalizePhone(value: string) {
+  return String(value || "").replace(/[^\d+]/g, "").trim();
 }
 
 function statusChipTone(status?: string) {
@@ -165,6 +166,8 @@ export default function LogsPage() {
           isActive: userData.isActive === true,
           email: String(userData.email || user.email || ""),
           name: String(userData.name || ""),
+          twilioNumber: String(userData.twilioNumber || ""),
+          assignedTwilioNumber: String(userData.assignedTwilioNumber || ""),
         };
 
         const safeName =
@@ -199,42 +202,64 @@ export default function LogsPage() {
         return;
       }
 
-      let campaignsQuery: Query<DocumentData>;
-      let messagesQuery: Query<DocumentData>;
+      let campaignSnap;
+      let messageSnap;
 
       if (isAdmin(currentProfile.role)) {
-        campaignsQuery = query(
+        const campaignsQuery = query(
           collection(db, "campaigns"),
           orderBy("createdAt", "desc"),
           limit(50)
         );
 
-        messagesQuery = query(
+        const messagesQuery = query(
           collection(db, "messages"),
           orderBy("createdAt", "desc"),
           limit(100)
         );
+
+        [campaignSnap, messageSnap] = await Promise.all([
+          getDocs(campaignsQuery),
+          getDocs(messagesQuery),
+        ]);
       } else {
-        campaignsQuery = query(
+        const campaignsQuery = query(
           collection(db, "campaigns"),
-          where("createdBy", "==", currentProfile.uid),
-          limit(50)
-        );
-
-        messagesQuery = query(
-          collection(db, "messages"),
-          where("ownerUid", "==", currentProfile.uid),
-          orderBy("createdAt", "desc"),
           limit(100)
         );
+
+        let ownerMessageSnap;
+        try {
+          const ownerMessagesQuery: Query<DocumentData> = query(
+            collection(db, "messages"),
+            where("ownerUid", "==", currentProfile.uid),
+            orderBy("createdAt", "desc"),
+            limit(100)
+          );
+          ownerMessageSnap = await getDocs(ownerMessagesQuery);
+        } catch (error) {
+          console.error("Owner message query failed, using fallback", error);
+        }
+
+        if (ownerMessageSnap && !ownerMessageSnap.empty) {
+          messageSnap = ownerMessageSnap;
+        } else {
+          const fallbackMessagesQuery = query(
+            collection(db, "messages"),
+            orderBy("createdAt", "desc"),
+            limit(200)
+          );
+          messageSnap = await getDocs(fallbackMessagesQuery);
+        }
+
+        campaignSnap = await getDocs(campaignsQuery);
       }
 
-      const [campaignSnap, messageSnap] = await Promise.all([
-        getDocs(campaignsQuery),
-        getDocs(messagesQuery),
-      ]);
+      const currentUserPhone = normalizePhone(
+        currentProfile.twilioNumber || currentProfile.assignedTwilioNumber || ""
+      );
 
-      const campaignRows: CampaignLogItem[] = campaignSnap.docs
+      let campaignRows: CampaignLogItem[] = campaignSnap.docs
         .map((d) => {
           const data = d.data();
           return {
@@ -252,20 +277,44 @@ export default function LogsPage() {
         })
         .sort((a, b) => b.sortMs - a.sortMs);
 
-      const messageRows: MessageLogItem[] = messageSnap.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          to: data.to || "-",
-          name: data.name || "",
-          body: data.body || "",
-          status: data.status || "-",
-          twilioSid: data.twilioSid || data.sid || "",
-          error: data.error || "",
-          sourceFileName: data.sourceFileName || "-",
-          createdAtLabel: formatFirestoreDateNY(data.createdAt),
-        };
-      });
+      let messageRows: MessageLogItem[] = messageSnap.docs
+        .map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            to: data.to || "-",
+            from: data.from || "",
+            name: data.name || "",
+            body: data.body || "",
+            status: data.status || "-",
+            twilioSid: data.twilioSid || data.sid || "",
+            error: data.error || "",
+            sourceFileName: data.sourceFileName || "-",
+            createdAtLabel: formatFirestoreDateNY(data.createdAt),
+          };
+        });
+
+      if (!isAdmin(currentProfile.role)) {
+        campaignRows = campaignRows.filter((item: any, index) => {
+          const raw = campaignSnap.docs[index]?.data() || {};
+          return (
+            String(raw.createdBy || "") === currentProfile.uid ||
+            String(raw.ownerUid || "") === currentProfile.uid ||
+            String(raw.createdByName || "").trim().toLowerCase() ===
+              String(currentProfile.name || "").trim().toLowerCase()
+          );
+        });
+
+        messageRows = messageRows.filter((item: any, index) => {
+          const raw = messageSnap.docs[index]?.data() || {};
+          const rawOwnerUid = String(raw.ownerUid || "");
+          const rawFrom = normalizePhone(String(raw.from || ""));
+          return (
+            rawOwnerUid === currentProfile.uid ||
+            (!!currentUserPhone && rawFrom === currentUserPhone)
+          );
+        });
+      }
 
       setCampaigns(campaignRows);
       setMessages(messageRows);
