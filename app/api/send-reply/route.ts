@@ -54,16 +54,21 @@ export async function POST(req: NextRequest) {
 
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken = process.env.TWILIO_AUTH_TOKEN;
-    const messagingServiceSid =
-      userData.messagingServiceSid || process.env.TWILIO_MESSAGING_SERVICE_SID;
-    const twilioNumber = String(
-      userData.twilioNumber || userData.assignedTwilioNumber || ""
+    const twilioNumber = toE164(
+      String(userData.twilioNumber || userData.assignedTwilioNumber || "")
     );
 
-    if (!accountSid || !authToken || !messagingServiceSid) {
+    if (!accountSid || !authToken) {
       return NextResponse.json(
         { ok: false, error: "Missing Twilio configuration." },
         { status: 500 }
+      );
+    }
+
+    if (!twilioNumber) {
+      return NextResponse.json(
+        { ok: false, error: "No Twilio number is assigned to this user." },
+        { status: 400 }
       );
     }
 
@@ -90,7 +95,7 @@ export async function POST(req: NextRequest) {
     const msg = await client.messages.create({
       body: messageBody,
       to,
-      messagingServiceSid,
+      from: twilioNumber,
     });
 
     const conversationId = `${uid}_${phoneDocId(to)}`;
@@ -107,6 +112,7 @@ export async function POST(req: NextRequest) {
     const existingName = String(convoData.name || "");
     const existingFirstOutboundAt = convoData.firstOutboundAt || null;
     const existingLastInboundAt = convoData.lastInboundAt || null;
+    const existingHasReply = convoData.hasReply === true;
 
     await threadMessageRef.set({
       sid: msg.sid,
@@ -115,14 +121,14 @@ export async function POST(req: NextRequest) {
       ownerName: String(userData.name || ""),
       ownerRole: String(userData.role || "user"),
       phone: to,
-      from: msg.from || "",
+      from: msg.from || twilioNumber,
       to,
       body: messageBody,
       direction: "outbound",
       status: msg.status || "sent",
       read: true,
-      messagingServiceSid,
       twilioNumber,
+      messagingServiceSid: "",
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -137,18 +143,19 @@ export async function POST(req: NextRequest) {
         name: existingName,
         twilioNumber,
         assignedTwilioNumber: twilioNumber,
-        messagingServiceSid,
+        messagingServiceSid: "",
         lastMessage: messageBody,
         lastDirection: "outbound",
         lastMessageAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
-        status: existingReplyCount > 0 ? "replied" : "awaiting_reply",
-        hasReply: existingReplyCount > 0,
+        status: existingHasReply ? "replied" : "awaiting_reply",
+        hasReply: existingHasReply,
         unreadCount: existingUnreadCount,
         replyCount: existingReplyCount,
         outboundCount: existingOutboundCount + 1,
         messageCount: existingMessageCount + 1,
-        firstOutboundAt: existingFirstOutboundAt || FieldValue.serverTimestamp(),
+        firstOutboundAt:
+          existingFirstOutboundAt || FieldValue.serverTimestamp(),
         lastOutboundAt: FieldValue.serverTimestamp(),
         lastInboundAt: existingLastInboundAt || null,
       },
@@ -162,13 +169,13 @@ export async function POST(req: NextRequest) {
       ownerRole: String(userData.role || "user"),
       phone: to,
       to,
-      from: msg.from || "",
+      from: msg.from || twilioNumber,
       body: messageBody,
       sid: msg.sid,
       status: msg.status || "sent",
       direction: "outbound",
-      messagingServiceSid,
       twilioNumber,
+      messagingServiceSid: "",
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });

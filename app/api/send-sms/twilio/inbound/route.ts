@@ -1,6 +1,15 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../../../../../lib/firebaseAdmin";
+
+function xmlResponse() {
+  return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/xml",
+    },
+  });
+}
 
 function toE164(raw: string) {
   const cleaned = String(raw || "").replace(/[^\d+]/g, "");
@@ -40,10 +49,7 @@ const HELP_KEYWORDS = new Set([
 ]);
 
 export async function GET() {
-  return NextResponse.json({
-    ok: true,
-    route: "twilio inbound route live",
-  });
+  return new Response("twilio inbound route live", { status: 200 });
 }
 
 export async function POST(req: NextRequest) {
@@ -65,13 +71,8 @@ export async function POST(req: NextRequest) {
     const optOutType = normalizeKeyword(optOutTypeRaw);
 
     if (!from || !to) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "Missing From or To number.",
-        },
-        { status: 400 }
-      );
+      console.error("Missing From or To number.");
+      return xmlResponse();
     }
 
     let eventType = "MESSAGE";
@@ -92,13 +93,7 @@ export async function POST(req: NextRequest) {
 
     if (usersSnap.empty) {
       console.error("No user found for Twilio number:", to);
-      return NextResponse.json(
-        {
-          ok: false,
-          error: `No portal user mapped to Twilio number ${to}`,
-        },
-        { status: 404 }
-      );
+      return xmlResponse();
     }
 
     const userDoc = usersSnap.docs[0];
@@ -106,13 +101,8 @@ export async function POST(req: NextRequest) {
     const userData = userDoc.data() || {};
 
     if (userData.isActive !== true) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "Mapped user account is inactive.",
-        },
-        { status: 403 }
-      );
+      console.error("Mapped user account is inactive:", ownerUid);
+      return xmlResponse();
     }
 
     const ownerEmail = String(userData.email || "");
@@ -126,10 +116,6 @@ export async function POST(req: NextRequest) {
     const convoSnap = await convoRef.get();
     const convoData = convoSnap.exists ? convoSnap.data() || {} : {};
 
-    const currentUnreadCount = Number(convoData.unreadCount || 0);
-    const currentReplyCount = Number(convoData.replyCount || 0);
-    const currentOutboundCount = Number(convoData.outboundCount || 0);
-    const currentMessageCount = Number(convoData.messageCount || 0);
     const existingName = String(convoData.name || "");
     const existingFirstOutboundAt = convoData.firstOutboundAt || null;
     const existingLastOutboundAt = convoData.lastOutboundAt || null;
@@ -145,6 +131,8 @@ export async function POST(req: NextRequest) {
       body,
       normalizedBody,
       direction: "inbound",
+      status: "received",
+      read: false,
       messageSid,
       messagingServiceSid,
       accountSid,
@@ -199,10 +187,9 @@ export async function POST(req: NextRequest) {
 
         status: "replied",
         hasReply: true,
-        unreadCount: currentUnreadCount + 1,
-        replyCount: currentReplyCount + 1,
-        outboundCount: currentOutboundCount,
-        messageCount: currentMessageCount + 1,
+        unreadCount: FieldValue.increment(1),
+        replyCount: FieldValue.increment(1),
+        messageCount: FieldValue.increment(1),
 
         firstOutboundAt: existingFirstOutboundAt || null,
         lastOutboundAt: existingLastOutboundAt || null,
@@ -302,21 +289,9 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    return NextResponse.json({
-      ok: true,
-      eventType,
-      ownerUid,
-      conversationId,
-    });
+    return xmlResponse();
   } catch (error: any) {
     console.error("Twilio inbound webhook error:", error);
-
-    return NextResponse.json(
-      {
-        ok: false,
-        error: error?.message || "Unknown error",
-      },
-      { status: 500 }
-    );
+    return xmlResponse();
   }
 }

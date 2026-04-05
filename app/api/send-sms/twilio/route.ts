@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     const messageSid = String(params.MessageSid || "").trim();
     const messagingServiceSid = String(params.MessagingServiceSid || "").trim();
 
-    if (!from || !messageSid || !to) {
+    if (!from || !to || !messageSid) {
       return xmlResponse();
     }
 
@@ -82,22 +82,32 @@ export async function POST(req: NextRequest) {
       return xmlResponse();
     }
 
+    const ownerEmail = String(userData.email || "");
+    const ownerName = String(userData.name || "");
+    const ownerRole = String(userData.role || "user");
+
     const convoId = `${ownerUid}_${phoneDocId(from)}`;
     const convoRef = adminDb.collection("conversations").doc(convoId);
-    const messageRef = convoRef.collection("messages").doc(messageSid);
+    const threadMessageRef = convoRef.collection("messages").doc(messageSid);
 
-    await messageRef.set(
+    await threadMessageRef.set(
       {
         sid: messageSid,
         ownerUid,
+        ownerEmail,
+        ownerName,
+        ownerRole,
+        phone: from,
         from,
         to,
         body,
         direction: "inbound",
+        status: "received",
         read: false,
-        messagingServiceSid: messagingServiceSid || "",
         twilioNumber: to,
+        messagingServiceSid: messagingServiceSid || "",
         createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true }
     );
@@ -105,17 +115,45 @@ export async function POST(req: NextRequest) {
     await convoRef.set(
       {
         ownerUid,
+        ownerEmail,
+        ownerName,
+        ownerRole,
         phone: from,
         twilioNumber: to,
+        assignedTwilioNumber: to,
         messagingServiceSid: messagingServiceSid || "",
         lastMessage: body,
         lastDirection: "inbound",
-        unreadCount: FieldValue.increment(1),
         lastMessageAt: FieldValue.serverTimestamp(),
+        lastInboundAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
+        hasReply: true,
+        status: "replied",
+        unreadCount: FieldValue.increment(1),
+        replyCount: FieldValue.increment(1),
+        messageCount: FieldValue.increment(1),
       },
       { merge: true }
     );
+
+    await adminDb.collection("replies").add({
+      ownerUid,
+      ownerEmail,
+      ownerName,
+      ownerRole,
+      phone: from,
+      from,
+      to,
+      body,
+      sid: messageSid,
+      direction: "inbound",
+      status: "received",
+      read: false,
+      twilioNumber: to,
+      messagingServiceSid: messagingServiceSid || "",
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
 
     return xmlResponse();
   } catch (error) {

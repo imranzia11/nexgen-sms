@@ -115,7 +115,9 @@ export async function POST(req: NextRequest) {
 
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken = process.env.TWILIO_AUTH_TOKEN;
-    const twilioNumber = toE164(String(userData.twilioNumber || ""));
+    const twilioNumber = toE164(
+      String(userData.twilioNumber || userData.assignedTwilioNumber || "")
+    );
 
     if (!accountSid || !authToken) {
       return NextResponse.json(
@@ -190,7 +192,11 @@ export async function POST(req: NextRequest) {
       }
 
       try {
-        const alreadyMessaged = await hasPreviouslySentSuccessfulSms(uid, formattedPhone);
+        const alreadyMessaged = await hasPreviouslySentSuccessfulSms(
+          uid,
+          formattedPhone
+        );
+
         const isFirstMessage = !alreadyMessaged;
         const finalMessage = buildPersonalizedMessage(
           message.trim(),
@@ -222,6 +228,7 @@ export async function POST(req: NextRequest) {
           ownerUid: uid,
           ownerEmail: String(userData.email || ""),
           ownerName: String(userData.name || ""),
+          ownerRole: String(userData.role || "user"),
           from: res.from || twilioNumber,
           to: formattedPhone,
           phone: formattedPhone,
@@ -271,6 +278,7 @@ export async function POST(req: NextRequest) {
           ownerUid: uid,
           ownerEmail: String(userData.email || ""),
           ownerName: String(userData.name || ""),
+          ownerRole: String(userData.role || "user"),
           campaignName: campaignName || "",
           fileId: fileId || "",
           fileName: fileName || "",
@@ -306,6 +314,7 @@ export async function POST(req: NextRequest) {
           ownerUid: uid,
           ownerEmail: String(userData.email || ""),
           ownerName: String(userData.name || ""),
+          ownerRole: String(userData.role || "user"),
           campaignName: campaignName || "",
           fileId: fileId || "",
           fileName: fileName || "",
