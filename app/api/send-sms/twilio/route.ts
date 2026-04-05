@@ -62,11 +62,19 @@ export async function POST(req: NextRequest) {
       return xmlResponse();
     }
 
-    const usersSnap = await adminDb
+    let usersSnap = await adminDb
       .collection("users")
       .where("twilioNumber", "==", to)
       .limit(1)
       .get();
+
+    if (usersSnap.empty) {
+      usersSnap = await adminDb
+        .collection("users")
+        .where("assignedTwilioNumber", "==", to)
+        .limit(1)
+        .get();
+    }
 
     if (usersSnap.empty) {
       console.error("No user mapped to Twilio number:", to);
@@ -97,6 +105,7 @@ export async function POST(req: NextRequest) {
         ownerEmail,
         ownerName,
         ownerRole,
+        conversationId: convoId,
         phone: from,
         from,
         to,
@@ -105,6 +114,7 @@ export async function POST(req: NextRequest) {
         status: "received",
         read: false,
         twilioNumber: to,
+        assignedTwilioNumber: to,
         messagingServiceSid: messagingServiceSid || "",
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
@@ -141,6 +151,7 @@ export async function POST(req: NextRequest) {
       ownerEmail,
       ownerName,
       ownerRole,
+      conversationId: convoId,
       phone: from,
       from,
       to,
@@ -150,6 +161,7 @@ export async function POST(req: NextRequest) {
       status: "received",
       read: false,
       twilioNumber: to,
+      assignedTwilioNumber: to,
       messagingServiceSid: messagingServiceSid || "",
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
