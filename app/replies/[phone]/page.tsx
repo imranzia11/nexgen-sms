@@ -76,15 +76,9 @@ function phoneDocId(phone: string) {
 }
 
 function toMillis(value: any) {
-  if (value && typeof value.toMillis === "function") {
-    return value.toMillis();
-  }
-  if (value instanceof Date) {
-    return value.getTime();
-  }
-  if (typeof value === "number") {
-    return value;
-  }
+  if (value && typeof value.toMillis === "function") return value.toMillis();
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "number") return value;
   if (value?.seconds && typeof value.seconds === "number") {
     return value.seconds * 1000;
   }
@@ -168,31 +162,6 @@ export default function ReplyThreadPage({
         createdAtMs: toMillis(meta.lastMessageAt),
       },
     ];
-  }
-
-  function upsertMessage(
-    store: Map<string, MessageItem>,
-    prefix: string,
-    id: string,
-    data: Record<string, any>,
-    currentMeta: ConversationMeta,
-    currentUid: string
-  ) {
-    const ownerUid = safeString(data.ownerUid || data.userId);
-    const conversationId = safeString(data.conversationId);
-    const expectedConversationId = safeString(currentMeta.id);
-
-    if (ownerUid && ownerUid !== currentUid) return;
-    if (conversationId && conversationId !== expectedConversationId) return;
-
-    const item = makeMessageItem(`${prefix}-${id}`, data);
-    const dedupeKey =
-      item.sid ||
-      `${item.direction}_${normalizePhone(item.from || "")}_${normalizePhone(
-        item.to || ""
-      )}_${item.body}_${item.createdAtMs}`;
-
-    store.set(dedupeKey, item);
   }
 
   async function safeGetDocs(q: Query<DocumentData>) {
@@ -297,6 +266,33 @@ export default function ReplyThreadPage({
       }
 
       const store = new Map<string, MessageItem>();
+      const targetPhone = normalizePhone(currentMeta.phone || "");
+
+      const addToStore = (prefix: string, id: string, data: Record<string, any>) => {
+        const ownerUid = safeString(data.ownerUid || data.userId);
+        const conversationId = safeString(data.conversationId);
+        const from = normalizePhone(safeString(data.from));
+        const to = normalizePhone(safeString(data.to));
+        const phone = normalizePhone(safeString(data.phone));
+
+        const matchesLegacyPhone =
+          from === targetPhone || to === targetPhone || phone === targetPhone;
+
+        const matchesConversation =
+          conversationId === currentMeta.id ||
+          (ownerUid === currentProfile.uid && matchesLegacyPhone);
+
+        if (!matchesConversation) return;
+
+        const item = makeMessageItem(`${prefix}-${id}`, data);
+        const dedupeKey =
+          item.sid ||
+          `${item.direction}_${normalizePhone(item.from || "")}_${normalizePhone(
+            item.to || ""
+          )}_${item.body}_${item.createdAtMs}`;
+
+        store.set(dedupeKey, item);
+      };
 
       const subMessagesDocs = await safeGetDocs(
         query(
@@ -306,45 +302,60 @@ export default function ReplyThreadPage({
       );
 
       subMessagesDocs.forEach((d) => {
-        upsertMessage(
-          store,
-          "conv",
-          d.id,
-          d.data() as Record<string, any>,
-          currentMeta,
-          currentProfile.uid
-        );
+        addToStore("conv", d.id, d.data() as Record<string, any>);
       });
 
-      const rootMessagesDocs = await safeGetDocs(
-        query(collection(db, "messages"), where("conversationId", "==", currentMeta.id))
-      );
+      const rootMessageQueries: Query<DocumentData>[] = [
+        query(collection(db, "messages"), where("conversationId", "==", currentMeta.id)),
+        query(
+          collection(db, "messages"),
+          where("ownerUid", "==", currentProfile.uid),
+          where("phone", "==", currentMeta.phone)
+        ),
+        query(
+          collection(db, "messages"),
+          where("ownerUid", "==", currentProfile.uid),
+          where("to", "==", currentMeta.phone)
+        ),
+        query(
+          collection(db, "messages"),
+          where("ownerUid", "==", currentProfile.uid),
+          where("from", "==", currentMeta.phone)
+        ),
+      ];
 
-      rootMessagesDocs.forEach((d) => {
-        upsertMessage(
-          store,
-          "msg",
-          d.id,
-          d.data() as Record<string, any>,
-          currentMeta,
-          currentProfile.uid
-        );
-      });
+      for (const q of rootMessageQueries) {
+        const docs = await safeGetDocs(q);
+        docs.forEach((d) => {
+          addToStore("msg", d.id, d.data() as Record<string, any>);
+        });
+      }
 
-      const rootRepliesDocs = await safeGetDocs(
-        query(collection(db, "replies"), where("conversationId", "==", currentMeta.id))
-      );
+      const rootReplyQueries: Query<DocumentData>[] = [
+        query(collection(db, "replies"), where("conversationId", "==", currentMeta.id)),
+        query(
+          collection(db, "replies"),
+          where("ownerUid", "==", currentProfile.uid),
+          where("phone", "==", currentMeta.phone)
+        ),
+        query(
+          collection(db, "replies"),
+          where("ownerUid", "==", currentProfile.uid),
+          where("to", "==", currentMeta.phone)
+        ),
+        query(
+          collection(db, "replies"),
+          where("ownerUid", "==", currentProfile.uid),
+          where("from", "==", currentMeta.phone)
+        ),
+      ];
 
-      rootRepliesDocs.forEach((d) => {
-        upsertMessage(
-          store,
-          "reply",
-          d.id,
-          d.data() as Record<string, any>,
-          currentMeta,
-          currentProfile.uid
-        );
-      });
+      for (const q of rootReplyQueries) {
+        const docs = await safeGetDocs(q);
+        docs.forEach((d) => {
+          addToStore("reply", d.id, d.data() as Record<string, any>);
+        });
+      }
 
       let merged = Array.from(store.values()).sort(
         (a, b) => a.createdAtMs - b.createdAtMs
@@ -441,7 +452,7 @@ export default function ReplyThreadPage({
         );
 
         unsubRootMessages = onSnapshot(
-          query(collection(db, "messages"), where("conversationId", "==", meta.id)),
+          query(collection(db, "messages"), where("ownerUid", "==", safeProfile.uid)),
           async () => {
             await refreshFromAnyChange();
           },
@@ -451,7 +462,7 @@ export default function ReplyThreadPage({
         );
 
         unsubReplies = onSnapshot(
-          query(collection(db, "replies"), where("conversationId", "==", meta.id)),
+          query(collection(db, "replies"), where("ownerUid", "==", safeProfile.uid)),
           async () => {
             await refreshFromAnyChange();
           },
