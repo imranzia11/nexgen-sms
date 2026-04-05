@@ -175,61 +175,12 @@ export default function RepliesPage() {
           query(collection(db, "conversations"), orderBy("lastMessageAt", "desc"))
         );
       } else {
-        const resultsMap = new Map<
-          string,
-          { id: string; data: Record<string, any> }
-        >();
-
-        const addResults = async (q: Query<DocumentData>) => {
-          const rows = await runQuery(q);
-          for (const row of rows) {
-            resultsMap.set(row.id, row);
-          }
-        };
-
-        const messagingServiceSid = String(
-          currentProfile.messagingServiceSid || ""
-        ).trim();
-        const twilioNumber = String(currentProfile.twilioNumber || "").trim();
-        const assignedTwilioNumber = String(
-          currentProfile.assignedTwilioNumber || ""
-        ).trim();
-
-        if (messagingServiceSid) {
-          await addResults(
-            query(
-              collection(db, "conversations"),
-              where("messagingServiceSid", "==", messagingServiceSid)
-            )
-          );
-        }
-
-        if (twilioNumber) {
-          await addResults(
-            query(
-              collection(db, "conversations"),
-              where("twilioNumber", "==", twilioNumber)
-            )
-          );
-        }
-
-        if (assignedTwilioNumber) {
-          await addResults(
-            query(
-              collection(db, "conversations"),
-              where("twilioNumber", "==", assignedTwilioNumber)
-            )
-          );
-        }
-
-        await addResults(
+        docs = await runQuery(
           query(
             collection(db, "conversations"),
             where("ownerUid", "==", currentProfile.uid)
           )
         );
-
-        docs = Array.from(resultsMap.values());
       }
 
       const rows = docs
@@ -380,9 +331,8 @@ export default function RepliesPage() {
               <div style={heroBadgeStyle}>SMS Activity</div>
               <h1 style={heroTitleStyle}>All Sent SMS</h1>
               <p style={heroTextStyle}>
-                This page shows all customer conversations touched by outbound
-                SMS and lets you filter them into All, Replied, and Awaiting
-                Reply. STOP and blacklisted numbers are hidden.
+                This page shows only new customer conversations owned by the
+                logged-in user. STOP and blacklisted numbers are hidden.
               </p>
             </div>
 
@@ -451,8 +401,8 @@ export default function RepliesPage() {
             <div>
               <h2 style={panelTitleStyle}>Outbound SMS Activity</h2>
               <p style={panelDescStyle}>
-                All tab shows every customer conversation. Replied and Awaiting
-                Reply tabs filter the same data.
+                Only new conversations with `ownerUid` matching the logged-in
+                user are shown for non-admin accounts.
               </p>
             </div>
 
@@ -471,7 +421,8 @@ export default function RepliesPage() {
               <div style={emptyDotStyle} />
               <div style={emptyTitleStyle}>No SMS found for this filter.</div>
               <div style={emptyTextStyle}>
-                Try switching filters or refreshing the page.
+                New messages and replies will appear here once they are saved
+                with the correct ownerUid.
               </div>
             </div>
           ) : (
