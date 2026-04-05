@@ -142,11 +142,13 @@ export default function ReplyThreadPage({
 
   function buildFallbackConversationMessage(meta: ConversationMeta): MessageItem[] {
     const fallbackBody = String(meta.lastMessage || "").trim();
-
     if (!fallbackBody) return [];
 
-    const fallbackDirection = String(meta.lastDirection || "outbound").trim() || "outbound";
-    const fallbackTime = meta.lastMessageAt || null;
+    const fallbackDirection =
+      String(meta.lastDirection || "").trim().toLowerCase() === "inbound"
+        ? "inbound"
+        : "outbound";
+
     const twilioSideNumber =
       String(meta.twilioNumber || meta.assignedTwilioNumber || "").trim();
 
@@ -160,8 +162,8 @@ export default function ReplyThreadPage({
         direction: fallbackDirection,
         status: "saved",
         read: true,
-        createdAtLabel: formatFirestoreDateNY(fallbackTime),
-        createdAtMs: toMillis(fallbackTime),
+        createdAtLabel: formatFirestoreDateNY(meta.lastMessageAt),
+        createdAtMs: toMillis(meta.lastMessageAt),
       },
     ];
   }
@@ -1205,4 +1207,4 @@ const loadingSpinnerStyle: CSSProperties = {
   border: "3px solid rgba(15,118,110,0.18)",
   borderTop: "3px solid #0f766e",
   animation: "spin 1s linear infinite",
-};
+}; 
