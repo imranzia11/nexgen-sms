@@ -12,6 +12,9 @@ import {
   limit,
   orderBy,
   query,
+  where,
+  type Query,
+  type DocumentData,
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
 import { formatFirestoreDateNY } from "../../lib/date";
@@ -40,6 +43,14 @@ type MessageLogItem = {
   createdAtLabel: string;
 };
 
+type AppUser = {
+  uid: string;
+  role: string;
+  isActive: boolean;
+  email?: string;
+  name?: string;
+};
+
 function truncateText(value: string, max = 120) {
   if (!value) return "-";
   if (value.length <= max) return value;
@@ -50,6 +61,19 @@ function truncateMiddle(value: string, start = 10, end = 8) {
   if (!value) return "-";
   if (value.length <= start + end + 3) return value;
   return `${value.slice(0, start)}...${value.slice(-end)}`;
+}
+
+function normalizeRole(value: unknown) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isAdmin(role?: string) {
+  const normalized = normalizeRole(role);
+  return (
+    normalized === "admin" ||
+    normalized === "superadmin" ||
+    normalized === "super_admin"
+  );
 }
 
 function statusChipTone(status?: string) {
@@ -96,6 +120,7 @@ export default function LogsPage() {
   const [checking, setChecking] = useState(true);
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState("User");
+  const [profile, setProfile] = useState<AppUser | null>(null);
 
   const [campaigns, setCampaigns] = useState<CampaignLogItem[]>([]);
   const [messages, setMessages] = useState<MessageLogItem[]>([]);
@@ -118,15 +143,26 @@ export default function LogsPage() {
           return;
         }
 
+        const userData = snap.data() as Record<string, any>;
+
+        const safeProfile: AppUser = {
+          uid: user.uid,
+          role: String(userData.role || "user"),
+          isActive: userData.isActive === true,
+          email: String(userData.email || user.email || ""),
+          name: String(userData.name || ""),
+        };
+
         const safeName =
-          String(snap.data().name || "").trim() ||
+          String(userData.name || "").trim() ||
           String(user.displayName || "").trim() ||
           String(user.email || "").split("@")[0] ||
           "User";
 
         setUserName(safeName);
+        setProfile(safeProfile);
         setChecking(false);
-        await loadLogs();
+        await loadLogs(safeProfile);
       } catch (error) {
         console.error("Failed to validate user access", error);
         await signOut(auth).catch(() => {});
@@ -137,22 +173,48 @@ export default function LogsPage() {
     return () => unsub();
   }, [router]);
 
-  const loadLogs = async () => {
+  const loadLogs = async (profileArg?: AppUser) => {
     try {
       setLoading(true);
       setErrorText("");
 
-      const campaignsQuery = query(
-        collection(db, "campaigns"),
-        orderBy("createdAt", "desc"),
-        limit(50)
-      );
+      const currentProfile = profileArg || profile;
+      if (!currentProfile) {
+        setCampaigns([]);
+        setMessages([]);
+        return;
+      }
 
-      const messagesQuery = query(
-        collection(db, "messages"),
-        orderBy("createdAt", "desc"),
-        limit(100)
-      );
+      let campaignsQuery: Query<DocumentData>;
+      let messagesQuery: Query<DocumentData>;
+
+      if (isAdmin(currentProfile.role)) {
+        campaignsQuery = query(
+          collection(db, "campaigns"),
+          orderBy("createdAt", "desc"),
+          limit(50)
+        );
+
+        messagesQuery = query(
+          collection(db, "messages"),
+          orderBy("createdAt", "desc"),
+          limit(100)
+        );
+      } else {
+        campaignsQuery = query(
+          collection(db, "campaigns"),
+          where("createdBy", "==", currentProfile.uid),
+          orderBy("createdAt", "desc"),
+          limit(50)
+        );
+
+        messagesQuery = query(
+          collection(db, "messages"),
+          where("ownerUid", "==", currentProfile.uid),
+          orderBy("createdAt", "desc"),
+          limit(100)
+        );
+      }
 
       const [campaignSnap, messageSnap] = await Promise.all([
         getDocs(campaignsQuery),
@@ -348,7 +410,7 @@ export default function LogsPage() {
                   />
                 </div>
 
-                <button onClick={loadLogs} style={heroPrimaryButtonStyle}>
+                <button onClick={() => loadLogs()} style={heroPrimaryButtonStyle}>
                   Refresh Logs
                 </button>
               </div>
