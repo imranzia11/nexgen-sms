@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
@@ -13,6 +13,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showMaintenancePopup, setShowMaintenancePopup] = useState(false);
+
+  useEffect(() => {
+    setShowMaintenancePopup(true);
+  }, []);
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
@@ -81,6 +86,27 @@ export default function LoginPage() {
       <main style={pageStyle}>
         <div style={bgGlowOne} />
         <div style={bgGlowTwo} />
+
+        {showMaintenancePopup ? (
+          <div style={modalOverlayStyle}>
+            <div style={modalCardStyle}>
+              <div style={modalBadgeStyle}>Maintenance Notice</div>
+              <h2 style={modalTitleStyle}>System Maintenance</h2>
+              <p style={modalTextStyle}>
+                Our software is currently under maintenance. The platform will
+                be live again on Monday at 9:00 AM USA time. Thank you for your
+                patience.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowMaintenancePopup(false)}
+                style={modalButtonStyle}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         <div style={shellStyle}>
           <section style={leftStyle}>
@@ -461,4 +487,68 @@ const spinnerStyle: CSSProperties = {
   border: "2px solid rgba(15,118,110,0.25)",
   borderTop: "2px solid #0f766e",
   animation: "spin 1s linear infinite",
+};
+
+const modalOverlayStyle: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(2, 8, 23, 0.55)",
+  backdropFilter: "blur(8px)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 20,
+  zIndex: 50,
+};
+
+const modalCardStyle: CSSProperties = {
+  width: "100%",
+  maxWidth: 560,
+  borderRadius: 28,
+  padding: 28,
+  background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
+  boxShadow: "0 30px 100px rgba(2,8,23,0.25)",
+  border: "1px solid rgba(15,23,42,0.08)",
+  textAlign: "center",
+};
+
+const modalBadgeStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: 999,
+  padding: "8px 14px",
+  background: "rgba(20,184,166,0.10)",
+  color: "#0f766e",
+  fontSize: 12,
+  fontWeight: 800,
+  letterSpacing: 0.3,
+};
+
+const modalTitleStyle: CSSProperties = {
+  margin: "18px 0 0 0",
+  fontSize: 34,
+  lineHeight: 1.1,
+  fontWeight: 900,
+  color: "#0f172a",
+};
+
+const modalTextStyle: CSSProperties = {
+  margin: "14px 0 0 0",
+  fontSize: 16,
+  lineHeight: 1.7,
+  color: "#475569",
+};
+
+const modalButtonStyle: CSSProperties = {
+  marginTop: 24,
+  border: "none",
+  borderRadius: 16,
+  padding: "14px 28px",
+  background: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)",
+  color: "#ffffff",
+  fontSize: 15,
+  fontWeight: 900,
+  cursor: "pointer",
+  boxShadow: "0 16px 34px rgba(15,118,110,0.22)",
 };
