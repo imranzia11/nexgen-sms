@@ -60,6 +60,8 @@ type ConversationMeta = {
   assignedTwilioNumber?: string;
   messagingServiceSid?: string;
   ownerUid?: string;
+  lastMessage?: string;
+  lastMessageAt?: any;
 };
 
 function normalizeRole(value: unknown) {
@@ -126,7 +128,7 @@ export default function ReplyThreadPage({
   function makeMessageItem(id: string, data: Record<string, any>): MessageItem {
     return {
       id,
-      sid: String(data.sid || ""),
+      sid: String(data.sid || data.messageSid || ""),
       from: String(data.from || ""),
       to: String(data.to || ""),
       body: String(data.body || ""),
@@ -136,6 +138,32 @@ export default function ReplyThreadPage({
       createdAtLabel: formatFirestoreDateNY(data.createdAt),
       createdAtMs: toMillis(data.createdAt),
     };
+  }
+
+  function buildFallbackConversationMessage(meta: ConversationMeta): MessageItem[] {
+    const fallbackBody = String(meta.lastMessage || "").trim();
+
+    if (!fallbackBody) return [];
+
+    const fallbackDirection = String(meta.lastDirection || "outbound").trim() || "outbound";
+    const fallbackTime = meta.lastMessageAt || null;
+    const twilioSideNumber =
+      String(meta.twilioNumber || meta.assignedTwilioNumber || "").trim();
+
+    return [
+      {
+        id: `fallback-${meta.id}`,
+        sid: "",
+        from: fallbackDirection === "inbound" ? meta.phone : twilioSideNumber,
+        to: fallbackDirection === "outbound" ? meta.phone : twilioSideNumber,
+        body: fallbackBody,
+        direction: fallbackDirection,
+        status: "saved",
+        read: true,
+        createdAtLabel: formatFirestoreDateNY(fallbackTime),
+        createdAtMs: toMillis(fallbackTime),
+      },
+    ];
   }
 
   async function loadConversationMeta(profileArg?: AppUser) {
@@ -185,6 +213,8 @@ export default function ReplyThreadPage({
           assignedTwilioNumber: String(data.assignedTwilioNumber || ""),
           messagingServiceSid: String(data.messagingServiceSid || ""),
           ownerUid: String(data.ownerUid || ""),
+          lastMessage: String(data.lastMessage || ""),
+          lastMessageAt: data.lastMessageAt || null,
         };
 
         setConversationMeta(meta);
@@ -212,6 +242,8 @@ export default function ReplyThreadPage({
           assignedTwilioNumber: String(data.assignedTwilioNumber || ""),
           messagingServiceSid: String(data.messagingServiceSid || ""),
           ownerUid: String(data.ownerUid || ""),
+          lastMessage: String(data.lastMessage || ""),
+          lastMessageAt: data.lastMessageAt || null,
         };
 
         setConversationMeta(meta);
@@ -239,6 +271,8 @@ export default function ReplyThreadPage({
           assignedTwilioNumber: String(data.assignedTwilioNumber || ""),
           messagingServiceSid: String(data.messagingServiceSid || ""),
           ownerUid: String(data.ownerUid || ""),
+          lastMessage: String(data.lastMessage || ""),
+          lastMessageAt: data.lastMessageAt || null,
         };
 
         setConversationMeta(meta);
@@ -266,11 +300,12 @@ export default function ReplyThreadPage({
       const currentMeta = metaArg || conversationMeta;
       const currentProfile = profileArg || profile;
 
-      if (!routePhone || !currentProfile || !currentMeta?.id) {
+      if (!currentProfile || !currentMeta?.id) {
         setMessages([]);
         return;
       }
 
+      const targetPhone = String(currentMeta.phone || routePhone || "").trim();
       const messageStore = new Map<string, MessageItem>();
 
       try {
@@ -299,11 +334,11 @@ export default function ReplyThreadPage({
       if (messageStore.size === 0) {
         try {
           const outboundQuery = isAdmin(currentProfile.role)
-            ? query(collection(db, "messages"), where("to", "==", routePhone))
+            ? query(collection(db, "messages"), where("to", "==", targetPhone))
             : query(
                 collection(db, "messages"),
                 where("ownerUid", "==", currentProfile.uid),
-                where("to", "==", routePhone)
+                where("to", "==", targetPhone)
               );
 
           const outboundSnap = await getDocs(outboundQuery);
@@ -321,19 +356,19 @@ export default function ReplyThreadPage({
         try {
           const inboundQueries = isAdmin(currentProfile.role)
             ? [
-                query(collection(db, "replies"), where("from", "==", routePhone)),
-                query(collection(db, "replies"), where("phone", "==", routePhone)),
+                query(collection(db, "replies"), where("from", "==", targetPhone)),
+                query(collection(db, "replies"), where("phone", "==", targetPhone)),
               ]
             : [
                 query(
                   collection(db, "replies"),
                   where("ownerUid", "==", currentProfile.uid),
-                  where("from", "==", routePhone)
+                  where("from", "==", targetPhone)
                 ),
                 query(
                   collection(db, "replies"),
                   where("ownerUid", "==", currentProfile.uid),
-                  where("phone", "==", routePhone)
+                  where("phone", "==", targetPhone)
                 ),
               ];
 
@@ -355,9 +390,13 @@ export default function ReplyThreadPage({
         }
       }
 
-      const merged = Array.from(messageStore.values()).sort(
+      let merged = Array.from(messageStore.values()).sort(
         (a, b) => a.createdAtMs - b.createdAtMs
       );
+
+      if (merged.length === 0) {
+        merged = buildFallbackConversationMessage(currentMeta);
+      }
 
       setMessages(merged);
     } catch (error: any) {
@@ -447,16 +486,22 @@ export default function ReplyThreadPage({
                 })
                 .filter(Boolean) as MessageItem[];
 
+              const fallbackItems =
+                liveItems.length === 0 && meta.lastMessage
+                  ? buildFallbackConversationMessage(meta)
+                  : [];
+
               setMessages((prev) => {
-                const fallbackItems = prev.filter(
-                  (item) => !item.id.startsWith("live-") && !item.id.startsWith("conv-")
+                const nonLiveItems = prev.filter(
+                  (item) =>
+                    !item.id.startsWith("live-") &&
+                    !item.id.startsWith("conv-") &&
+                    !item.id.startsWith("fallback-")
                 );
 
-                const merged = [...fallbackItems, ...liveItems].sort(
+                return [...nonLiveItems, ...fallbackItems, ...liveItems].sort(
                   (a, b) => a.createdAtMs - b.createdAtMs
                 );
-
-                return merged;
               });
 
               setLoading(false);
