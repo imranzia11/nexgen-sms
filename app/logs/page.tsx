@@ -84,6 +84,9 @@ function toSortMs(value: any) {
   if (value && typeof value.toMillis === "function") return value.toMillis();
   if (value instanceof Date) return value.getTime();
   if (typeof value === "number") return value;
+  if (value?.seconds && typeof value.seconds === "number") {
+    return value.seconds * 1000;
+  }
   return 0;
 }
 
@@ -91,14 +94,46 @@ function normalizePhone(value: string) {
   return String(value || "").replace(/[^\d+]/g, "").trim();
 }
 
-function statusChipTone(status?: string) {
-  const value = String(status || "").toLowerCase();
+function normalizeStatus(status?: string) {
+  return String(status || "").trim().toLowerCase();
+}
 
-  if (
-    value.includes("completed") ||
-    value.includes("sent") ||
-    value.includes("success")
-  ) {
+function isSuccessfulStatus(status?: string) {
+  const value = normalizeStatus(status);
+  return value === "delivered" || value === "sent";
+}
+
+function isProcessingStatus(status?: string) {
+  const value = normalizeStatus(status);
+  return (
+    value === "queued" ||
+    value === "accepted" ||
+    value === "scheduled" ||
+    value === "sending" ||
+    value === "processing"
+  );
+}
+
+function isFailedStatus(status?: string) {
+  const value = normalizeStatus(status);
+  return value === "failed" || value === "undelivered" || value === "error";
+}
+
+function statusLabel(status?: string) {
+  const value = normalizeStatus(status);
+  if (!value) return "-";
+  if (isProcessingStatus(value)) return "Processing";
+  if (value === "delivered") return "Delivered";
+  if (value === "sent") return "Sent";
+  if (value === "undelivered") return "Undelivered";
+  if (value === "failed") return "Failed";
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function statusChipTone(status?: string) {
+  const value = normalizeStatus(status);
+
+  if (value === "delivered" || value === "sent" || value.includes("completed")) {
     return {
       bg: "rgba(16, 185, 129, 0.12)",
       text: "#059669",
@@ -106,7 +141,7 @@ function statusChipTone(status?: string) {
     };
   }
 
-  if (value.includes("failed") || value.includes("error")) {
+  if (value === "failed" || value === "undelivered" || value.includes("error")) {
     return {
       bg: "rgba(239, 68, 68, 0.12)",
       text: "#dc2626",
@@ -114,7 +149,7 @@ function statusChipTone(status?: string) {
     };
   }
 
-  if (value.includes("queued") || value.includes("processing")) {
+  if (isProcessingStatus(value)) {
     return {
       bg: "rgba(245, 158, 11, 0.12)",
       text: "#b45309",
@@ -223,10 +258,7 @@ export default function LogsPage() {
           getDocs(messagesQuery),
         ]);
       } else {
-        const campaignsQuery = query(
-          collection(db, "campaigns"),
-          limit(100)
-        );
+        const campaignsQuery = query(collection(db, "campaigns"), limit(100));
 
         let ownerMessageSnap;
         try {
@@ -277,22 +309,21 @@ export default function LogsPage() {
         })
         .sort((a, b) => b.sortMs - a.sortMs);
 
-      let messageRows: MessageLogItem[] = messageSnap.docs
-        .map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            to: data.to || "-",
-            from: data.from || "",
-            name: data.name || "",
-            body: data.body || "",
-            status: data.status || "-",
-            twilioSid: data.twilioSid || data.sid || "",
-            error: data.error || "",
-            sourceFileName: data.sourceFileName || "-",
-            createdAtLabel: formatFirestoreDateNY(data.createdAt),
-          };
-        });
+      let messageRows: MessageLogItem[] = messageSnap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          to: data.to || "-",
+          from: data.from || "",
+          name: data.name || "",
+          body: data.body || "",
+          status: data.status || "-",
+          twilioSid: data.twilioSid || data.sid || "",
+          error: data.error || "",
+          sourceFileName: data.sourceFileName || "-",
+          createdAtLabel: formatFirestoreDateNY(data.createdAt),
+        };
+      });
 
       if (!isAdmin(currentProfile.role)) {
         campaignRows = campaignRows.filter((item: any, index) => {
@@ -309,10 +340,7 @@ export default function LogsPage() {
           const raw = messageSnap.docs[index]?.data() || {};
           const rawOwnerUid = String(raw.ownerUid || "");
           const rawFrom = normalizePhone(String(raw.from || ""));
-          return (
-            rawOwnerUid === currentProfile.uid ||
-            (!!currentUserPhone && rawFrom === currentUserPhone)
-          );
+          return rawOwnerUid === currentProfile.uid || (!!currentUserPhone && rawFrom === currentUserPhone);
         });
       }
 
@@ -365,12 +393,9 @@ export default function LogsPage() {
 
   const totalCampaigns = campaigns.length;
   const totalMessages = messages.length;
-  const totalSent = messages.filter((m) =>
-    String(m.status).toLowerCase().includes("sent")
-  ).length;
-  const totalFailed = messages.filter((m) =>
-    String(m.status).toLowerCase().includes("failed")
-  ).length;
+  const totalSent = messages.filter((m) => isSuccessfulStatus(m.status)).length;
+  const totalProcessing = messages.filter((m) => isProcessingStatus(m.status)).length;
+  const totalFailed = messages.filter((m) => isFailedStatus(m.status)).length;
 
   if (checking || loading) {
     return (
@@ -483,8 +508,8 @@ export default function LogsPage() {
               <div style={statsGridStyle}>
                 <StatCard label="Campaign Logs" value={String(totalCampaigns)} />
                 <StatCard label="Message Logs" value={String(totalMessages)} />
-                <StatCard label="Sent" value={String(totalSent)} />
-                <StatCard label="Failed" value={String(totalFailed)} />
+                <StatCard label="Delivered / Sent" value={String(totalSent)} />
+                <StatCard label="Processing / Failed" value={`${totalProcessing} / ${totalFailed}`} />
               </div>
             </div>
           </div>
@@ -529,7 +554,7 @@ export default function LogsPage() {
                             whiteSpace: "nowrap",
                           }}
                         >
-                          {item.status}
+                          {statusLabel(item.status)}
                         </span>
                       </div>
 
@@ -598,7 +623,7 @@ export default function LogsPage() {
                                 display: "inline-block",
                               }}
                             >
-                              {item.status}
+                              {statusLabel(item.status)}
                             </span>
                           </td>
                           <td style={tdStyle}>
