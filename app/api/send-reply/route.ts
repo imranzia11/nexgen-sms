@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
 
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const appBaseUrl = process.env.APP_BASE_URL?.trim()?.replace(/\/$/, "");
 
     const twilioNumber = toE164(
       String(userData.twilioNumber || userData.assignedTwilioNumber || "")
@@ -62,6 +63,13 @@ export async function POST(req: NextRequest) {
     if (!accountSid || !authToken) {
       return NextResponse.json(
         { ok: false, error: "Missing Twilio configuration." },
+        { status: 500 }
+      );
+    }
+
+    if (!appBaseUrl) {
+      return NextResponse.json(
+        { ok: false, error: "APP_BASE_URL is missing." },
         { status: 500 }
       );
     }
@@ -97,6 +105,7 @@ export async function POST(req: NextRequest) {
       body: messageBody,
       to,
       from: twilioNumber,
+      statusCallback: `${appBaseUrl}/api/send-sms/twilio/status`,
     });
 
     const conversationId = `${uid}_${phoneDocId(to)}`;
@@ -125,7 +134,7 @@ export async function POST(req: NextRequest) {
       to,
       body: messageBody,
       direction: "outbound",
-      status: msg.status || "sent",
+      status: msg.status || "queued",
       read: true,
       twilioNumber,
       assignedTwilioNumber: twilioNumber,
@@ -159,6 +168,7 @@ export async function POST(req: NextRequest) {
         firstOutboundAt: existingFirstOutboundAt || FieldValue.serverTimestamp(),
         lastOutboundAt: FieldValue.serverTimestamp(),
         lastInboundAt: existingLastInboundAt || null,
+        lastOutboundStatus: msg.status || "queued",
       },
       { merge: true }
     );
@@ -174,12 +184,14 @@ export async function POST(req: NextRequest) {
       from: msg.from || twilioNumber,
       body: messageBody,
       sid: msg.sid,
-      status: msg.status || "sent",
+      twilioSid: msg.sid,
+      status: msg.status || "queued",
       direction: "outbound",
       read: true,
       twilioNumber,
       assignedTwilioNumber: twilioNumber,
       messagingServiceSid: "",
+      error: "",
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -187,7 +199,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       sid: msg.sid,
-      status: msg.status || "sent",
+      status: msg.status || "queued",
       conversationId,
     });
   } catch (error: any) {
