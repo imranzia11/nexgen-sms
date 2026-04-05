@@ -75,21 +75,29 @@ function phoneKey(value: unknown) {
 }
 
 function makeRow(id: string, data: Record<string, any>): SmsRow {
-  const phone = String(data.phone || data.to || "").trim();
+  const phone = String(
+    data.phone ||
+      data.customerPhone ||
+      data.to ||
+      data.contactPhone ||
+      ""
+  ).trim();
+
   const replied =
     data.hasReply === true ||
     String(data.status || "").toLowerCase() === "replied" ||
-    String(data.lastDirection || "").toLowerCase() === "inbound";
+    String(data.lastDirection || data.direction || "").toLowerCase() ===
+      "inbound";
 
   return {
     id,
     phone,
-    name: String(data.name || ""),
-    body: String(data.lastMessage || ""),
-    createdAtLabel: formatFirestoreDateNY(data.lastMessageAt),
-    sortSeconds: getSortSeconds(data.lastMessageAt),
+    name: String(data.name || data.customerName || ""),
+    body: String(data.lastMessage || data.body || ""),
+    createdAtLabel: formatFirestoreDateNY(data.lastMessageAt || data.createdAt),
+    sortSeconds: getSortSeconds(data.lastMessageAt || data.createdAt),
     replied,
-    lastDirection: String(data.lastDirection || ""),
+    lastDirection: String(data.lastDirection || data.direction || ""),
   };
 }
 
@@ -167,12 +175,61 @@ export default function RepliesPage() {
           query(collection(db, "conversations"), orderBy("lastMessageAt", "desc"))
         );
       } else {
-        docs = await runQuery(
+        const resultsMap = new Map<
+          string,
+          { id: string; data: Record<string, any> }
+        >();
+
+        const addResults = async (q: Query<DocumentData>) => {
+          const rows = await runQuery(q);
+          for (const row of rows) {
+            resultsMap.set(row.id, row);
+          }
+        };
+
+        const messagingServiceSid = String(
+          currentProfile.messagingServiceSid || ""
+        ).trim();
+        const twilioNumber = String(currentProfile.twilioNumber || "").trim();
+        const assignedTwilioNumber = String(
+          currentProfile.assignedTwilioNumber || ""
+        ).trim();
+
+        if (messagingServiceSid) {
+          await addResults(
+            query(
+              collection(db, "conversations"),
+              where("messagingServiceSid", "==", messagingServiceSid)
+            )
+          );
+        }
+
+        if (twilioNumber) {
+          await addResults(
+            query(
+              collection(db, "conversations"),
+              where("twilioNumber", "==", twilioNumber)
+            )
+          );
+        }
+
+        if (assignedTwilioNumber) {
+          await addResults(
+            query(
+              collection(db, "conversations"),
+              where("twilioNumber", "==", assignedTwilioNumber)
+            )
+          );
+        }
+
+        await addResults(
           query(
             collection(db, "conversations"),
             where("ownerUid", "==", currentProfile.uid)
           )
         );
+
+        docs = Array.from(resultsMap.values());
       }
 
       const rows = docs
@@ -323,7 +380,9 @@ export default function RepliesPage() {
               <div style={heroBadgeStyle}>SMS Activity</div>
               <h1 style={heroTitleStyle}>All Sent SMS</h1>
               <p style={heroTextStyle}>
-                This page shows all customer conversations touched by outbound SMS and lets you filter them into All, Replied, and Awaiting Reply. STOP and blacklisted numbers are hidden.
+                This page shows all customer conversations touched by outbound
+                SMS and lets you filter them into All, Replied, and Awaiting
+                Reply. STOP and blacklisted numbers are hidden.
               </p>
             </div>
 
@@ -379,7 +438,10 @@ export default function RepliesPage() {
               <StatCard label="All Sent SMS" value={String(items.length)} />
               <StatCard label="Replied" value={String(repliedCount)} />
               <StatCard label="Awaiting Reply" value={String(awaitingCount)} />
-              <StatCard label="Blocked Hidden" value={String(blockedPhones.length)} />
+              <StatCard
+                label="Blocked Hidden"
+                value={String(blockedPhones.length)}
+              />
             </div>
           </div>
         </div>
@@ -389,7 +451,8 @@ export default function RepliesPage() {
             <div>
               <h2 style={panelTitleStyle}>Outbound SMS Activity</h2>
               <p style={panelDescStyle}>
-                All tab shows every customer conversation. Replied and Awaiting Reply tabs filter the same data.
+                All tab shows every customer conversation. Replied and Awaiting
+                Reply tabs filter the same data.
               </p>
             </div>
 
@@ -422,7 +485,9 @@ export default function RepliesPage() {
                     <div style={conversationTopStyle}>
                       <div>
                         <div style={phoneStyle}>{item.phone}</div>
-                        {item.name ? <div style={nameStyle}>{item.name}</div> : null}
+                        {item.name ? (
+                          <div style={nameStyle}>{item.name}</div>
+                        ) : null}
                         <div style={timeStyleMobile}>{item.createdAtLabel}</div>
                       </div>
 
@@ -456,7 +521,9 @@ export default function RepliesPage() {
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        setOpenMenuId((prev) => (prev === item.id ? "" : item.id));
+                        setOpenMenuId((prev) =>
+                          prev === item.id ? "" : item.id
+                        );
                       }}
                       style={actionButtonStyle}
                     >
@@ -474,7 +541,9 @@ export default function RepliesPage() {
                           type="button"
                           onClick={() => {
                             setOpenMenuId("");
-                            router.push(`/replies/${encodeURIComponent(item.phone)}`);
+                            router.push(
+                              `/replies/${encodeURIComponent(item.phone)}`
+                            );
                           }}
                           style={menuItemStyle}
                         >
