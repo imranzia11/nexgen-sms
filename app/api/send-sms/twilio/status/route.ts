@@ -101,6 +101,11 @@ export async function POST(req: NextRequest) {
     }
 
     if (conversationRef) {
+      const conversationSnap = await conversationRef.get();
+      const conversationData = conversationSnap.exists
+        ? conversationSnap.data() || {}
+        : {};
+
       const patch: Record<string, unknown> = {
         updatedAt: now,
         lastOutboundStatus: messageStatus,
@@ -108,8 +113,9 @@ export async function POST(req: NextRequest) {
 
       if (messageStatus === "failed" || messageStatus === "undelivered") {
         patch.status = "delivery_issue";
-      } else if (messageStatus === "sent" || messageStatus === "delivered") {
-        patch.status = "replied";
+      } else {
+        patch.status =
+          conversationData.hasReply === true ? "replied" : "awaiting_reply";
       }
 
       await conversationRef.set(patch, { merge: true });
