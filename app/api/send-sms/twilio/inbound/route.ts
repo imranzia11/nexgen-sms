@@ -1,15 +1,8 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import twilio from "twilio";
+import { getAuth } from "firebase-admin/auth";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../../../../../lib/firebaseAdmin";
-
-function xmlResponse() {
-  return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`, {
-    status: 200,
-    headers: {
-      "Content-Type": "text/xml",
-    },
-  });
-}
 
 function toE164(raw: string) {
   const cleaned = String(raw || "").replace(/[^\d+]/g, "");
@@ -22,276 +15,223 @@ function phoneDocId(phone: string) {
   return String(phone || "").replace(/[^\d+]/g, "");
 }
 
-function normalizeKeyword(raw: string) {
-  return String(raw || "").trim().toUpperCase();
-}
+async function getUserFromRequest(req: NextRequest) {
+  const authHeader = req.headers.get("authorization") || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
 
-const STOP_KEYWORDS = new Set([
-  "STOP",
-  "STOPALL",
-  "UNSUBSCRIBE",
-  "CANCEL",
-  "END",
-  "QUIT",
-  "REVOKE",
-  "OPTOUT",
-]);
+  if (!token) {
+    throw new Error("Missing authorization token.");
+  }
 
-const START_KEYWORDS = new Set([
-  "START",
-  "UNSTOP",
-  "YES",
-]);
-
-const HELP_KEYWORDS = new Set([
-  "HELP",
-  "INFO",
-]);
-
-export async function GET() {
-  return new Response("twilio inbound route live", { status: 200 });
+  return getAuth().verifyIdToken(token);
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
+    const decodedUser = await getUserFromRequest(req);
+    const uid = decodedUser.uid;
 
-    const fromRaw = String(formData.get("From") || "");
-    const toRaw = String(formData.get("To") || "");
-    const bodyRaw = String(formData.get("Body") || "");
-    const messageSid = String(formData.get("MessageSid") || "");
-    const messagingServiceSid = String(formData.get("MessagingServiceSid") || "");
-    const accountSid = String(formData.get("AccountSid") || "");
-    const optOutTypeRaw = String(formData.get("OptOutType") || "");
+    const userSnap = await adminDb.collection("users").doc(uid).get();
 
-    const from = toE164(fromRaw);
-    const to = toE164(toRaw);
-    const body = String(bodyRaw || "").trim();
-    const normalizedBody = normalizeKeyword(body);
-    const optOutType = normalizeKeyword(optOutTypeRaw);
-
-    if (!from || !to) {
-      console.error("Missing From or To number.");
-      return xmlResponse();
+    if (!userSnap.exists) {
+      return NextResponse.json(
+        { ok: false, error: "User profile not found." },
+        { status: 404 }
+      );
     }
 
-    let eventType = "MESSAGE";
+    const userData = userSnap.data() || {};
 
-    if (optOutType === "STOP" || STOP_KEYWORDS.has(normalizedBody)) {
-      eventType = "STOP";
-    } else if (optOutType === "START" || START_KEYWORDS.has(normalizedBody)) {
-      eventType = "START";
-    } else if (optOutType === "HELP" || HELP_KEYWORDS.has(normalizedBody)) {
-      eventType = "HELP";
+    if (userData.isActive !== true) {
+      return NextResponse.json(
+        { ok: false, error: "User account is inactive." },
+        { status: 403 }
+      );
     }
 
-    const usersSnap = await adminDb
-      .collection("users")
-      .where("twilioNumber", "==", to)
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const appBaseUrl = process.env.APP_BASE_URL?.trim()?.replace(/\/$/, "");
+
+    const twilioNumber = toE164(
+      String(userData.twilioNumber || userData.assignedTwilioNumber || "")
+    );
+
+    if (!accountSid || !authToken) {
+      return NextResponse.json(
+        { ok: false, error: "Missing Twilio account configuration." },
+        { status: 500 }
+      );
+    }
+
+    if (!appBaseUrl) {
+      return NextResponse.json(
+        { ok: false, error: "APP_BASE_URL is missing." },
+        { status: 500 }
+      );
+    }
+
+    if (!twilioNumber) {
+      return NextResponse.json(
+        { ok: false, error: "No Twilio number is assigned to this user." },
+        { status: 400 }
+      );
+    }
+
+    const body = await req.json();
+
+    const phone = toE164(body.phone || body.to || "");
+    const message = String(body.message || body.body || "").trim();
+    const customerName = String(body.name || "").trim();
+
+    if (!phone) {
+      return NextResponse.json(
+        { ok: false, error: "Customer phone is required." },
+        { status: 400 }
+      );
+    }
+
+    if (!message) {
+      return NextResponse.json(
+        { ok: false, error: "Reply message is required." },
+        { status: 400 }
+      );
+    }
+
+    const blacklistSnap = await adminDb
+      .collection("blacklisted_numbers")
+      .where("ownerUid", "==", uid)
+      .where("phone", "==", phone)
       .limit(1)
       .get();
 
-    if (usersSnap.empty) {
-      console.error("No user found for Twilio number:", to);
-      return xmlResponse();
+    if (!blacklistSnap.empty) {
+      const blacklistData = blacklistSnap.docs[0].data() || {};
+      if (String(blacklistData.status || "").toLowerCase() === "blocked") {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "This number is blocked and cannot receive messages.",
+          },
+          { status: 400 }
+        );
+      }
     }
 
-    const userDoc = usersSnap.docs[0];
-    const ownerUid = userDoc.id;
-    const userData = userDoc.data() || {};
+    const client = twilio(accountSid, authToken);
 
-    if (userData.isActive !== true) {
-      console.error("Mapped user account is inactive:", ownerUid);
-      return xmlResponse();
-    }
-
-    const ownerEmail = String(userData.email || "");
-    const ownerName = String(userData.name || "");
-    const ownerRole = String(userData.role || "user");
-
-    const conversationId = `${ownerUid}_${phoneDocId(from)}`;
-    const blacklistDocId = `${ownerUid}_${phoneDocId(from)}`;
-
-    const convoRef = adminDb.collection("conversations").doc(conversationId);
-    const convoSnap = await convoRef.get();
-    const convoData = convoSnap.exists ? convoSnap.data() || {} : {};
-
-    const existingName = String(convoData.name || "");
-    const existingFirstOutboundAt = convoData.firstOutboundAt || null;
-    const existingLastOutboundAt = convoData.lastOutboundAt || null;
-
-    await adminDb.collection("replies").add({
-      ownerUid,
-      ownerEmail,
-      ownerName,
-      ownerRole,
-      phone: from,
-      from,
-      to,
-      body,
-      normalizedBody,
-      direction: "inbound",
-      status: "received",
-      read: false,
-      messageSid,
-      messagingServiceSid,
-      accountSid,
-      twilioNumber: to,
-      optOutType: optOutType || null,
-      eventType,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
+    const res = await client.messages.create({
+      body: message,
+      to: phone,
+      from: twilioNumber,
+      statusCallback: `${appBaseUrl}/api/send-sms/twilio/status`,
     });
 
-    const convoMessageId = messageSid || adminDb.collection("_tmp").doc().id;
-    const convoMessageRef = convoRef.collection("messages").doc(convoMessageId);
+    const conversationId = `${uid}_${phoneDocId(phone)}`;
+    const convoRef = adminDb.collection("conversations").doc(conversationId);
+    const threadMessageRef = convoRef.collection("messages").doc(res.sid);
 
-    await convoMessageRef.set({
-      sid: messageSid || "",
-      ownerUid,
-      ownerEmail,
-      ownerName,
-      ownerRole,
-      phone: from,
-      from,
-      to,
-      body,
-      normalizedBody,
-      direction: "inbound",
-      status: "received",
-      read: false,
-      eventType,
-      optOutType: optOutType || null,
-      messagingServiceSid: messagingServiceSid || "",
-      accountSid: accountSid || "",
-      twilioNumber: to,
+    const existingConvoSnap = await convoRef.get();
+    const existingConvo = existingConvoSnap.exists
+      ? existingConvoSnap.data() || {}
+      : {};
+
+    const existingUnreadCount = Number(existingConvo.unreadCount || 0);
+    const existingReplyCount = Number(existingConvo.replyCount || 0);
+    const existingHasReply = existingConvo.hasReply === true;
+    const existingName =
+      String(existingConvo.name || "").trim() || customerName || "";
+
+    await threadMessageRef.set({
+      sid: res.sid,
+      ownerUid: uid,
+      ownerEmail: String(userData.email || ""),
+      ownerName: String(userData.name || ""),
+      ownerRole: String(userData.role || "user"),
+      conversationId,
+      from: res.from || twilioNumber,
+      to: phone,
+      phone,
+      body: message,
+      direction: "outbound",
+      status: res.status || "queued",
+      read: true,
+      twilioNumber,
+      assignedTwilioNumber: twilioNumber,
+      messagingServiceSid: "",
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
 
     await convoRef.set(
       {
-        ownerUid,
-        ownerEmail,
-        ownerName,
-        ownerRole,
-        phone: from,
+        ownerUid: uid,
+        ownerEmail: String(userData.email || ""),
+        ownerName: String(userData.name || ""),
+        ownerRole: String(userData.role || "user"),
+        phone,
         name: existingName,
-        twilioNumber: to,
-        assignedTwilioNumber: to,
-        messagingServiceSid: messagingServiceSid || "",
-        lastMessage: body,
-        lastDirection: "inbound",
+        twilioNumber,
+        assignedTwilioNumber: twilioNumber,
+        messagingServiceSid: "",
+        lastMessage: message,
+        lastDirection: "outbound",
         lastMessageAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
-
-        status: "replied",
-        hasReply: true,
-        unreadCount: FieldValue.increment(1),
-        replyCount: FieldValue.increment(1),
+        status: existingHasReply ? "replied" : "awaiting_reply",
+        hasReply: existingHasReply,
+        unreadCount: existingUnreadCount,
+        replyCount: existingReplyCount,
+        outboundCount: FieldValue.increment(1),
         messageCount: FieldValue.increment(1),
-
-        firstOutboundAt: existingFirstOutboundAt || null,
-        lastOutboundAt: existingLastOutboundAt || null,
-        lastInboundAt: FieldValue.serverTimestamp(),
+        firstOutboundAt:
+          existingConvo.firstOutboundAt || FieldValue.serverTimestamp(),
+        lastOutboundAt: FieldValue.serverTimestamp(),
+        lastInboundAt: existingConvo.lastInboundAt || null,
+        lastOutboundStatus: res.status || "queued",
       },
       { merge: true }
     );
 
-    const blacklistRef = adminDb
-      .collection("blacklisted_numbers")
-      .doc(blacklistDocId);
+    await adminDb.collection("messages").add({
+      ownerUid: uid,
+      ownerEmail: String(userData.email || ""),
+      ownerName: String(userData.name || ""),
+      ownerRole: String(userData.role || "user"),
+      conversationId,
+      name: existingName,
+      phone,
+      to: phone,
+      from: res.from || twilioNumber,
+      body: message,
+      sid: res.sid,
+      twilioSid: res.sid,
+      status: res.status || "queued",
+      direction: "outbound",
+      read: true,
+      twilioNumber,
+      assignedTwilioNumber: twilioNumber,
+      messagingServiceSid: "",
+      sourceFileName: "",
+      error: "",
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
 
-    const blacklistEventRef = adminDb.collection("blacklist_events").doc();
-
-    if (eventType === "STOP") {
-      await blacklistRef.set(
-        {
-          ownerUid,
-          ownerEmail,
-          ownerName,
-          phone: from,
-          twilioNumber: to,
-          status: "blocked",
-          source: "twilio_inbound",
-          reason: "user_opt_out",
-          lastKeyword: optOutType || normalizedBody || "STOP",
-          lastBody: body,
-          lastMessageSid: messageSid || null,
-          messagingServiceSid: messagingServiceSid || null,
-          blockedAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-          unblockedAt: null,
-        },
-        { merge: true }
-      );
-
-      await blacklistEventRef.set({
-        ownerUid,
-        ownerEmail,
-        ownerName,
-        phone: from,
-        twilioNumber: to,
-        eventType: "STOP",
-        body,
-        normalizedBody,
-        messageSid: messageSid || null,
-        messagingServiceSid: messagingServiceSid || null,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-    } else if (eventType === "START") {
-      await blacklistRef.set(
-        {
-          ownerUid,
-          ownerEmail,
-          ownerName,
-          phone: from,
-          twilioNumber: to,
-          status: "active",
-          source: "twilio_inbound",
-          reason: "user_opt_in",
-          lastKeyword: optOutType || normalizedBody || "START",
-          lastBody: body,
-          lastMessageSid: messageSid || null,
-          messagingServiceSid: messagingServiceSid || null,
-          unblockedAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-
-      await blacklistEventRef.set({
-        ownerUid,
-        ownerEmail,
-        ownerName,
-        phone: from,
-        twilioNumber: to,
-        eventType: "START",
-        body,
-        normalizedBody,
-        messageSid: messageSid || null,
-        messagingServiceSid: messagingServiceSid || null,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-    } else if (eventType === "HELP") {
-      await blacklistEventRef.set({
-        ownerUid,
-        ownerEmail,
-        ownerName,
-        phone: from,
-        twilioNumber: to,
-        eventType: "HELP",
-        body,
-        normalizedBody,
-        messageSid: messageSid || null,
-        messagingServiceSid: messagingServiceSid || null,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-    }
-
-    return xmlResponse();
-  } catch (error: any) {
-    console.error("Twilio inbound webhook error:", error);
-    return xmlResponse();
+    return NextResponse.json({
+      ok: true,
+      sid: res.sid,
+      status: res.status || "queued",
+      phone,
+      conversationId,
+    });
+  } catch (err: any) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: err?.message || "Unexpected server error",
+      },
+      { status: 500 }
+    );
   }
 }
