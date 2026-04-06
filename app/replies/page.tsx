@@ -74,6 +74,10 @@ function phoneKey(value: unknown) {
   return String(value || "").replace(/[^\d+]/g, "").trim();
 }
 
+function normalizeDirection(value: unknown) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function makeRow(id: string, data: Record<string, any>): SmsRow {
   const phone = String(
     data.phone ||
@@ -83,11 +87,10 @@ function makeRow(id: string, data: Record<string, any>): SmsRow {
       ""
   ).trim();
 
+  const lastDirection = normalizeDirection(data.lastDirection || data.direction);
+
   const replied =
-    data.hasReply === true ||
-    String(data.status || "").toLowerCase() === "replied" ||
-    String(data.lastDirection || data.direction || "").toLowerCase() ===
-      "inbound";
+    data.hasReply === true || lastDirection === "inbound";
 
   return {
     id,
@@ -97,7 +100,7 @@ function makeRow(id: string, data: Record<string, any>): SmsRow {
     createdAtLabel: formatFirestoreDateNY(data.lastMessageAt || data.createdAt),
     sortSeconds: getSortSeconds(data.lastMessageAt || data.createdAt),
     replied,
-    lastDirection: String(data.lastDirection || data.direction || ""),
+    lastDirection,
   };
 }
 
