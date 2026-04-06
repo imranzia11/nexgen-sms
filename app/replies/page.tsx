@@ -370,7 +370,7 @@ export default function RepliesPage() {
                   ...(filterMode === "replied" ? activeFilterTabStyle : {}),
                 }}
               >
-                Replied
+                Customer Replied
               </button>
 
               <button
@@ -380,14 +380,20 @@ export default function RepliesPage() {
                   ...(filterMode === "awaiting" ? activeFilterTabStyle : {}),
                 }}
               >
-                Awaiting Reply
+                Waiting for Customer
               </button>
             </div>
 
             <div style={statsGridStyle}>
               <StatCard label="All Sent SMS" value={String(items.length)} />
-              <StatCard label="Replied" value={String(repliedCount)} />
-              <StatCard label="Awaiting Reply" value={String(awaitingCount)} />
+              <StatCard
+                label="Customer Replied"
+                value={String(repliedCount)}
+              />
+              <StatCard
+                label="Waiting for Customer"
+                value={String(awaitingCount)}
+              />
               <StatCard
                 label="Blocked Hidden"
                 value={String(blockedPhones.length)}
@@ -451,7 +457,9 @@ export default function RepliesPage() {
                               : awaitingReplyBadgeStyle
                           }
                         >
-                          {item.replied ? "Replied" : "Awaiting Reply"}
+                          {item.replied
+                            ? "Customer Replied"
+                            : "Waiting for Customer"}
                         </div>
                       </div>
                     </div>
