@@ -227,6 +227,7 @@ export async function POST(req: NextRequest) {
 
         const existingUnreadCount = Number(existingConvo.unreadCount || 0);
         const existingReplyCount = Number(existingConvo.replyCount || 0);
+        const existingHasReply = existingConvo.hasReply === true;
 
         await threadMessageRef.set({
           sid: res.sid,
@@ -265,10 +266,10 @@ export async function POST(req: NextRequest) {
             lastDirection: "outbound",
             lastMessageAt: FieldValue.serverTimestamp(),
             updatedAt: FieldValue.serverTimestamp(),
-            status: "replied",
-            hasReply: true,
+            status: existingHasReply ? "replied" : "awaiting_reply",
+            hasReply: existingHasReply,
             unreadCount: existingUnreadCount,
-            replyCount: existingReplyCount + 1,
+            replyCount: existingReplyCount,
             outboundCount: FieldValue.increment(1),
             messageCount: FieldValue.increment(1),
             firstOutboundAt:
