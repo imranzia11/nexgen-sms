@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import twilio from "twilio";
 import { getAuth } from "firebase-admin/auth";
 import { FieldValue } from "firebase-admin/firestore";
-import { adminDb } from "../../../lib/firebaseAdmin";
+import { adminDb } from "../../../../lib/firebaseAdmin";
 
 type LeadInput = {
   name?: string;
@@ -34,16 +34,13 @@ function formatLeadName(name?: string) {
 
 async function getUserFromRequest(req: NextRequest) {
   const authHeader = req.headers.get("authorization") || "";
-  const token = authHeader.startsWith("Bearer ")
-    ? authHeader.slice(7)
-    : "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
 
   if (!token) {
     throw new Error("Missing authorization token.");
   }
 
-  const decoded = await getAuth().verifyIdToken(token);
-  return decoded;
+  return getAuth().verifyIdToken(token);
 }
 
 async function hasPreviouslySentSuccessfulSms(ownerUid: string, phone: string) {
@@ -115,6 +112,8 @@ export async function POST(req: NextRequest) {
 
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const appBaseUrl = process.env.APP_BASE_URL?.trim()?.replace(/\/$/, "");
+
     const twilioNumber = toE164(
       String(userData.twilioNumber || userData.assignedTwilioNumber || "")
     );
@@ -122,6 +121,13 @@ export async function POST(req: NextRequest) {
     if (!accountSid || !authToken) {
       return NextResponse.json(
         { ok: false, error: "Missing Twilio account configuration." },
+        { status: 500 }
+      );
+    }
+
+    if (!appBaseUrl) {
+      return NextResponse.json(
+        { ok: false, error: "APP_BASE_URL is missing." },
         { status: 500 }
       );
     }
@@ -134,7 +140,6 @@ export async function POST(req: NextRequest) {
     }
 
     const client = twilio(accountSid, authToken);
-
     const body = await req.json();
 
     const {
@@ -208,6 +213,7 @@ export async function POST(req: NextRequest) {
           body: finalMessage,
           to: formattedPhone,
           from: twilioNumber,
+          statusCallback: `${appBaseUrl}/api/send-sms/twilio/status`,
         });
 
         const convoId = `${uid}_${phoneDocId(formattedPhone)}`;
@@ -221,7 +227,6 @@ export async function POST(req: NextRequest) {
 
         const existingUnreadCount = Number(existingConvo.unreadCount || 0);
         const existingReplyCount = Number(existingConvo.replyCount || 0);
-        const existingHasReply = existingConvo.hasReply === true;
 
         await threadMessageRef.set({
           sid: res.sid,
@@ -229,15 +234,17 @@ export async function POST(req: NextRequest) {
           ownerEmail: String(userData.email || ""),
           ownerName: String(userData.name || ""),
           ownerRole: String(userData.role || "user"),
+          conversationId: convoId,
           from: res.from || twilioNumber,
           to: formattedPhone,
           phone: formattedPhone,
           body: finalMessage,
           direction: "outbound",
-          status: res.status || "sent",
+          status: res.status || "queued",
           read: true,
           isFirstMessage,
           twilioNumber,
+          assignedTwilioNumber: twilioNumber,
           messagingServiceSid: "",
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
@@ -258,18 +265,17 @@ export async function POST(req: NextRequest) {
             lastDirection: "outbound",
             lastMessageAt: FieldValue.serverTimestamp(),
             updatedAt: FieldValue.serverTimestamp(),
-
-            status: existingHasReply ? "replied" : "awaiting_reply",
-            hasReply: existingHasReply,
+            status: "replied",
+            hasReply: true,
             unreadCount: existingUnreadCount,
-            replyCount: existingReplyCount,
+            replyCount: existingReplyCount + 1,
             outboundCount: FieldValue.increment(1),
             messageCount: FieldValue.increment(1),
-
             firstOutboundAt:
               existingConvo.firstOutboundAt || FieldValue.serverTimestamp(),
             lastOutboundAt: FieldValue.serverTimestamp(),
             lastInboundAt: existingConvo.lastInboundAt || null,
+            lastOutboundStatus: res.status || "queued",
           },
           { merge: true }
         );
@@ -279,6 +285,7 @@ export async function POST(req: NextRequest) {
           ownerEmail: String(userData.email || ""),
           ownerName: String(userData.name || ""),
           ownerRole: String(userData.role || "user"),
+          conversationId: convoId,
           campaignName: campaignName || "",
           fileId: fileId || "",
           fileName: fileName || "",
@@ -289,10 +296,12 @@ export async function POST(req: NextRequest) {
           body: finalMessage,
           sid: res.sid,
           twilioSid: res.sid,
-          status: res.status || "sent",
+          status: res.status || "queued",
           direction: "outbound",
+          read: true,
           isFirstMessage,
           twilioNumber,
+          assignedTwilioNumber: twilioNumber,
           messagingServiceSid: "",
           sourceFileName: fileName || "",
           error: "",
@@ -305,7 +314,7 @@ export async function POST(req: NextRequest) {
           phone: formattedPhone,
           ok: true,
           sid: res.sid,
-          status: res.status,
+          status: res.status || "queued",
           personalizedBody: finalMessage,
           isFirstMessage,
         });
@@ -329,6 +338,7 @@ export async function POST(req: NextRequest) {
           direction: "outbound",
           isFirstMessage: false,
           twilioNumber,
+          assignedTwilioNumber: twilioNumber,
           messagingServiceSid: "",
           sourceFileName: fileName || "",
           error: err?.message || "Failed to send",
