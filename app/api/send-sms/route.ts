@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import twilio from "twilio";
 import { getAuth } from "firebase-admin/auth";
 import { FieldValue } from "firebase-admin/firestore";
-import { adminDb } from "../../../../lib/firebaseAdmin";
+import { adminDb } from "../../../lib/firebaseAdmin";
 
 type LeadInput = {
   name?: string;
