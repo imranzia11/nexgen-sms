@@ -3,6 +3,9 @@ import twilio from "twilio";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../../../../../lib/firebaseAdmin";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 function xmlResponse(message?: string) {
   const body = message
     ? `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(
@@ -14,6 +17,7 @@ function xmlResponse(message?: string) {
     status: 200,
     headers: {
       "Content-Type": "text/xml",
+      "Cache-Control": "no-store",
     },
   });
 }
@@ -94,28 +98,7 @@ async function upsertBlacklist(opts: {
     .limit(1)
     .get();
 
-  if (!existing.empty) {
-    await existing.docs[0].ref.set(
-      {
-        ownerUid,
-        phone,
-        twilioNumber,
-        assignedTwilioNumber: twilioNumber,
-        status: keyword === "START" ? "active" : "blocked",
-        source: "twilio_inbound",
-        keyword,
-        lastMessageSid: messageSid,
-        updatedAt: FieldValue.serverTimestamp(),
-        unblockedAt:
-          keyword === "START" ? FieldValue.serverTimestamp() : null,
-        blockedAt: keyword === "STOP" ? FieldValue.serverTimestamp() : null,
-      },
-      { merge: true }
-    );
-    return;
-  }
-
-  await adminDb.collection("blacklisted_numbers").add({
+  const payload = {
     ownerUid,
     phone,
     twilioNumber,
@@ -124,14 +107,23 @@ async function upsertBlacklist(opts: {
     source: "twilio_inbound",
     keyword,
     lastMessageSid: messageSid,
-    createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
-    unblockedAt: keyword === "START" ? FieldValue.serverTimestamp() : null,
     blockedAt: keyword === "STOP" ? FieldValue.serverTimestamp() : null,
+    unblockedAt: keyword === "START" ? FieldValue.serverTimestamp() : null,
+  };
+
+  if (!existing.empty) {
+    await existing.docs[0].ref.set(payload, { merge: true });
+    return;
+  }
+
+  await adminDb.collection("blacklisted_numbers").add({
+    ...payload,
+    createdAt: FieldValue.serverTimestamp(),
   });
 }
 
-async function isBlockedNumber(ownerUid: string, phone: string) {
+async function getBlockedStatus(ownerUid: string, phone: string) {
   const snap = await adminDb
     .collection("blacklisted_numbers")
     .where("ownerUid", "==", ownerUid)
@@ -141,10 +133,8 @@ async function isBlockedNumber(ownerUid: string, phone: string) {
 
   if (snap.empty) return false;
 
-  return snap.docs.some((doc) => {
-    const data = doc.data() || {};
-    return String(data.status || "").toLowerCase() === "blocked";
-  });
+  const data = snap.docs[0].data() || {};
+  return String(data.status || "").toLowerCase() === "blocked";
 }
 
 export async function POST(req: NextRequest) {
@@ -177,7 +167,6 @@ export async function POST(req: NextRequest) {
           to: params.To,
           sid: params.MessageSid,
         });
-
         return new Response("Invalid signature", { status: 403 });
       }
     }
@@ -185,8 +174,9 @@ export async function POST(req: NextRequest) {
     const from = toE164(params.From || "");
     const to = toE164(params.To || "");
     const body = String(params.Body || "").trim();
-    const messageSid = String(params.MessageSid || "");
+    const messageSid = String(params.MessageSid || "").trim();
     const smsStatus = String(params.SmsStatus || "received").trim() || "received";
+    const messagingServiceSid = String(params.MessagingServiceSid || "").trim();
 
     if (!from || !to || !messageSid) {
       console.error("Inbound webhook missing required fields", {
@@ -210,13 +200,17 @@ export async function POST(req: NextRequest) {
 
     const { uid, user, twilioNumber } = owner;
     const conversationId = buildConversationId(uid, from);
+
     const convoRef = adminDb.collection("conversations").doc(conversationId);
     const threadMessageRef = convoRef.collection("messages").doc(messageSid);
+    const replyRef = adminDb.collection("replies").doc(messageSid);
 
-    const convoSnap = await convoRef.get();
+    const [convoSnap, existingThreadMsgSnap, existingReplySnap] =
+      await Promise.all([convoRef.get(), threadMessageRef.get(), replyRef.get()]);
+
     const existingConvo = convoSnap.exists ? convoSnap.data() || {} : {};
-
     const existingName = String(existingConvo.name || "").trim();
+
     const keyword = normalizeKeyword(body);
     const isStop = keyword === "STOP";
     const isStart = keyword === "START";
@@ -232,72 +226,40 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const currentlyBlocked = await isBlockedNumber(uid, from);
+    const blockedNow = await getBlockedStatus(uid, from);
     const shouldBeBlockedAfterThisMessage = isStop
       ? true
       : isStart
       ? false
-      : currentlyBlocked;
+      : blockedNow;
 
-    await threadMessageRef.set(
-      {
-        sid: messageSid,
-        twilioSid: messageSid,
-        ownerUid: uid,
-        ownerEmail: String(user.email || ""),
-        ownerName: String(user.name || ""),
-        ownerRole: String(user.role || "user"),
-        conversationId,
-        from,
-        to: twilioNumber,
-        phone: from,
-        body,
-        direction: "inbound",
-        status: smsStatus,
-        read: false,
-        twilioNumber,
-        assignedTwilioNumber: twilioNumber,
-        messagingServiceSid: String(params.MessagingServiceSid || ""),
-        keyword: isStop || isStart || isHelp ? keyword : "",
-        blockedAfterMessage: shouldBeBlockedAfterThisMessage,
-        createdAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+    const inboundMessageData = {
+      sid: messageSid,
+      twilioSid: messageSid,
+      ownerUid: uid,
+      ownerEmail: String(user.email || ""),
+      ownerName: String(user.name || ""),
+      ownerRole: String(user.role || "user"),
+      conversationId,
+      from,
+      to: twilioNumber,
+      phone: from,
+      body,
+      direction: "inbound",
+      status: smsStatus,
+      read: false,
+      twilioNumber,
+      assignedTwilioNumber: twilioNumber,
+      messagingServiceSid,
+      keyword: isStop || isStart || isHelp ? keyword : "",
+      blockedAfterMessage: shouldBeBlockedAfterThisMessage,
+      createdAt: existingThreadMsgSnap.exists
+        ? existingThreadMsgSnap.data()?.createdAt || FieldValue.serverTimestamp()
+        : FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    };
 
-    await convoRef.set(
-      {
-        ownerUid: uid,
-        ownerEmail: String(user.email || ""),
-        ownerName: String(user.name || ""),
-        ownerRole: String(user.role || "user"),
-        phone: from,
-        name: existingName,
-        twilioNumber,
-        assignedTwilioNumber: twilioNumber,
-        messagingServiceSid: String(params.MessagingServiceSid || ""),
-        lastMessage: body,
-        lastDirection: "inbound",
-        lastMessageAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-        status: "replied",
-        hasReply: true,
-        unreadCount: FieldValue.increment(1),
-        replyCount: FieldValue.increment(1),
-        inboundCount: FieldValue.increment(1),
-        messageCount: FieldValue.increment(1),
-        lastInboundAt: FieldValue.serverTimestamp(),
-        lastInboundSid: messageSid,
-        blocked: shouldBeBlockedAfterThisMessage,
-        blockedAt: isStop ? FieldValue.serverTimestamp() : existingConvo.blockedAt || null,
-        unblockedAt:
-          isStart ? FieldValue.serverTimestamp() : existingConvo.unblockedAt || null,
-      },
-      { merge: true }
-    );
-
-    await adminDb.collection("replies").add({
+    const replyData = {
       ownerUid: uid,
       ownerEmail: String(user.email || ""),
       ownerName: String(user.name || ""),
@@ -315,12 +277,58 @@ export async function POST(req: NextRequest) {
       read: false,
       twilioNumber,
       assignedTwilioNumber: twilioNumber,
-      messagingServiceSid: String(params.MessagingServiceSid || ""),
+      messagingServiceSid,
       keyword: isStop || isStart || isHelp ? keyword : "",
       blockedAfterMessage: shouldBeBlockedAfterThisMessage,
-      createdAt: FieldValue.serverTimestamp(),
+      createdAt: existingReplySnap.exists
+        ? existingReplySnap.data()?.createdAt || FieldValue.serverTimestamp()
+        : FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
-    });
+    };
+
+    const convoUpdate: Record<string, unknown> = {
+      ownerUid: uid,
+      ownerEmail: String(user.email || ""),
+      ownerName: String(user.name || ""),
+      ownerRole: String(user.role || "user"),
+      phone: from,
+      name: existingName,
+      twilioNumber,
+      assignedTwilioNumber: twilioNumber,
+      messagingServiceSid,
+      lastMessage: body,
+      lastDirection: "inbound",
+      lastMessageAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      status: "replied",
+      hasReply: true,
+      lastInboundAt: FieldValue.serverTimestamp(),
+      lastInboundSid: messageSid,
+      blocked: shouldBeBlockedAfterThisMessage,
+      blockedAt: isStop
+        ? FieldValue.serverTimestamp()
+        : existingConvo.blockedAt || null,
+      unblockedAt: isStart
+        ? FieldValue.serverTimestamp()
+        : existingConvo.unblockedAt || null,
+    };
+
+    const isFirstInboundWrite = !existingThreadMsgSnap.exists;
+
+    if (isFirstInboundWrite) {
+      convoUpdate.unreadCount = FieldValue.increment(1);
+      convoUpdate.replyCount = FieldValue.increment(1);
+      convoUpdate.inboundCount = FieldValue.increment(1);
+      convoUpdate.messageCount = FieldValue.increment(1);
+    }
+
+    const batch = adminDb.batch();
+
+    batch.set(threadMessageRef, inboundMessageData, { merge: true });
+    batch.set(replyRef, replyData, { merge: true });
+    batch.set(convoRef, convoUpdate, { merge: true });
+
+    await batch.commit();
 
     if (isStop) {
       return xmlResponse(
