@@ -90,16 +90,13 @@ function makeRow(id: string, data: Record<string, any>): SmsRow {
   ).trim();
 
   const lastDirection = normalizeDirection(data.lastDirection || data.direction);
-  const status = String(data.status || "").trim().toLowerCase();
-  const replyCount = Number(data.replyCount || 0);
-  const inboundCount = Number(data.inboundCount || 0);
 
   const replied =
-    data.hasReply === true ||
-    lastDirection === "inbound" ||
-    status === "replied" ||
-    replyCount > 0 ||
-    inboundCount > 0;
+    lastDirection === "inbound"
+      ? true
+      : lastDirection === "outbound"
+      ? false
+      : data.hasReply === true;
 
   const displayDate =
     data.lastMessageAt || data.updatedAt || data.createdAt || null;
