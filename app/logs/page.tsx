@@ -43,6 +43,7 @@ type MessageLogItem = {
   error: string;
   sourceFileName: string;
   createdAtLabel: string;
+  sortMs: number;
 };
 
 type AppUser = {
@@ -164,6 +165,27 @@ function statusChipTone(status?: string) {
   };
 }
 
+function dedupeById<T extends { id: string }>(items: T[]) {
+  const map = new Map<string, T>();
+  for (const item of items) {
+    map.set(item.id, item);
+  }
+  return Array.from(map.values());
+}
+
+async function safeRunQuery(q: Query<DocumentData>) {
+  try {
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({
+      id: d.id,
+      data: d.data() as Record<string, any>,
+    }));
+  } catch (error) {
+    console.error("Query failed", error);
+    return [];
+  }
+}
+
 export default function LogsPage() {
   const router = useRouter();
 
@@ -237,65 +259,31 @@ export default function LogsPage() {
         return;
       }
 
-      let campaignSnap;
-      let messageSnap;
-
-      if (isAdmin(currentProfile.role)) {
-        const campaignsQuery = query(
-          collection(db, "campaigns"),
-          orderBy("createdAt", "desc"),
-          limit(50)
-        );
-
-        const messagesQuery = query(
-          collection(db, "messages"),
-          orderBy("createdAt", "desc"),
-          limit(100)
-        );
-
-        [campaignSnap, messageSnap] = await Promise.all([
-          getDocs(campaignsQuery),
-          getDocs(messagesQuery),
-        ]);
-      } else {
-        const campaignsQuery = query(collection(db, "campaigns"), limit(100));
-
-        let ownerMessageSnap;
-        try {
-          const ownerMessagesQuery: Query<DocumentData> = query(
-            collection(db, "messages"),
-            where("ownerUid", "==", currentProfile.uid),
-            orderBy("createdAt", "desc"),
-            limit(100)
-          );
-          ownerMessageSnap = await getDocs(ownerMessagesQuery);
-        } catch (error) {
-          console.error("Owner message query failed, using fallback", error);
-        }
-
-        if (ownerMessageSnap && !ownerMessageSnap.empty) {
-          messageSnap = ownerMessageSnap;
-        } else {
-          const fallbackMessagesQuery = query(
-            collection(db, "messages"),
-            orderBy("createdAt", "desc"),
-            limit(200)
-          );
-          messageSnap = await getDocs(fallbackMessagesQuery);
-        }
-
-        campaignSnap = await getDocs(campaignsQuery);
-      }
-
       const currentUserPhone = normalizePhone(
         currentProfile.twilioNumber || currentProfile.assignedTwilioNumber || ""
       );
+      const currentAssignedPhone = normalizePhone(
+        currentProfile.assignedTwilioNumber || currentProfile.twilioNumber || ""
+      );
+      const currentEmail = String(currentProfile.email || "").trim().toLowerCase();
+      const currentName = String(currentProfile.name || "").trim().toLowerCase();
 
-      let campaignRows: CampaignLogItem[] = campaignSnap.docs
-        .map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
+      let campaignRows: CampaignLogItem[] = [];
+      let messageRows: MessageLogItem[] = [];
+
+      if (isAdmin(currentProfile.role)) {
+        const [campaignDocs, messageDocs] = await Promise.all([
+          safeRunQuery(
+            query(collection(db, "campaigns"), orderBy("createdAt", "desc"), limit(50))
+          ),
+          safeRunQuery(
+            query(collection(db, "messages"), orderBy("createdAt", "desc"), limit(100))
+          ),
+        ]);
+
+        campaignRows = campaignDocs
+          .map(({ id, data }) => ({
+            id,
             name: data.name || "-",
             fileName: data.fileName || "-",
             status: data.status || "-",
@@ -305,43 +293,167 @@ export default function LogsPage() {
             createdByName: data.createdByName || "-",
             createdAtLabel: formatFirestoreDateNY(data.createdAt),
             sortMs: toSortMs(data.createdAt),
-          };
-        })
-        .sort((a, b) => b.sortMs - a.sortMs);
+          }))
+          .sort((a, b) => b.sortMs - a.sortMs);
 
-      let messageRows: MessageLogItem[] = messageSnap.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          to: data.to || "-",
-          from: data.from || "",
-          name: data.name || "",
-          body: data.body || "",
-          status: data.status || "-",
-          twilioSid: data.twilioSid || data.sid || "",
-          error: data.error || "",
-          sourceFileName: data.sourceFileName || "-",
-          createdAtLabel: formatFirestoreDateNY(data.createdAt),
-        };
-      });
+        messageRows = messageDocs
+          .map(({ id, data }) => ({
+            id,
+            to: data.to || "-",
+            from: data.from || "",
+            name: data.name || "",
+            body: data.body || "",
+            status: data.status || "-",
+            twilioSid: data.twilioSid || data.sid || "",
+            error: data.error || "",
+            sourceFileName: data.sourceFileName || "-",
+            createdAtLabel: formatFirestoreDateNY(data.createdAt),
+            sortMs: toSortMs(data.createdAt),
+          }))
+          .sort((a, b) => b.sortMs - a.sortMs);
+      } else {
+        const [
+          campaignByOwnerUid,
+          campaignByOwnerEmail,
+          allRecentCampaigns,
+          messageByOwnerUid,
+          messageByOwnerEmail,
+          messageByTwilioNumber,
+          messageByAssignedTwilioNumber,
+          allRecentMessages,
+        ] = await Promise.all([
+          safeRunQuery(
+            query(collection(db, "campaigns"), where("ownerUid", "==", currentProfile.uid))
+          ),
+          currentEmail
+            ? safeRunQuery(
+                query(collection(db, "campaigns"), where("ownerEmail", "==", currentEmail))
+              )
+            : Promise.resolve([]),
+          safeRunQuery(
+            query(collection(db, "campaigns"), orderBy("createdAt", "desc"), limit(300))
+          ),
+          safeRunQuery(
+            query(
+              collection(db, "messages"),
+              where("ownerUid", "==", currentProfile.uid),
+              orderBy("createdAt", "desc"),
+              limit(100)
+            )
+          ),
+          currentEmail
+            ? safeRunQuery(
+                query(
+                  collection(db, "messages"),
+                  where("ownerEmail", "==", currentEmail),
+                  orderBy("createdAt", "desc"),
+                  limit(100)
+                )
+              )
+            : Promise.resolve([]),
+          currentUserPhone
+            ? safeRunQuery(
+                query(
+                  collection(db, "messages"),
+                  where("twilioNumber", "==", currentUserPhone),
+                  orderBy("createdAt", "desc"),
+                  limit(150)
+                )
+              )
+            : Promise.resolve([]),
+          currentAssignedPhone
+            ? safeRunQuery(
+                query(
+                  collection(db, "messages"),
+                  where("assignedTwilioNumber", "==", currentAssignedPhone),
+                  orderBy("createdAt", "desc"),
+                  limit(150)
+                )
+              )
+            : Promise.resolve([]),
+          safeRunQuery(
+            query(collection(db, "messages"), orderBy("createdAt", "desc"), limit(400))
+          ),
+        ]);
 
-      if (!isAdmin(currentProfile.role)) {
-        campaignRows = campaignRows.filter((item: any, index) => {
-          const raw = campaignSnap.docs[index]?.data() || {};
-          return (
-            String(raw.createdBy || "") === currentProfile.uid ||
-            String(raw.ownerUid || "") === currentProfile.uid ||
-            String(raw.createdByName || "").trim().toLowerCase() ===
-              String(currentProfile.name || "").trim().toLowerCase()
-          );
-        });
+        const mergedCampaignDocs = dedupeById([
+          ...campaignByOwnerUid,
+          ...campaignByOwnerEmail,
+          ...allRecentCampaigns.filter(({ data }) => {
+            const createdBy = String(data.createdBy || "");
+            const ownerUid = String(data.ownerUid || "");
+            const ownerEmail = String(data.ownerEmail || "").trim().toLowerCase();
+            const createdByName = String(data.createdByName || "")
+              .trim()
+              .toLowerCase();
+            return (
+              ownerUid === currentProfile.uid ||
+              createdBy === currentProfile.uid ||
+              (currentEmail && ownerEmail === currentEmail) ||
+              (currentName && createdByName === currentName)
+            );
+          }),
+        ]);
 
-        messageRows = messageRows.filter((item: any, index) => {
-          const raw = messageSnap.docs[index]?.data() || {};
-          const rawOwnerUid = String(raw.ownerUid || "");
-          const rawFrom = normalizePhone(String(raw.from || ""));
-          return rawOwnerUid === currentProfile.uid || (!!currentUserPhone && rawFrom === currentUserPhone);
-        });
+        const mergedMessageDocs = dedupeById([
+          ...messageByOwnerUid,
+          ...messageByOwnerEmail,
+          ...messageByTwilioNumber,
+          ...messageByAssignedTwilioNumber,
+          ...allRecentMessages.filter(({ data }) => {
+            const ownerUid = String(data.ownerUid || "");
+            const ownerEmail = String(data.ownerEmail || "").trim().toLowerCase();
+            const from = normalizePhone(String(data.from || ""));
+            const twilioNumber = normalizePhone(String(data.twilioNumber || ""));
+            const assignedTwilioNumber = normalizePhone(
+              String(data.assignedTwilioNumber || "")
+            );
+
+            return (
+              ownerUid === currentProfile.uid ||
+              (currentEmail && ownerEmail === currentEmail) ||
+              (!!currentUserPhone &&
+                (from === currentUserPhone ||
+                  twilioNumber === currentUserPhone ||
+                  assignedTwilioNumber === currentUserPhone)) ||
+              (!!currentAssignedPhone &&
+                (from === currentAssignedPhone ||
+                  twilioNumber === currentAssignedPhone ||
+                  assignedTwilioNumber === currentAssignedPhone))
+            );
+          }),
+        ]);
+
+        campaignRows = mergedCampaignDocs
+          .map(({ id, data }) => ({
+            id,
+            name: data.name || "-",
+            fileName: data.fileName || "-",
+            status: data.status || "-",
+            totalRecipients: Number(data.totalRecipients || 0),
+            successCount: Number(data.successCount || 0),
+            failedCount: Number(data.failedCount || 0),
+            createdByName: data.createdByName || "-",
+            createdAtLabel: formatFirestoreDateNY(data.createdAt),
+            sortMs: toSortMs(data.createdAt),
+          }))
+          .sort((a, b) => b.sortMs - a.sortMs);
+
+        messageRows = mergedMessageDocs
+          .map(({ id, data }) => ({
+            id,
+            to: data.to || "-",
+            from: data.from || "",
+            name: data.name || "",
+            body: data.body || "",
+            status: data.status || "-",
+            twilioSid: data.twilioSid || data.sid || "",
+            error: data.error || "",
+            sourceFileName: data.sourceFileName || "-",
+            createdAtLabel: formatFirestoreDateNY(data.createdAt),
+            sortMs: toSortMs(data.createdAt),
+          }))
+          .sort((a, b) => b.sortMs - a.sortMs);
       }
 
       setCampaigns(campaignRows);

@@ -103,6 +103,7 @@ export default function ReplyThreadPage({
 
   const [checking, setChecking] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [initialLoaded, setInitialLoaded] = useState(false);
   const [sending, setSending] = useState(false);
   const [threadTitle, setThreadTitle] = useState(routePhone || "Conversation");
   const [messages, setMessages] = useState<MessageItem[]>([]);
@@ -138,7 +139,9 @@ export default function ReplyThreadPage({
     };
   }
 
-  function buildFallbackConversationMessage(meta: ConversationMeta): MessageItem[] {
+  function buildFallbackConversationMessage(
+    meta: ConversationMeta
+  ): MessageItem[] {
     const fallbackBody = safeString(meta.lastMessage);
     if (!fallbackBody) return [];
 
@@ -261,9 +264,16 @@ export default function ReplyThreadPage({
     }
   }
 
-  async function loadThreadOnce(metaArg?: ConversationMeta, profileArg?: AppUser) {
+  async function loadThreadOnce(
+    metaArg?: ConversationMeta,
+    profileArg?: AppUser,
+    opts?: { silent?: boolean }
+  ) {
     try {
-      setLoading(true);
+      if (!opts?.silent && !initialLoaded) {
+        setLoading(true);
+      }
+
       setStatus("");
 
       const currentMeta = metaArg || conversationMeta;
@@ -386,6 +396,7 @@ export default function ReplyThreadPage({
       setMessages([]);
     } finally {
       setLoading(false);
+      setInitialLoaded(true);
       setTimeout(() => {
         scrollToBottom(false);
       }, 60);
@@ -395,15 +406,13 @@ export default function ReplyThreadPage({
   async function handleManualRefresh() {
     const meta = await loadConversationMeta();
     if (!meta) return;
-    await loadThreadOnce(meta);
+    await loadThreadOnce(meta, undefined, { silent: true });
   }
 
   useEffect(() => {
     if (!routePhone) return;
 
     let unsubConversationMessages: (() => void) | undefined;
-    let unsubRootMessages: (() => void) | undefined;
-    let unsubReplies: (() => void) | undefined;
     let unsubAuth: (() => void) | undefined;
 
     unsubAuth = onAuthStateChanged(auth, async (user) => {
@@ -447,10 +456,10 @@ export default function ReplyThreadPage({
 
         await loadThreadOnce(meta, safeProfile);
 
-        const refreshFromAnyChange = async () => {
+        const refreshFromThreadChange = async () => {
           const latestMeta = await loadConversationMeta(safeProfile);
           if (!latestMeta) return;
-          await loadThreadOnce(latestMeta, safeProfile);
+          await loadThreadOnce(latestMeta, safeProfile, { silent: true });
         };
 
         unsubConversationMessages = onSnapshot(
@@ -459,27 +468,7 @@ export default function ReplyThreadPage({
             orderBy("createdAt", "asc")
           ),
           async () => {
-            await refreshFromAnyChange();
-          },
-          (error: any) => {
-            console.error(error);
-          }
-        );
-
-        unsubRootMessages = onSnapshot(
-          query(collection(db, "messages"), where("ownerUid", "==", safeProfile.uid)),
-          async () => {
-            await refreshFromAnyChange();
-          },
-          (error: any) => {
-            console.error(error);
-          }
-        );
-
-        unsubReplies = onSnapshot(
-          query(collection(db, "replies"), where("ownerUid", "==", safeProfile.uid)),
-          async () => {
-            await refreshFromAnyChange();
+            await refreshFromThreadChange();
           },
           (error: any) => {
             console.error(error);
@@ -496,8 +485,6 @@ export default function ReplyThreadPage({
     return () => {
       if (unsubAuth) unsubAuth();
       if (unsubConversationMessages) unsubConversationMessages();
-      if (unsubRootMessages) unsubRootMessages();
-      if (unsubReplies) unsubReplies();
     };
   }, [routePhone, router]);
 
