@@ -70,6 +70,22 @@ async function hasPreviouslySentSuccessfulSms(ownerUid: string, phone: string) {
   });
 }
 
+async function isBlockedNumber(ownerUid: string, phone: string) {
+  const snap = await adminDb
+    .collection("blacklisted_numbers")
+    .where("ownerUid", "==", ownerUid)
+    .where("phone", "==", phone)
+    .limit(1)
+    .get();
+
+  if (snap.empty) return false;
+
+  return snap.docs.some((doc) => {
+    const data = doc.data() || {};
+    return String(data.status || "").toLowerCase() === "blocked";
+  });
+}
+
 function buildPersonalizedMessage(
   baseMessage: string,
   leadName?: string,
@@ -191,6 +207,18 @@ export async function POST(req: NextRequest) {
           phone: lead.phone || "",
           ok: false,
           error: "Invalid phone number",
+          code: null,
+        });
+        continue;
+      }
+
+      const blocked = await isBlockedNumber(uid, formattedPhone);
+      if (blocked) {
+        results.push({
+          name: lead.name,
+          phone: formattedPhone,
+          ok: false,
+          error: "Number is blocked or opted out.",
           code: null,
         });
         continue;

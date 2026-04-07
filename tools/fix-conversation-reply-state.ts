@@ -1,6 +1,9 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../lib/firebaseAdmin";
 
+const OWNER_UID = "SKmaVTN8TjeTayQ9FiuStmNiNLE2";
+const LIMIT = 10000;
+
 async function hasInboundInThread(conversationId: string) {
   const snap = await adminDb
     .collection("conversations")
@@ -26,9 +29,14 @@ async function hasInboundInReplies(ownerUid: string, phone: string) {
 }
 
 async function run() {
-  const convoSnap = await adminDb.collection("conversations").get();
+  const convoSnap = await adminDb
+    .collection("conversations")
+    .where("ownerUid", "==", OWNER_UID)
+    .where("hasReply", "==", true)
+    .limit(LIMIT)
+    .get();
 
-  console.log(`Found ${convoSnap.size} conversations`);
+  console.log(`Loaded ${convoSnap.size} replied conversations for ${OWNER_UID}`);
 
   let fixed = 0;
   let kept = 0;
@@ -58,6 +66,7 @@ async function run() {
         { merge: true }
       );
       kept++;
+      console.log(`Kept replied: ${phone}`);
       continue;
     }
 
@@ -73,7 +82,7 @@ async function run() {
     );
 
     fixed++;
-    console.log(`Fixed ${conversationId}`);
+    console.log(`Reset to awaiting: ${phone}`);
   }
 
   console.log(`Done. Fixed=${fixed}, kept=${kept}`);

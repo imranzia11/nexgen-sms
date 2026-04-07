@@ -13,6 +13,8 @@ import {
   where,
   orderBy,
   deleteDoc,
+  setDoc,
+  serverTimestamp,
   type Query,
   type DocumentData,
 } from "firebase/firestore";
@@ -78,19 +80,18 @@ function normalizeDirection(value: unknown) {
   return String(value || "").trim().toLowerCase();
 }
 
+function blacklistDocId(ownerUid: string, phone: string) {
+  return `${ownerUid}_${phoneKey(phone)}`;
+}
+
 function makeRow(id: string, data: Record<string, any>): SmsRow {
   const phone = String(
-    data.phone ||
-      data.customerPhone ||
-      data.to ||
-      data.contactPhone ||
-      ""
+    data.phone || data.customerPhone || data.to || data.contactPhone || ""
   ).trim();
 
   const lastDirection = normalizeDirection(data.lastDirection || data.direction);
 
-  const replied =
-    data.hasReply === true || lastDirection === "inbound";
+  const replied = data.hasReply === true || lastDirection === "inbound";
 
   return {
     id,
@@ -115,6 +116,7 @@ export default function RepliesPage() {
   const [profile, setProfile] = useState<AppUser | null>(null);
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [deletingId, setDeletingId] = useState("");
+  const [blockingId, setBlockingId] = useState("");
   const [openMenuId, setOpenMenuId] = useState("");
 
   async function runQuery(q: Query<DocumentData>) {
@@ -222,6 +224,62 @@ export default function RepliesPage() {
       alert("Failed to delete conversation.");
     } finally {
       setDeletingId("");
+    }
+  }
+
+  async function handleBlockConversation(item: SmsRow) {
+    if (!profile) return;
+
+    const ok = window.confirm(
+      `Block ${item.phone}? This will behave like STOP and hide the number from replies.`
+    );
+    if (!ok) return;
+
+    try {
+      setBlockingId(item.id);
+
+      const numberForUser = String(
+        profile.twilioNumber || profile.assignedTwilioNumber || ""
+      ).trim();
+
+      await setDoc(
+        doc(db, "blacklisted_numbers", blacklistDocId(profile.uid, item.phone)),
+        {
+          ownerUid: profile.uid,
+          ownerEmail: String(profile.email || ""),
+          ownerName: String(profile.name || ""),
+          phone: item.phone,
+          twilioNumber: numberForUser,
+          assignedTwilioNumber: String(profile.assignedTwilioNumber || ""),
+          status: "blocked",
+          source: "manual_block_from_replies",
+          reason: "manual_block",
+          lastKeyword: "STOP",
+          lastBody: item.body || "",
+          blockedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          unblockedAt: null,
+        },
+        { merge: true }
+      );
+
+      await setDoc(
+        doc(db, "conversations", item.id),
+        {
+          status: "blocked",
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      setBlockedPhones((prev) => [...prev, item.phone]);
+      setItems((prev) => prev.filter((row) => row.id !== item.id));
+      setOpenMenuId("");
+    } catch (error) {
+      console.error("Failed to block conversation", error);
+      alert("Failed to block number.");
+    } finally {
+      setBlockingId("");
     }
   }
 
@@ -510,6 +568,20 @@ export default function RepliesPage() {
                           style={menuItemStyle}
                         >
                           Open
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleBlockConversation(item)}
+                          disabled={blockingId === item.id}
+                          style={{
+                            ...menuItemStyle,
+                            color: "#b45309",
+                            background: "rgba(245,158,11,0.08)",
+                            opacity: blockingId === item.id ? 0.6 : 1,
+                          }}
+                        >
+                          {blockingId === item.id ? "Blocking..." : "Block"}
                         </button>
 
                         <button

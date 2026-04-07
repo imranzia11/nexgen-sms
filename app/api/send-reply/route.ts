@@ -29,6 +29,22 @@ async function getUserFromRequest(req: NextRequest) {
   return decoded;
 }
 
+async function isBlockedNumber(ownerUid: string, phone: string) {
+  const snap = await adminDb
+    .collection("blacklisted_numbers")
+    .where("ownerUid", "==", ownerUid)
+    .where("phone", "==", phone)
+    .limit(1)
+    .get();
+
+  if (snap.empty) return false;
+
+  return snap.docs.some((doc) => {
+    const data = doc.data() || {};
+    return String(data.status || "").toLowerCase() === "blocked";
+  });
+}
+
 export async function POST(req: NextRequest) {
   try {
     const decodedUser = await getUserFromRequest(req);
@@ -95,6 +111,17 @@ export async function POST(req: NextRequest) {
     if (!messageBody) {
       return NextResponse.json(
         { ok: false, error: "Reply body is required." },
+        { status: 400 }
+      );
+    }
+
+    const blocked = await isBlockedNumber(uid, to);
+    if (blocked) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "This number is blocked or opted out and cannot receive messages.",
+        },
         { status: 400 }
       );
     }
