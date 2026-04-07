@@ -1,8 +1,31 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import twilio from "twilio";
-import { getAuth } from "firebase-admin/auth";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../../../../../lib/firebaseAdmin";
+
+function xmlResponse(message?: string) {
+  const body = message
+    ? `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(
+        message
+      )}</Message></Response>`
+    : `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`;
+
+  return new Response(body, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/xml",
+    },
+  });
+}
+
+function escapeXml(value: string) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
 
 function toE164(raw: string) {
   const cleaned = String(raw || "").replace(/[^\d+]/g, "");
@@ -15,223 +38,311 @@ function phoneDocId(phone: string) {
   return String(phone || "").replace(/[^\d+]/g, "");
 }
 
-async function getUserFromRequest(req: NextRequest) {
-  const authHeader = req.headers.get("authorization") || "";
-  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+function normalizeKeyword(value: string) {
+  return String(value || "").trim().toUpperCase();
+}
 
-  if (!token) {
-    throw new Error("Missing authorization token.");
+function buildConversationId(uid: string, customerPhone: string) {
+  return `${uid}_${phoneDocId(customerPhone)}`;
+}
+
+async function findOwnerByTwilioNumber(inboundTo: string) {
+  const normalizedTo = toE164(inboundTo);
+  if (!normalizedTo) return null;
+
+  let snap = await adminDb
+    .collection("users")
+    .where("twilioNumber", "==", normalizedTo)
+    .limit(1)
+    .get();
+
+  if (snap.empty) {
+    snap = await adminDb
+      .collection("users")
+      .where("assignedTwilioNumber", "==", normalizedTo)
+      .limit(1)
+      .get();
   }
 
-  return getAuth().verifyIdToken(token);
+  if (snap.empty) return null;
+
+  const doc = snap.docs[0];
+  const data = doc.data() || {};
+
+  if (data.isActive !== true) return null;
+
+  return {
+    uid: doc.id,
+    user: data,
+    twilioNumber: normalizedTo,
+  };
+}
+
+async function upsertBlacklist(opts: {
+  ownerUid: string;
+  phone: string;
+  keyword: string;
+  twilioNumber: string;
+  messageSid: string;
+}) {
+  const { ownerUid, phone, keyword, twilioNumber, messageSid } = opts;
+
+  const existing = await adminDb
+    .collection("blacklisted_numbers")
+    .where("ownerUid", "==", ownerUid)
+    .where("phone", "==", phone)
+    .limit(1)
+    .get();
+
+  if (!existing.empty) {
+    await existing.docs[0].ref.set(
+      {
+        ownerUid,
+        phone,
+        twilioNumber,
+        assignedTwilioNumber: twilioNumber,
+        status: keyword === "START" ? "active" : "blocked",
+        source: "twilio_inbound",
+        keyword,
+        lastMessageSid: messageSid,
+        updatedAt: FieldValue.serverTimestamp(),
+        unblockedAt:
+          keyword === "START" ? FieldValue.serverTimestamp() : null,
+        blockedAt: keyword === "STOP" ? FieldValue.serverTimestamp() : null,
+      },
+      { merge: true }
+    );
+    return;
+  }
+
+  await adminDb.collection("blacklisted_numbers").add({
+    ownerUid,
+    phone,
+    twilioNumber,
+    assignedTwilioNumber: twilioNumber,
+    status: keyword === "START" ? "active" : "blocked",
+    source: "twilio_inbound",
+    keyword,
+    lastMessageSid: messageSid,
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+    unblockedAt: keyword === "START" ? FieldValue.serverTimestamp() : null,
+    blockedAt: keyword === "STOP" ? FieldValue.serverTimestamp() : null,
+  });
+}
+
+async function isBlockedNumber(ownerUid: string, phone: string) {
+  const snap = await adminDb
+    .collection("blacklisted_numbers")
+    .where("ownerUid", "==", ownerUid)
+    .where("phone", "==", phone)
+    .limit(1)
+    .get();
+
+  if (snap.empty) return false;
+
+  return snap.docs.some((doc) => {
+    const data = doc.data() || {};
+    return String(data.status || "").toLowerCase() === "blocked";
+  });
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const decodedUser = await getUserFromRequest(req);
-    const uid = decodedUser.uid;
-
-    const userSnap = await adminDb.collection("users").doc(uid).get();
-
-    if (!userSnap.exists) {
-      return NextResponse.json(
-        { ok: false, error: "User profile not found." },
-        { status: 404 }
-      );
-    }
-
-    const userData = userSnap.data() || {};
-
-    if (userData.isActive !== true) {
-      return NextResponse.json(
-        { ok: false, error: "User account is inactive." },
-        { status: 403 }
-      );
-    }
-
-    const accountSid = process.env.TWILIO_ACCOUNT_SID;
-    const authToken = process.env.TWILIO_AUTH_TOKEN;
-    const appBaseUrl = process.env.APP_BASE_URL?.trim()?.replace(/\/$/, "");
-
-    const twilioNumber = toE164(
-      String(userData.twilioNumber || userData.assignedTwilioNumber || "")
+    const formData = await req.formData();
+    const params = Object.fromEntries(
+      Array.from(formData.entries()).map(([key, value]) => [key, String(value)])
     );
 
-    if (!accountSid || !authToken) {
-      return NextResponse.json(
-        { ok: false, error: "Missing Twilio account configuration." },
-        { status: 500 }
+    const signature = req.headers.get("x-twilio-signature") || "";
+    const authToken = process.env.TWILIO_AUTH_TOKEN || "";
+    const appBaseUrl = process.env.APP_BASE_URL?.trim()?.replace(/\/$/, "");
+
+    const requestUrl = appBaseUrl
+      ? `${appBaseUrl}/api/send-sms/twilio/inbound`
+      : req.url;
+
+    if (authToken && signature) {
+      const isValid = twilio.validateRequest(
+        authToken,
+        signature,
+        requestUrl,
+        params
       );
-    }
 
-    if (!appBaseUrl) {
-      return NextResponse.json(
-        { ok: false, error: "APP_BASE_URL is missing." },
-        { status: 500 }
-      );
-    }
+      if (!isValid) {
+        console.error("Invalid Twilio signature", {
+          requestUrl,
+          from: params.From,
+          to: params.To,
+          sid: params.MessageSid,
+        });
 
-    if (!twilioNumber) {
-      return NextResponse.json(
-        { ok: false, error: "No Twilio number is assigned to this user." },
-        { status: 400 }
-      );
-    }
-
-    const body = await req.json();
-
-    const phone = toE164(body.phone || body.to || "");
-    const message = String(body.message || body.body || "").trim();
-    const customerName = String(body.name || "").trim();
-
-    if (!phone) {
-      return NextResponse.json(
-        { ok: false, error: "Customer phone is required." },
-        { status: 400 }
-      );
-    }
-
-    if (!message) {
-      return NextResponse.json(
-        { ok: false, error: "Reply message is required." },
-        { status: 400 }
-      );
-    }
-
-    const blacklistSnap = await adminDb
-      .collection("blacklisted_numbers")
-      .where("ownerUid", "==", uid)
-      .where("phone", "==", phone)
-      .limit(1)
-      .get();
-
-    if (!blacklistSnap.empty) {
-      const blacklistData = blacklistSnap.docs[0].data() || {};
-      if (String(blacklistData.status || "").toLowerCase() === "blocked") {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: "This number is blocked and cannot receive messages.",
-          },
-          { status: 400 }
-        );
+        return new Response("Invalid signature", { status: 403 });
       }
     }
 
-    const client = twilio(accountSid, authToken);
+    const from = toE164(params.From || "");
+    const to = toE164(params.To || "");
+    const body = String(params.Body || "").trim();
+    const messageSid = String(params.MessageSid || "");
+    const smsStatus = String(params.SmsStatus || "received").trim() || "received";
 
-    const res = await client.messages.create({
-      body: message,
-      to: phone,
-      from: twilioNumber,
-      statusCallback: `${appBaseUrl}/api/send-sms/twilio/status`,
-    });
+    if (!from || !to || !messageSid) {
+      console.error("Inbound webhook missing required fields", {
+        from,
+        to,
+        messageSid,
+      });
+      return xmlResponse();
+    }
 
-    const conversationId = `${uid}_${phoneDocId(phone)}`;
+    const owner = await findOwnerByTwilioNumber(to);
+
+    if (!owner) {
+      console.error("No active user found for inbound Twilio number", {
+        to,
+        from,
+        messageSid,
+      });
+      return xmlResponse();
+    }
+
+    const { uid, user, twilioNumber } = owner;
+    const conversationId = buildConversationId(uid, from);
     const convoRef = adminDb.collection("conversations").doc(conversationId);
-    const threadMessageRef = convoRef.collection("messages").doc(res.sid);
+    const threadMessageRef = convoRef.collection("messages").doc(messageSid);
 
-    const existingConvoSnap = await convoRef.get();
-    const existingConvo = existingConvoSnap.exists
-      ? existingConvoSnap.data() || {}
-      : {};
+    const convoSnap = await convoRef.get();
+    const existingConvo = convoSnap.exists ? convoSnap.data() || {} : {};
 
-    const existingUnreadCount = Number(existingConvo.unreadCount || 0);
-    const existingReplyCount = Number(existingConvo.replyCount || 0);
-    const existingHasReply = existingConvo.hasReply === true;
-    const existingName =
-      String(existingConvo.name || "").trim() || customerName || "";
+    const existingName = String(existingConvo.name || "").trim();
+    const keyword = normalizeKeyword(body);
+    const isStop = keyword === "STOP";
+    const isStart = keyword === "START";
+    const isHelp = keyword === "HELP";
 
-    await threadMessageRef.set({
-      sid: res.sid,
-      ownerUid: uid,
-      ownerEmail: String(userData.email || ""),
-      ownerName: String(userData.name || ""),
-      ownerRole: String(userData.role || "user"),
-      conversationId,
-      from: res.from || twilioNumber,
-      to: phone,
-      phone,
-      body: message,
-      direction: "outbound",
-      status: res.status || "queued",
-      read: true,
-      twilioNumber,
-      assignedTwilioNumber: twilioNumber,
-      messagingServiceSid: "",
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-
-    await convoRef.set(
-      {
+    if (isStop || isStart) {
+      await upsertBlacklist({
         ownerUid: uid,
-        ownerEmail: String(userData.email || ""),
-        ownerName: String(userData.name || ""),
-        ownerRole: String(userData.role || "user"),
-        phone,
-        name: existingName,
+        phone: from,
+        keyword,
+        twilioNumber,
+        messageSid,
+      });
+    }
+
+    const currentlyBlocked = await isBlockedNumber(uid, from);
+    const shouldBeBlockedAfterThisMessage = isStop
+      ? true
+      : isStart
+      ? false
+      : currentlyBlocked;
+
+    await threadMessageRef.set(
+      {
+        sid: messageSid,
+        twilioSid: messageSid,
+        ownerUid: uid,
+        ownerEmail: String(user.email || ""),
+        ownerName: String(user.name || ""),
+        ownerRole: String(user.role || "user"),
+        conversationId,
+        from,
+        to: twilioNumber,
+        phone: from,
+        body,
+        direction: "inbound",
+        status: smsStatus,
+        read: false,
         twilioNumber,
         assignedTwilioNumber: twilioNumber,
-        messagingServiceSid: "",
-        lastMessage: message,
-        lastDirection: "outbound",
-        lastMessageAt: FieldValue.serverTimestamp(),
+        messagingServiceSid: String(params.MessagingServiceSid || ""),
+        keyword: isStop || isStart || isHelp ? keyword : "",
+        blockedAfterMessage: shouldBeBlockedAfterThisMessage,
+        createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
-        status: existingHasReply ? "replied" : "awaiting_reply",
-        hasReply: existingHasReply,
-        unreadCount: existingUnreadCount,
-        replyCount: existingReplyCount,
-        outboundCount: FieldValue.increment(1),
-        messageCount: FieldValue.increment(1),
-        firstOutboundAt:
-          existingConvo.firstOutboundAt || FieldValue.serverTimestamp(),
-        lastOutboundAt: FieldValue.serverTimestamp(),
-        lastInboundAt: existingConvo.lastInboundAt || null,
-        lastOutboundStatus: res.status || "queued",
       },
       { merge: true }
     );
 
-    await adminDb.collection("messages").add({
+    await convoRef.set(
+      {
+        ownerUid: uid,
+        ownerEmail: String(user.email || ""),
+        ownerName: String(user.name || ""),
+        ownerRole: String(user.role || "user"),
+        phone: from,
+        name: existingName,
+        twilioNumber,
+        assignedTwilioNumber: twilioNumber,
+        messagingServiceSid: String(params.MessagingServiceSid || ""),
+        lastMessage: body,
+        lastDirection: "inbound",
+        lastMessageAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        status: "replied",
+        hasReply: true,
+        unreadCount: FieldValue.increment(1),
+        replyCount: FieldValue.increment(1),
+        inboundCount: FieldValue.increment(1),
+        messageCount: FieldValue.increment(1),
+        lastInboundAt: FieldValue.serverTimestamp(),
+        lastInboundSid: messageSid,
+        blocked: shouldBeBlockedAfterThisMessage,
+        blockedAt: isStop ? FieldValue.serverTimestamp() : existingConvo.blockedAt || null,
+        unblockedAt:
+          isStart ? FieldValue.serverTimestamp() : existingConvo.unblockedAt || null,
+      },
+      { merge: true }
+    );
+
+    await adminDb.collection("replies").add({
       ownerUid: uid,
-      ownerEmail: String(userData.email || ""),
-      ownerName: String(userData.name || ""),
-      ownerRole: String(userData.role || "user"),
+      ownerEmail: String(user.email || ""),
+      ownerName: String(user.name || ""),
+      ownerRole: String(user.role || "user"),
       conversationId,
       name: existingName,
-      phone,
-      to: phone,
-      from: res.from || twilioNumber,
-      body: message,
-      sid: res.sid,
-      twilioSid: res.sid,
-      status: res.status || "queued",
-      direction: "outbound",
-      read: true,
+      phone: from,
+      from,
+      to: twilioNumber,
+      body,
+      sid: messageSid,
+      twilioSid: messageSid,
+      status: smsStatus,
+      direction: "inbound",
+      read: false,
       twilioNumber,
       assignedTwilioNumber: twilioNumber,
-      messagingServiceSid: "",
-      sourceFileName: "",
-      error: "",
+      messagingServiceSid: String(params.MessagingServiceSid || ""),
+      keyword: isStop || isStart || isHelp ? keyword : "",
+      blockedAfterMessage: shouldBeBlockedAfterThisMessage,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
 
-    return NextResponse.json({
-      ok: true,
-      sid: res.sid,
-      status: res.status || "queued",
-      phone,
-      conversationId,
-    });
+    if (isStop) {
+      return xmlResponse(
+        "You have successfully opted out. You will not receive further messages."
+      );
+    }
+
+    if (isStart) {
+      return xmlResponse(
+        "You have been re-subscribed and can receive messages again."
+      );
+    }
+
+    if (isHelp) {
+      return xmlResponse(
+        "Reply STOP to unsubscribe. Reply START to re-subscribe."
+      );
+    }
+
+    return xmlResponse();
   } catch (err: any) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: err?.message || "Unexpected server error",
-      },
-      { status: 500 }
-    );
+    console.error("Inbound Twilio webhook error", err);
+    return xmlResponse();
   }
 }
