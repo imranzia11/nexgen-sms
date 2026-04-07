@@ -65,6 +65,7 @@ type ConversationMeta = {
   ownerUid?: string;
   lastMessage?: string;
   lastMessageAt?: any;
+  updatedAt?: any;
 };
 
 function normalizePhone(value: string) {
@@ -121,17 +122,19 @@ export default function ReplyThreadPage({
   }
 
   function makeMessageItem(id: string, data: Record<string, any>): MessageItem {
+    const timeValue = data.createdAt || data.updatedAt || null;
+
     return {
       id,
-      sid: safeString(data.sid || data.messageSid),
+      sid: safeString(data.sid || data.messageSid || data.twilioSid),
       from: safeString(data.from),
       to: safeString(data.to),
       body: safeString(data.body || data.message || data.text),
       direction: safeString(data.direction || data.type).toLowerCase(),
       status: safeString(data.status),
       read: !!data.read,
-      createdAtLabel: formatFirestoreDateNY(data.createdAt),
-      createdAtMs: toMillis(data.createdAt),
+      createdAtLabel: formatFirestoreDateNY(timeValue),
+      createdAtMs: toMillis(timeValue),
     };
   }
 
@@ -148,6 +151,8 @@ export default function ReplyThreadPage({
       meta.twilioNumber || meta.assignedTwilioNumber
     );
 
+    const fallbackTime = meta.lastMessageAt || meta.updatedAt || null;
+
     return [
       {
         id: `fallback-${meta.id}`,
@@ -158,8 +163,8 @@ export default function ReplyThreadPage({
         direction: fallbackDirection,
         status: "saved",
         read: true,
-        createdAtLabel: formatFirestoreDateNY(meta.lastMessageAt),
-        createdAtMs: toMillis(meta.lastMessageAt),
+        createdAtLabel: formatFirestoreDateNY(fallbackTime),
+        createdAtMs: toMillis(fallbackTime),
       },
     ];
   }
@@ -174,7 +179,10 @@ export default function ReplyThreadPage({
     }
   }
 
-  async function markConversationRead(metaArg?: ConversationMeta, profileArg?: AppUser) {
+  async function markConversationRead(
+    metaArg?: ConversationMeta,
+    profileArg?: AppUser
+  ) {
     try {
       const currentMeta = metaArg || conversationMeta;
       const currentProfile = profileArg || profile;
@@ -238,6 +246,7 @@ export default function ReplyThreadPage({
         ownerUid: safeString(data.ownerUid),
         lastMessage: safeString(data.lastMessage),
         lastMessageAt: data.lastMessageAt || null,
+        updatedAt: data.updatedAt || null,
       };
 
       setConversationMeta(meta);
@@ -268,7 +277,11 @@ export default function ReplyThreadPage({
       const store = new Map<string, MessageItem>();
       const targetPhone = normalizePhone(currentMeta.phone || "");
 
-      const addToStore = (prefix: string, id: string, data: Record<string, any>) => {
+      const addToStore = (
+        prefix: string,
+        id: string,
+        data: Record<string, any>
+      ) => {
         const ownerUid = safeString(data.ownerUid || data.userId);
         const conversationId = safeString(data.conversationId);
         const from = normalizePhone(safeString(data.from));
@@ -435,7 +448,9 @@ export default function ReplyThreadPage({
         await loadThreadOnce(meta, safeProfile);
 
         const refreshFromAnyChange = async () => {
-          await loadThreadOnce(meta, safeProfile);
+          const latestMeta = await loadConversationMeta(safeProfile);
+          if (!latestMeta) return;
+          await loadThreadOnce(latestMeta, safeProfile);
         };
 
         unsubConversationMessages = onSnapshot(
@@ -519,6 +534,7 @@ export default function ReplyThreadPage({
           to: conversationMeta.phone,
           phone: conversationMeta.phone,
           body: replyBody.trim(),
+          name: conversationMeta.name || "",
         }),
       });
 
