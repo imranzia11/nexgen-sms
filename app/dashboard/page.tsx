@@ -70,7 +70,6 @@ function getUSPhoneValidation(raw: string) {
 
   const digits = original.replace(/\D/g, "");
 
-  // already has +1, keep it
   if (original.startsWith("+1")) {
     if (digits.length === 11 && digits.startsWith("1")) {
       return {
@@ -87,7 +86,6 @@ function getUSPhoneValidation(raw: string) {
     };
   }
 
-  // 10 digits without country code -> add +1
   if (digits.length === 10) {
     return {
       valid: true,
@@ -96,7 +94,6 @@ function getUSPhoneValidation(raw: string) {
     };
   }
 
-  // 11 digits starting with 1 but without +
   if (digits.length === 11 && digits.startsWith("1")) {
     return {
       valid: true,
@@ -229,6 +226,7 @@ export default function DashboardPage() {
 
   const [uploading, setUploading] = useState(false);
   const [sendingSms, setSendingSms] = useState(false);
+  const [sendingSingleSms, setSendingSingleSms] = useState(false);
 
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [loadingUploads, setLoadingUploads] = useState(false);
@@ -241,6 +239,7 @@ export default function DashboardPage() {
 
   const [message, setMessage] = useState(DEFAULT_SMS_MESSAGE);
   const [campaignName, setCampaignName] = useState("");
+  const [singlePhoneNumber, setSinglePhoneNumber] = useState("");
 
   const [searchTerm, setSearchTerm] = useState("");
   const [leadSearch, setLeadSearch] = useState("");
@@ -249,7 +248,7 @@ export default function DashboardPage() {
   const [toastMessage, setToastMessage] = useState("");
   const [toastType, setToastType] = useState<ToastType>("info");
 
-  const isBusy = checking || uploading || sendingSms;
+  const isBusy = checking || uploading || sendingSms || sendingSingleSms;
 
   const showToast = (msg: string, type: ToastType = "info") => {
     setToastMessage(msg);
@@ -359,7 +358,10 @@ export default function DashboardPage() {
 
       if (!selectedUploadId && items.length > 0) {
         setSelectedUploadId(items[0].id);
-      } else if (selectedUploadId && !items.some((x) => x.id === selectedUploadId)) {
+      } else if (
+        selectedUploadId &&
+        !items.some((x) => x.id === selectedUploadId)
+      ) {
         setSelectedUploadId(items[0]?.id || "");
       }
     } catch (error) {
@@ -640,6 +642,92 @@ export default function DashboardPage() {
     }
   };
 
+  const handleSendSingleSms = async () => {
+    const user = auth.currentUser;
+
+    if (!user) {
+      showToast("You are not signed in.", "error");
+      return;
+    }
+
+    if (!message.trim()) {
+      showToast("Please write an SMS message first.", "error");
+      return;
+    }
+
+    const validation = getUSPhoneValidation(singlePhoneNumber);
+
+    if (!validation.valid) {
+      showToast("Please enter one valid US phone number.", "error");
+      return;
+    }
+
+    setSendingSingleSms(true);
+
+    try {
+      const idToken = await user.getIdToken();
+
+      const res = await fetch("/api/send-sms", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          campaignName: `Direct Send ${new Date().toLocaleString()}`,
+          fileId: "",
+          fileName: "Single USA Number",
+          message: message.trim(),
+          leads: [
+            {
+              name: "",
+              phone: validation.normalized,
+            },
+          ],
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.ok) {
+        showToast(data.error || "Failed to send SMS to the number.", "error");
+        return;
+      }
+
+      await addDoc(collection(db, "campaigns"), {
+        ownerUid: user.uid,
+        createdBy: user.uid,
+        uploadId: "",
+        fileName: "Single USA Number",
+        name: `Direct Send ${new Date().toLocaleString()}`,
+        message: message.trim(),
+        totalRecipients: 1,
+        successCount: data.success || 0,
+        failedCount: data.failed || 0,
+        status: data.failed > 0 ? "completed_with_failures" : "completed",
+        createdByName: userName,
+        createdAt: serverTimestamp(),
+        isDirectSend: true,
+        directPhone: validation.normalized,
+      });
+
+      showToast(
+        `Message sent. Sent: ${data.success}, Failed: ${data.failed}.`,
+        data.failed > 0 ? "info" : "success"
+      );
+
+      setSinglePhoneNumber("");
+    } catch (error: any) {
+      console.error(error);
+      showToast(
+        error?.message || "Unexpected error while sending to the number.",
+        "error"
+      );
+    } finally {
+      setSendingSingleSms(false);
+    }
+  };
+
   const filteredUploads = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     if (!term) return uploads;
@@ -752,6 +840,8 @@ export default function DashboardPage() {
                 ? "Uploading and importing file..."
                 : sendingSms
                 ? "Sending SMS campaign..."
+                : sendingSingleSms
+                ? "Sending to one USA number..."
                 : "Please wait..."}
             </h3>
 
@@ -760,6 +850,8 @@ export default function DashboardPage() {
                 ? "The system is reading your CSV, validating US numbers, and saving leads."
                 : sendingSms
                 ? "The system is processing verified recipients and sending messages. Please do not close this page."
+                : sendingSingleSms
+                ? "The system is sending your message directly to the entered USA number. Please do not close this page."
                 : "The system is busy."}
             </p>
           </div>
@@ -868,12 +960,15 @@ export default function DashboardPage() {
 
                   <button
                     onClick={handlePickFile}
-                    disabled={uploading || sendingSms}
+                    disabled={uploading || sendingSms || sendingSingleSms}
                     style={{
                       ...heroPrimaryButtonStyle,
-                      opacity: uploading || sendingSms ? 0.7 : 1,
+                      opacity:
+                        uploading || sendingSms || sendingSingleSms ? 0.7 : 1,
                       cursor:
-                        uploading || sendingSms ? "not-allowed" : "pointer",
+                        uploading || sendingSms || sendingSingleSms
+                          ? "not-allowed"
+                          : "pointer",
                     }}
                   >
                     {uploading ? "Uploading..." : "Upload CSV"}
@@ -1166,12 +1261,66 @@ export default function DashboardPage() {
                     <strong>{message.length}</strong>
                   </div>
 
+                  <section style={singleSendCardStyle}>
+                    <div>
+                      <h3 style={singleSendTitleStyle}>Send to one USA number</h3>
+                      <p style={singleSendTextStyle}>
+                        Add one valid US phone number and send this message
+                        directly.
+                      </p>
+                    </div>
+
+                    <div style={{ marginTop: 18 }}>
+                      <label style={fieldLabelStyle}>US Phone Number</label>
+                      <input
+                        value={singlePhoneNumber}
+                        onChange={(e) => setSinglePhoneNumber(e.target.value)}
+                        placeholder="Example: +16625551234"
+                        style={singleSendInputStyle}
+                      />
+                    </div>
+
+                    <div style={{ marginTop: 18 }}>
+                      <button
+                        onClick={handleSendSingleSms}
+                        disabled={
+                          sendingSingleSms ||
+                          uploading ||
+                          !message.trim() ||
+                          !getUSPhoneValidation(singlePhoneNumber).valid
+                        }
+                        style={{
+                          ...singleSendButtonStyle,
+                          opacity:
+                            sendingSingleSms ||
+                            uploading ||
+                            !message.trim() ||
+                            !getUSPhoneValidation(singlePhoneNumber).valid
+                              ? 0.55
+                              : 1,
+                          cursor:
+                            sendingSingleSms ||
+                            uploading ||
+                            !message.trim() ||
+                            !getUSPhoneValidation(singlePhoneNumber).valid
+                              ? "not-allowed"
+                              : "pointer",
+                        }}
+                      >
+                        {sendingSingleSms
+                          ? "Sending..."
+                          : "Send to One Number"}
+                      </button>
+                    </div>
+                  </section>
+
                   <div style={sendActionWrapStyle}>
                     <button
                       onClick={handleSendSms}
                       disabled={
                         sendingSms ||
                         uploading ||
+                        sendingSingleSms ||
                         !selectedUploadId ||
                         !selectedLeads.some(
                           (lead) =>
@@ -1184,6 +1333,7 @@ export default function DashboardPage() {
                         opacity:
                           sendingSms ||
                           uploading ||
+                          sendingSingleSms ||
                           !selectedUploadId ||
                           !selectedLeads.some(
                             (lead) =>
@@ -1195,6 +1345,7 @@ export default function DashboardPage() {
                         cursor:
                           sendingSms ||
                           uploading ||
+                          sendingSingleSms ||
                           !selectedUploadId ||
                           !selectedLeads.some(
                             (lead) =>
@@ -1205,7 +1356,7 @@ export default function DashboardPage() {
                             : "pointer",
                       }}
                     >
-                      {sendingSms ? "Sending..." : "Send SMS"}
+                      {sendingSms ? "Sending..." : "Send to Selected File"}
                     </button>
 
                     <div style={sendHelpTextStyle}>
@@ -1233,7 +1384,7 @@ export default function DashboardPage() {
                     />
                     <GuideItem
                       number="4"
-                      text="Review validation status before sending SMS."
+                      text="You can also send directly to one USA number from the quick send box."
                     />
                   </div>
                 </section>
@@ -2178,4 +2329,54 @@ const toastCloseStyle: CSSProperties = {
   lineHeight: 1,
   cursor: "pointer",
   opacity: 0.85,
+};
+
+const singleSendCardStyle: CSSProperties = {
+  marginTop: 20,
+  borderRadius: 28,
+  padding: 28,
+  background: "rgba(15, 23, 42, 0.28)",
+  border: "1px solid rgba(255,255,255,0.10)",
+  boxShadow:
+    "inset 0 1px 0 rgba(255,255,255,0.04), 0 20px 40px rgba(2,8,23,0.18)",
+};
+
+const singleSendTitleStyle: CSSProperties = {
+  margin: 0,
+  color: "#ffffff",
+  fontSize: 24,
+  fontWeight: 900,
+  lineHeight: 1.1,
+};
+
+const singleSendTextStyle: CSSProperties = {
+  margin: "12px 0 0 0",
+  color: "rgba(226, 232, 240, 0.82)",
+  fontSize: 16,
+  lineHeight: 1.6,
+  maxWidth: 520,
+};
+
+const singleSendInputStyle: CSSProperties = {
+  width: "100%",
+  borderRadius: 18,
+  border: "1px solid rgba(255,255,255,0.12)",
+  padding: "18px 18px",
+  background: "rgba(255,255,255,0.10)",
+  color: "#ffffff",
+  fontSize: 16,
+  outline: "none",
+  boxShadow: "inset 0 1px 2px rgba(0,0,0,0.16)",
+};
+
+const singleSendButtonStyle: CSSProperties = {
+  width: "100%",
+  border: "none",
+  borderRadius: 22,
+  padding: "18px 18px",
+  background: "linear-gradient(90deg, #4f7dbd 0%, #2aa7c8 100%)",
+  color: "#ffffff",
+  fontWeight: 900,
+  fontSize: 18,
+  boxShadow: "0 22px 45px rgba(42,167,200,0.24)",
 };
