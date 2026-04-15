@@ -498,7 +498,9 @@ export default function DashboardPage() {
               phone: validation.valid ? validation.normalized : rawPhone,
               rawPhone,
               status: validation.valid ? "verified" : "unverified",
-              validationNote: validation.valid ? "Valid US number" : validation.reason,
+              validationNote: validation.valid
+                ? "Valid US number"
+                : validation.reason,
               sourceFileName: file.name,
               createdAt: serverTimestamp(),
             });
@@ -594,7 +596,8 @@ export default function DashboardPage() {
           Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({
-          campaignName: campaignName.trim() || `Campaign for ${selectedUpload.fileName}`,
+          campaignName:
+            campaignName.trim() || `Campaign for ${selectedUpload.fileName}`,
           fileId: selectedUploadId,
           fileName: selectedUpload.fileName,
           message: message.trim(),
@@ -885,7 +888,9 @@ export default function DashboardPage() {
                   <div style={sidebarRepliesIconStyle}>↩</div>
                   <div>
                     <div style={sidebarRepliesTitleStyle}>Replies</div>
-                    <div style={sidebarRepliesTextStyle}>Open incoming messages</div>
+                    <div style={sidebarRepliesTextStyle}>
+                      Open incoming messages
+                    </div>
                   </div>
                 </Link>
               </div>
@@ -898,8 +903,12 @@ export default function DashboardPage() {
                 >
                   <div style={sidebarSupportIconStyle}>⛔</div>
                   <div style={{ textAlign: "left" }}>
-                    <div style={sidebarRepliesTitleStyle}>Black Listed Numbers</div>
-                    <div style={sidebarRepliesTextStyle}>View STOP opt-out numbers</div>
+                    <div style={sidebarRepliesTitleStyle}>
+                      Black Listed Numbers
+                    </div>
+                    <div style={sidebarRepliesTextStyle}>
+                      View STOP opt-out numbers
+                    </div>
                   </div>
                 </button>
               </div>
@@ -1054,7 +1063,9 @@ export default function DashboardPage() {
                           >
                             <div style={fileCardTopStyle}>
                               <div style={{ minWidth: 0 }}>
-                                <div style={fileNameStyle}>{upload.fileName}</div>
+                                <div style={fileNameStyle}>
+                                  {upload.fileName}
+                                </div>
                                 <div style={fileMetaStyle}>
                                   UUID: {truncateMiddle(upload.id, 10, 8)}
                                 </div>
@@ -1261,6 +1272,63 @@ export default function DashboardPage() {
                     <strong>{message.length}</strong>
                   </div>
 
+                  <div style={sendActionWrapStyle}>
+                    <button
+                      onClick={handleSendSms}
+                      disabled={
+                        sendingSms ||
+                        uploading ||
+                        sendingSingleSms ||
+                        !selectedUploadId ||
+                        !selectedLeads.some(
+                          (lead) =>
+                            String(lead.status || "").toLowerCase() ===
+                            "verified"
+                        ) ||
+                        !message.trim()
+                      }
+                      style={{
+                        ...sendButtonStyle,
+                        opacity:
+                          sendingSms ||
+                          uploading ||
+                          sendingSingleSms ||
+                          !selectedUploadId ||
+                          !selectedLeads.some(
+                            (lead) =>
+                              String(lead.status || "").toLowerCase() ===
+                              "verified"
+                          ) ||
+                          !message.trim()
+                            ? 0.55
+                            : 1,
+                        cursor:
+                          sendingSms ||
+                          uploading ||
+                          sendingSingleSms ||
+                          !selectedUploadId ||
+                          !selectedLeads.some(
+                            (lead) =>
+                              String(lead.status || "").toLowerCase() ===
+                              "verified"
+                          ) ||
+                          !message.trim()
+                            ? "not-allowed"
+                            : "pointer",
+                      }}
+                    >
+                      {sendingSms ? "Sending..." : "Send to Selected File"}
+                    </button>
+
+                    <div style={sendHelpTextStyle}>
+                      {selectedUploadId
+                        ? `Target file: ${
+                            selectedUpload?.fileName || selectedUploadId
+                          }`
+                        : "No file selected"}
+                    </div>
+                  </div>
+
                   <section style={singleSendCardStyle}>
                     <div>
                       <h3 style={singleSendTitleStyle}>Send to one USA number</h3>
@@ -1307,64 +1375,10 @@ export default function DashboardPage() {
                               : "pointer",
                         }}
                       >
-                        {sendingSingleSms
-                          ? "Sending..."
-                          : "Send to One Number"}
+                        {sendingSingleSms ? "Sending..." : "Send to One Number"}
                       </button>
                     </div>
                   </section>
-
-                  <div style={sendActionWrapStyle}>
-                    <button
-                      onClick={handleSendSms}
-                      disabled={
-                        sendingSms ||
-                        uploading ||
-                        sendingSingleSms ||
-                        !selectedUploadId ||
-                        !selectedLeads.some(
-                          (lead) =>
-                            String(lead.status || "").toLowerCase() === "verified"
-                        ) ||
-                        !message.trim()
-                      }
-                      style={{
-                        ...sendButtonStyle,
-                        opacity:
-                          sendingSms ||
-                          uploading ||
-                          sendingSingleSms ||
-                          !selectedUploadId ||
-                          !selectedLeads.some(
-                            (lead) =>
-                              String(lead.status || "").toLowerCase() === "verified"
-                          ) ||
-                          !message.trim()
-                            ? 0.55
-                            : 1,
-                        cursor:
-                          sendingSms ||
-                          uploading ||
-                          sendingSingleSms ||
-                          !selectedUploadId ||
-                          !selectedLeads.some(
-                            (lead) =>
-                              String(lead.status || "").toLowerCase() === "verified"
-                          ) ||
-                          !message.trim()
-                            ? "not-allowed"
-                            : "pointer",
-                      }}
-                    >
-                      {sendingSms ? "Sending..." : "Send to Selected File"}
-                    </button>
-
-                    <div style={sendHelpTextStyle}>
-                      {selectedUploadId
-                        ? `Target file: ${selectedUpload?.fileName || selectedUploadId}`
-                        : "No file selected"}
-                    </div>
-                  </div>
                 </section>
 
                 <section style={rightMiniPanelStyle}>
@@ -1437,7 +1451,7 @@ function GlobalStyles() {
 
       input::placeholder,
       textarea::placeholder {
-        color: rgba(100, 116, 139, 0.9);
+        color: #94a3b8;
       }
     `}</style>
   );
@@ -1846,12 +1860,11 @@ const rightColumnStyle: CSSProperties = {
 };
 
 const panelStyle: CSSProperties = {
-  background: "rgba(255,255,255,0.88)",
-  border: "1px solid rgba(15,23,42,0.06)",
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
   borderRadius: 28,
   padding: 22,
-  boxShadow: "0 16px 40px rgba(15,23,42,0.06)",
-  backdropFilter: "blur(8px)",
+  boxShadow: "0 12px 30px rgba(15,23,42,0.05)",
 };
 
 const rightMiniPanelStyle: CSSProperties = {
