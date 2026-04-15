@@ -46,6 +46,65 @@ function normalizeKeyword(value: string) {
   return String(value || "").trim().toUpperCase();
 }
 
+function normalizeInboundText(value: string) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const abusiveKeywords = [
+  "fuck you",
+  "fuck off",
+  "motherfucker",
+  "mother fucker",
+  "piece of shit",
+  "son of a bitch",
+  "go to hell",
+  "eat shit",
+  "stupid bitch",
+  "dumb bitch",
+  "stupid asshole",
+  "dumb asshole",
+  "you asshole",
+  "you idiot",
+  "you moron",
+  "you bastard",
+  "fuck",
+  "fucker",
+  "bitch",
+  "bastard",
+  "asshole",
+  "idiot",
+  "moron",
+  "scam",
+  "scammer",
+  "trash",
+  "loser",
+  "jerk",
+  "dumb",
+  "stupid",
+  "clown",
+  "garbage",
+  "nonsense",
+  "bullshit",
+  "shithead",
+  "dickhead",
+  "retard",
+  "screw you",
+  "leave me the fuck alone",
+  "stop texting me asshole",
+  "stop texting me idiot",
+  "go away idiot",
+  "go away asshole",
+];
+
+function isAbusiveMessage(body: string) {
+  const text = normalizeInboundText(body);
+  return abusiveKeywords.some((item) => text.includes(item));
+}
+
 function buildConversationId(uid: string, customerPhone: string) {
   return `${uid}_${phoneDocId(customerPhone)}`;
 }
@@ -88,8 +147,18 @@ async function upsertBlacklist(opts: {
   keyword: string;
   twilioNumber: string;
   messageSid: string;
+  body?: string;
+  source?: string;
 }) {
-  const { ownerUid, phone, keyword, twilioNumber, messageSid } = opts;
+  const {
+    ownerUid,
+    phone,
+    keyword,
+    twilioNumber,
+    messageSid,
+    body = "",
+    source = "twilio_inbound",
+  } = opts;
 
   const existing = await adminDb
     .collection("blacklisted_numbers")
@@ -98,18 +167,31 @@ async function upsertBlacklist(opts: {
     .limit(1)
     .get();
 
+  const isStart = keyword === "START";
+  const isStop = keyword === "STOP";
+  const isAbuse = keyword === "ABUSE";
+
   const payload = {
     ownerUid,
     phone,
     twilioNumber,
     assignedTwilioNumber: twilioNumber,
-    status: keyword === "START" ? "active" : "blocked",
-    source: "twilio_inbound",
+    status: isStart ? "active" : "blocked",
+    source,
     keyword,
+    reason: isAbuse
+      ? "abusive_language"
+      : isStop
+      ? "opt_out"
+      : isStart
+      ? "resubscribe"
+      : "manual",
+    lastBody: body,
+    lastKeyword: keyword,
     lastMessageSid: messageSid,
     updatedAt: FieldValue.serverTimestamp(),
-    blockedAt: keyword === "STOP" ? FieldValue.serverTimestamp() : null,
-    unblockedAt: keyword === "START" ? FieldValue.serverTimestamp() : null,
+    blockedAt: !isStart ? FieldValue.serverTimestamp() : null,
+    unblockedAt: isStart ? FieldValue.serverTimestamp() : null,
   };
 
   if (!existing.empty) {
@@ -215,14 +297,17 @@ export async function POST(req: NextRequest) {
     const isStop = keyword === "STOP";
     const isStart = keyword === "START";
     const isHelp = keyword === "HELP";
+    const isAbuse = isAbusiveMessage(body);
 
-    if (isStop || isStart) {
+    if (isStop || isStart || isAbuse) {
       await upsertBlacklist({
         ownerUid: uid,
         phone: from,
-        keyword,
+        keyword: isAbuse ? "ABUSE" : keyword,
         twilioNumber,
         messageSid,
+        body,
+        source: isAbuse ? "inbound_auto_block" : "twilio_inbound",
       });
     }
 
@@ -231,7 +316,11 @@ export async function POST(req: NextRequest) {
       ? true
       : isStart
       ? false
+      : isAbuse
+      ? true
       : blockedNow;
+
+    const storedKeyword = isStop || isStart || isHelp ? keyword : isAbuse ? "ABUSE" : "";
 
     const inboundMessageData = {
       sid: messageSid,
@@ -251,7 +340,7 @@ export async function POST(req: NextRequest) {
       twilioNumber,
       assignedTwilioNumber: twilioNumber,
       messagingServiceSid,
-      keyword: isStop || isStart || isHelp ? keyword : "",
+      keyword: storedKeyword,
       blockedAfterMessage: shouldBeBlockedAfterThisMessage,
       createdAt: existingThreadMsgSnap.exists
         ? existingThreadMsgSnap.data()?.createdAt || FieldValue.serverTimestamp()
@@ -278,7 +367,7 @@ export async function POST(req: NextRequest) {
       twilioNumber,
       assignedTwilioNumber: twilioNumber,
       messagingServiceSid,
-      keyword: isStop || isStart || isHelp ? keyword : "",
+      keyword: storedKeyword,
       blockedAfterMessage: shouldBeBlockedAfterThisMessage,
       createdAt: existingReplySnap.exists
         ? existingReplySnap.data()?.createdAt || FieldValue.serverTimestamp()
@@ -305,9 +394,10 @@ export async function POST(req: NextRequest) {
       lastInboundAt: FieldValue.serverTimestamp(),
       lastInboundSid: messageSid,
       blocked: shouldBeBlockedAfterThisMessage,
-      blockedAt: isStop
-        ? FieldValue.serverTimestamp()
-        : existingConvo.blockedAt || null,
+      blockedAt:
+        isStop || isAbuse
+          ? FieldValue.serverTimestamp()
+          : existingConvo.blockedAt || null,
       unblockedAt: isStart
         ? FieldValue.serverTimestamp()
         : existingConvo.unblockedAt || null,
@@ -346,6 +436,10 @@ export async function POST(req: NextRequest) {
       return xmlResponse(
         "Reply STOP to unsubscribe. Reply START to re-subscribe."
       );
+    }
+
+    if (isAbuse) {
+      return xmlResponse("Your number has been removed from future messages.");
     }
 
     return xmlResponse();

@@ -70,7 +70,7 @@ async function hasPreviouslySentSuccessfulSms(ownerUid: string, phone: string) {
   });
 }
 
-async function isBlockedNumber(ownerUid: string, phone: string) {
+async function getBlacklistRecord(ownerUid: string, phone: string) {
   const snap = await adminDb
     .collection("blacklisted_numbers")
     .where("ownerUid", "==", ownerUid)
@@ -78,12 +78,25 @@ async function isBlockedNumber(ownerUid: string, phone: string) {
     .limit(1)
     .get();
 
-  if (snap.empty) return false;
+  if (snap.empty) return null;
 
-  return snap.docs.some((doc) => {
-    const data = doc.data() || {};
-    return String(data.status || "").toLowerCase() === "blocked";
-  });
+  const doc = snap.docs[0];
+  const data = doc.data() || {};
+
+  return {
+    id: doc.id,
+    status: String(data.status || "").toLowerCase(),
+    reason: String(data.reason || ""),
+    keyword: String(data.keyword || ""),
+    source: String(data.source || ""),
+    data,
+  };
+}
+
+async function isBlockedNumber(ownerUid: string, phone: string) {
+  const record = await getBlacklistRecord(ownerUid, phone);
+  if (!record) return false;
+  return record.status === "blocked";
 }
 
 function buildPersonalizedMessage(
@@ -196,6 +209,8 @@ export async function POST(req: NextRequest) {
       code?: number | null;
       personalizedBody?: string;
       isFirstMessage?: boolean;
+      skipped?: boolean;
+      blockedReason?: string;
     }> = [];
 
     for (const lead of leads) {
@@ -212,13 +227,53 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      const blocked = await isBlockedNumber(uid, formattedPhone);
+      const blacklistRecord = await getBlacklistRecord(uid, formattedPhone);
+      const blocked = blacklistRecord?.status === "blocked";
+
       if (blocked) {
+        const blockedReason =
+          blacklistRecord?.reason ||
+          blacklistRecord?.keyword ||
+          "Number is blocked or opted out.";
+
+        await adminDb.collection("messages").add({
+          ownerUid: uid,
+          ownerEmail: String(userData.email || ""),
+          ownerName: String(userData.name || ""),
+          ownerRole: String(userData.role || "user"),
+          campaignName: campaignName || "",
+          fileId: fileId || "",
+          fileName: fileName || "",
+          name: formatLeadName(lead.name || ""),
+          phone: formattedPhone,
+          to: formattedPhone,
+          from: twilioNumber,
+          body: message?.trim() || "",
+          sid: "",
+          twilioSid: "",
+          status: "blocked",
+          direction: "outbound",
+          isFirstMessage: false,
+          twilioNumber,
+          assignedTwilioNumber: twilioNumber,
+          messagingServiceSid: "",
+          sourceFileName: fileName || "",
+          error: blockedReason,
+          blacklistReason: blacklistRecord?.reason || "",
+          blacklistKeyword: blacklistRecord?.keyword || "",
+          blacklistSource: blacklistRecord?.source || "",
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+
         results.push({
           name: lead.name,
           phone: formattedPhone,
           ok: false,
+          skipped: true,
+          status: "blocked",
           error: "Number is blocked or opted out.",
+          blockedReason,
           code: null,
         });
         continue;
@@ -305,6 +360,7 @@ export async function POST(req: NextRequest) {
             lastOutboundAt: FieldValue.serverTimestamp(),
             lastInboundAt: existingConvo.lastInboundAt || null,
             lastOutboundStatus: res.status || "queued",
+            blocked: false,
           },
           { merge: true }
         );
