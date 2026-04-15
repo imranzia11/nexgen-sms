@@ -44,7 +44,7 @@ type AppUser = {
   messagingServiceSid?: string;
 };
 
-type FilterMode = "all" | "replied" | "awaiting";
+type FilterMode = "all" | "replied" | "awaiting" | "stale";
 
 function truncateText(value: string, max = 110) {
   if (!value) return "-";
@@ -70,6 +70,12 @@ function getSortSeconds(value: any) {
   if (typeof value.seconds === "number") return value.seconds;
   if (value instanceof Date) return Math.floor(value.getTime() / 1000);
   return 0;
+}
+
+function isOlderThanDays(sortSeconds: number, days: number) {
+  if (!sortSeconds) return false;
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  return nowSeconds - sortSeconds >= days * 24 * 60 * 60;
 }
 
 function phoneKey(value: unknown) {
@@ -366,14 +372,25 @@ export default function RepliesPage() {
     if (filterMode === "replied") {
       return searchedItems.filter((item) => item.replied);
     }
+
     if (filterMode === "awaiting") {
       return searchedItems.filter((item) => !item.replied);
     }
+
+    if (filterMode === "stale") {
+      return searchedItems.filter(
+        (item) => !item.replied && isOlderThanDays(item.sortSeconds, 7)
+      );
+    }
+
     return searchedItems;
   }, [searchedItems, filterMode]);
 
   const repliedCount = items.filter((item) => item.replied).length;
   const awaitingCount = items.filter((item) => !item.replied).length;
+  const staleCount = items.filter(
+    (item) => !item.replied && isOlderThanDays(item.sortSeconds, 7)
+  ).length;
 
   if (checking) {
     return (
@@ -489,6 +506,16 @@ export default function RepliesPage() {
                 >
                   Waiting for Customer
                 </button>
+
+                <button
+                  onClick={() => setFilterMode("stale")}
+                  style={{
+                    ...filterTabStyle,
+                    ...(filterMode === "stale" ? activeFilterTabStyle : {}),
+                  }}
+                >
+                  No Reply 7+ Days
+                </button>
               </div>
 
               <div style={statsGridStyle}>
@@ -502,8 +529,8 @@ export default function RepliesPage() {
                   value={String(awaitingCount)}
                 />
                 <StatCard
-                  label="Blocked Hidden"
-                  value={String(blockedPhones.length)}
+                  label="No Reply 7+ Days"
+                  value={String(staleCount)}
                 />
               </div>
             </div>
