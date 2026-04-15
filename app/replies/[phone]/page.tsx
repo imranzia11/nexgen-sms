@@ -587,6 +587,15 @@ export default function ReplyThreadPage({
           }
         }
 
+        @keyframes shimmer {
+          0% {
+            background-position: 200% 0;
+          }
+          100% {
+            background-position: -200% 0;
+          }
+        }
+
         textarea::placeholder {
           color: rgba(100, 116, 139, 0.9);
         }
@@ -630,15 +639,129 @@ export default function ReplyThreadPage({
                   <p style={panelDescStyle}>Full customer conversation history.</p>
                 </div>
 
-                <button onClick={() => void handleManualRefresh()} style={refreshButtonStyle}>
+                <button
+                  onClick={() => void handleManualRefresh()}
+                  style={refreshButtonStyle}
+                >
                   Refresh
                 </button>
               </div>
 
               {loading ? (
-                <div style={emptyStateStyle}>
-                  <div style={loadingSpinnerStyle} />
-                  <div style={emptyTitleStyle}>Loading messages...</div>
+                <div style={threadLoadingWrapStyle}>
+                  <div style={threadLoadingHeaderStyle}>
+                    <div style={threadLoadingDotStyle} />
+                    <span>Loading conversation...</span>
+                  </div>
+
+                  <div style={threadSkeletonListStyle}>
+                    <div
+                      style={{
+                        ...threadSkeletonRowStyle,
+                        justifyContent: "flex-start",
+                      }}
+                    >
+                      <div style={{ ...threadSkeletonBubbleStyle, width: "56%" }}>
+                        <div style={{ ...threadSkeletonLineStyle, width: "32%" }} />
+                        <div
+                          style={{
+                            ...threadSkeletonLineStyle,
+                            width: "88%",
+                            marginTop: 14,
+                          }}
+                        />
+                        <div
+                          style={{
+                            ...threadSkeletonLineStyle,
+                            width: "72%",
+                            marginTop: 10,
+                          }}
+                        />
+                        <div
+                          style={{
+                            ...threadSkeletonTimeStyle,
+                            width: "26%",
+                            marginTop: 14,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        ...threadSkeletonRowStyle,
+                        justifyContent: "flex-end",
+                      }}
+                    >
+                      <div
+                        style={{
+                          ...threadSkeletonBubbleStyle,
+                          ...threadSkeletonBubbleOutgoingStyle,
+                          width: "48%",
+                        }}
+                      >
+                        <div
+                          style={{
+                            ...threadSkeletonLineLightStyle,
+                            width: "28%",
+                          }}
+                        />
+                        <div
+                          style={{
+                            ...threadSkeletonLineLightStyle,
+                            width: "84%",
+                            marginTop: 14,
+                          }}
+                        />
+                        <div
+                          style={{
+                            ...threadSkeletonLineLightStyle,
+                            width: "62%",
+                            marginTop: 10,
+                          }}
+                        />
+                        <div
+                          style={{
+                            ...threadSkeletonTimeLightStyle,
+                            width: "24%",
+                            marginTop: 14,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        ...threadSkeletonRowStyle,
+                        justifyContent: "flex-start",
+                      }}
+                    >
+                      <div style={{ ...threadSkeletonBubbleStyle, width: "64%" }}>
+                        <div style={{ ...threadSkeletonLineStyle, width: "30%" }} />
+                        <div
+                          style={{
+                            ...threadSkeletonLineStyle,
+                            width: "92%",
+                            marginTop: 14,
+                          }}
+                        />
+                        <div
+                          style={{
+                            ...threadSkeletonLineStyle,
+                            width: "68%",
+                            marginTop: 10,
+                          }}
+                        />
+                        <div
+                          style={{
+                            ...threadSkeletonTimeStyle,
+                            width: "22%",
+                            marginTop: 14,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               ) : messages.length === 0 ? (
                 <div style={emptyStateStyle}>
@@ -754,7 +877,8 @@ export default function ReplyThreadPage({
                   style={{
                     ...sendButtonStyle,
                     opacity: sending || !replyBody.trim() ? 0.6 : 1,
-                    cursor: sending || !replyBody.trim() ? "not-allowed" : "pointer",
+                    cursor:
+                      sending || !replyBody.trim() ? "not-allowed" : "pointer",
                   }}
                 >
                   {sending ? "Sending..." : "Send SMS Reply"}
@@ -1165,4 +1289,88 @@ const loadingSpinnerStyle: CSSProperties = {
   border: "3px solid rgba(15,118,110,0.18)",
   borderTop: "3px solid #0f766e",
   animation: "spin 1s linear infinite",
+};
+
+const threadLoadingWrapStyle: CSSProperties = {
+  marginTop: 18,
+  borderRadius: 24,
+  padding: 22,
+  background: "linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)",
+  border: "1px solid #e2e8f0",
+  display: "grid",
+  gap: 18,
+};
+
+const threadLoadingHeaderStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  color: "#475569",
+  fontSize: 15,
+  fontWeight: 800,
+};
+
+const threadLoadingDotStyle: CSSProperties = {
+  width: 10,
+  height: 10,
+  borderRadius: "50%",
+  background: "#14b8a6",
+};
+
+const threadSkeletonListStyle: CSSProperties = {
+  display: "grid",
+  gap: 14,
+};
+
+const threadSkeletonRowStyle: CSSProperties = {
+  display: "flex",
+};
+
+const threadSkeletonBubbleStyle: CSSProperties = {
+  borderRadius: 24,
+  padding: 16,
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  boxShadow: "0 8px 20px rgba(15,23,42,0.04)",
+};
+
+const threadSkeletonBubbleOutgoingStyle: CSSProperties = {
+  background: "linear-gradient(135deg, #0f766e 0%, #0d9488 100%)",
+  border: "1px solid rgba(13,148,136,0.18)",
+};
+
+const threadSkeletonLineStyle: CSSProperties = {
+  height: 10,
+  borderRadius: 999,
+  background:
+    "linear-gradient(90deg, #e2e8f0 25%, #f8fafc 50%, #e2e8f0 75%)",
+  backgroundSize: "200% 100%",
+  animation: "shimmer 1.4s linear infinite",
+};
+
+const threadSkeletonTimeStyle: CSSProperties = {
+  height: 8,
+  borderRadius: 999,
+  background:
+    "linear-gradient(90deg, #cbd5e1 25%, #f8fafc 50%, #cbd5e1 75%)",
+  backgroundSize: "200% 100%",
+  animation: "shimmer 1.4s linear infinite",
+};
+
+const threadSkeletonLineLightStyle: CSSProperties = {
+  height: 10,
+  borderRadius: 999,
+  background:
+    "linear-gradient(90deg, rgba(255,255,255,0.18) 25%, rgba(255,255,255,0.34) 50%, rgba(255,255,255,0.18) 75%)",
+  backgroundSize: "200% 100%",
+  animation: "shimmer 1.4s linear infinite",
+};
+
+const threadSkeletonTimeLightStyle: CSSProperties = {
+  height: 8,
+  borderRadius: 999,
+  background:
+    "linear-gradient(90deg, rgba(236,254,255,0.18) 25%, rgba(236,254,255,0.34) 50%, rgba(236,254,255,0.18) 75%)",
+  backgroundSize: "200% 100%",
+  animation: "shimmer 1.4s linear infinite",
 };
