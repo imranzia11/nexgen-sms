@@ -2333,50 +2333,49 @@ const toastCloseStyle: CSSProperties = {
 
 const singleSendCardStyle: CSSProperties = {
   marginTop: 20,
-  borderRadius: 28,
-  padding: 28,
-  background: "rgba(15, 23, 42, 0.28)",
-  border: "1px solid rgba(255,255,255,0.10)",
-  boxShadow:
-    "inset 0 1px 0 rgba(255,255,255,0.04), 0 20px 40px rgba(2,8,23,0.18)",
+  borderRadius: 24,
+  padding: 24,
+  background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
+  border: "1px solid #e2e8f0",
+  boxShadow: "0 12px 30px rgba(15, 23, 42, 0.06)",
 };
 
 const singleSendTitleStyle: CSSProperties = {
   margin: 0,
-  color: "#ffffff",
+  color: "#0f172a",
   fontSize: 24,
   fontWeight: 900,
   lineHeight: 1.1,
 };
 
 const singleSendTextStyle: CSSProperties = {
-  margin: "12px 0 0 0",
-  color: "rgba(226, 232, 240, 0.82)",
-  fontSize: 16,
+  margin: "10px 0 0 0",
+  color: "#64748b",
+  fontSize: 15,
   lineHeight: 1.6,
   maxWidth: 520,
 };
 
 const singleSendInputStyle: CSSProperties = {
   width: "100%",
-  borderRadius: 18,
-  border: "1px solid rgba(255,255,255,0.12)",
-  padding: "18px 18px",
-  background: "rgba(255,255,255,0.10)",
-  color: "#ffffff",
-  fontSize: 16,
+  borderRadius: 16,
+  border: "1px solid #dbe3ed",
+  padding: "16px 16px",
+  background: "#ffffff",
+  color: "#0f172a",
+  fontSize: 15,
   outline: "none",
-  boxShadow: "inset 0 1px 2px rgba(0,0,0,0.16)",
+  boxShadow: "none",
 };
 
 const singleSendButtonStyle: CSSProperties = {
   width: "100%",
   border: "none",
-  borderRadius: 22,
-  padding: "18px 18px",
-  background: "linear-gradient(90deg, #4f7dbd 0%, #2aa7c8 100%)",
+  borderRadius: 18,
+  padding: "16px 18px",
+  background: "linear-gradient(135deg, #0f766e 0%, #0d9488 100%)",
   color: "#ffffff",
   fontWeight: 900,
-  fontSize: 18,
-  boxShadow: "0 22px 45px rgba(42,167,200,0.24)",
+  fontSize: 17,
+  boxShadow: "0 18px 35px rgba(13,148,136,0.20)",
 };
