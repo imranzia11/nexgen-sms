@@ -377,243 +377,508 @@ export default function RepliesPage() {
 
   if (checking) {
     return (
-      <main style={pageStyle}>
-        <div style={pageWrapStyle}>
-          <section style={panelStyle}>
-            <div style={emptyStateStyle}>
-              <div style={loadingSpinnerStyle} />
-              <div style={emptyTitleStyle}>Checking account access...</div>
-            </div>
-          </section>
-        </div>
-      </main>
+      <>
+        <style jsx global>{`
+          @keyframes spin {
+            0% {
+              transform: rotate(0deg);
+            }
+            100% {
+              transform: rotate(360deg);
+            }
+          }
+        `}</style>
+
+        <main style={pageStyle}>
+          <div style={pageWrapStyle}>
+            <section style={panelStyle}>
+              <div style={emptyStateStyle}>
+                <div style={loadingSpinnerStyle} />
+                <div style={emptyTitleStyle}>Checking account access...</div>
+              </div>
+            </section>
+          </div>
+        </main>
+      </>
     );
   }
 
   return (
-    <main style={pageStyle}>
-      <div style={pageWrapStyle}>
-        <div style={heroStyle}>
-          <div style={heroOverlayStyle} />
-          <div style={heroInnerStyle}>
-            <div>
-              <div style={heroBadgeStyle}>SMS Activity</div>
-              <h1 style={heroTitleStyle}>All Sent SMS</h1>
-              <p style={heroTextStyle}>
-                This page shows only new customer conversations owned by the
-                logged-in user. STOP and blacklisted numbers are hidden.
-              </p>
-            </div>
+    <>
+      <style jsx global>{`
+        @keyframes spin {
+          0% {
+            transform: rotate(0deg);
+          }
+          100% {
+            transform: rotate(360deg);
+          }
+        }
 
-            <div style={heroActionsStyle}>
-              <div style={searchWrapStyle}>
-                <span style={{ fontSize: 16, opacity: 0.85 }}>⌕</span>
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by phone number, name or message"
-                  style={searchInputStyle}
+        @keyframes shimmer {
+          0% {
+            background-position: 200% 0;
+          }
+          100% {
+            background-position: -200% 0;
+          }
+        }
+
+        input::placeholder {
+          color: rgba(236, 254, 255, 0.72);
+        }
+      `}</style>
+
+      <main style={pageStyle}>
+        <div style={pageWrapStyle}>
+          <div style={heroStyle}>
+            <div style={heroOverlayStyle} />
+            <div style={heroInnerStyle}>
+              <div>
+                <div style={heroBadgeStyle}>SMS Activity</div>
+                <h1 style={heroTitleStyle}>All Sent SMS</h1>
+                <p style={heroTextStyle}>
+                  This page shows only new customer conversations owned by the
+                  logged-in user. STOP and blacklisted numbers are hidden.
+                </p>
+              </div>
+
+              <div style={heroActionsStyle}>
+                <div style={searchWrapStyle}>
+                  <span style={{ fontSize: 16, opacity: 0.85 }}>⌕</span>
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search by phone number, name or message"
+                    style={searchInputStyle}
+                  />
+                </div>
+
+                <Link href="/dashboard" style={backButtonStyle}>
+                  Back to Dashboard
+                </Link>
+              </div>
+
+              <div style={filterTabsStyle}>
+                <button
+                  onClick={() => setFilterMode("all")}
+                  style={{
+                    ...filterTabStyle,
+                    ...(filterMode === "all" ? activeFilterTabStyle : {}),
+                  }}
+                >
+                  All
+                </button>
+
+                <button
+                  onClick={() => setFilterMode("replied")}
+                  style={{
+                    ...filterTabStyle,
+                    ...(filterMode === "replied" ? activeFilterTabStyle : {}),
+                  }}
+                >
+                  Customer Replied
+                </button>
+
+                <button
+                  onClick={() => setFilterMode("awaiting")}
+                  style={{
+                    ...filterTabStyle,
+                    ...(filterMode === "awaiting" ? activeFilterTabStyle : {}),
+                  }}
+                >
+                  Waiting for Customer
+                </button>
+              </div>
+
+              <div style={statsGridStyle}>
+                <StatCard label="All Sent SMS" value={String(items.length)} />
+                <StatCard
+                  label="Customer Replied"
+                  value={String(repliedCount)}
+                />
+                <StatCard
+                  label="Waiting for Customer"
+                  value={String(awaitingCount)}
+                />
+                <StatCard
+                  label="Blocked Hidden"
+                  value={String(blockedPhones.length)}
                 />
               </div>
-
-              <Link href="/dashboard" style={backButtonStyle}>
-                Back to Dashboard
-              </Link>
-            </div>
-
-            <div style={filterTabsStyle}>
-              <button
-                onClick={() => setFilterMode("all")}
-                style={{
-                  ...filterTabStyle,
-                  ...(filterMode === "all" ? activeFilterTabStyle : {}),
-                }}
-              >
-                All
-              </button>
-
-              <button
-                onClick={() => setFilterMode("replied")}
-                style={{
-                  ...filterTabStyle,
-                  ...(filterMode === "replied" ? activeFilterTabStyle : {}),
-                }}
-              >
-                Customer Replied
-              </button>
-
-              <button
-                onClick={() => setFilterMode("awaiting")}
-                style={{
-                  ...filterTabStyle,
-                  ...(filterMode === "awaiting" ? activeFilterTabStyle : {}),
-                }}
-              >
-                Waiting for Customer
-              </button>
-            </div>
-
-            <div style={statsGridStyle}>
-              <StatCard label="All Sent SMS" value={String(items.length)} />
-              <StatCard
-                label="Customer Replied"
-                value={String(repliedCount)}
-              />
-              <StatCard
-                label="Waiting for Customer"
-                value={String(awaitingCount)}
-              />
-              <StatCard
-                label="Blocked Hidden"
-                value={String(blockedPhones.length)}
-              />
             </div>
           </div>
-        </div>
 
-        <section style={panelStyle}>
-          <div style={panelHeaderStyle}>
-            <div>
-              <h2 style={panelTitleStyle}>Outbound SMS Activity</h2>
-              <p style={panelDescStyle}>
-                Only new conversations with `ownerUid` matching the logged-in
-                user are shown for non-admin accounts.
-              </p>
-            </div>
-
-            <button onClick={() => loadItems()} style={refreshButtonStyle}>
-              Refresh
-            </button>
-          </div>
-
-          {loading ? (
-            <div style={emptyStateStyle}>
-              <div style={loadingSpinnerStyle} />
-              <div style={emptyTitleStyle}>Loading SMS activity...</div>
-            </div>
-          ) : filteredItems.length === 0 ? (
-            <div style={emptyStateStyle}>
-              <div style={emptyDotStyle} />
-              <div style={emptyTitleStyle}>No SMS found for this filter.</div>
-              <div style={emptyTextStyle}>
-                New messages and replies will appear here once they are saved
-                with the correct ownerUid.
+          <section style={panelStyle}>
+            <div style={panelHeaderStyle}>
+              <div>
+                <h2 style={panelTitleStyle}>Outbound SMS Activity</h2>
+                <p style={panelDescStyle}>
+                  Only new conversations with `ownerUid` matching the logged-in
+                  user are shown for non-admin accounts.
+                </p>
               </div>
+
+              <button onClick={() => loadItems()} style={refreshButtonStyle}>
+                Refresh
+              </button>
             </div>
-          ) : (
-            <div style={conversationGridStyle}>
-              {filteredItems.map((item) => (
-                <div key={item.id} style={conversationShellStyle}>
-                  <Link
-                    href={`/replies/${encodeURIComponent(item.phone)}`}
-                    style={conversationCardStyle}
-                  >
-                    <div style={conversationTopStyle}>
+
+            {loading ? (
+              <div style={listLoadingWrapStyle}>
+                <div style={listLoadingHeaderStyle}>
+                  <div style={listLoadingDotStyle} />
+                  <span>Loading SMS activity...</span>
+                </div>
+
+                <div style={listSkeletonGridStyle}>
+                  <div style={listSkeletonCardStyle}>
+                    <div style={listSkeletonTopRowStyle}>
                       <div>
-                        <div style={phoneStyle}>{item.phone}</div>
-                        {item.name ? (
-                          <div style={nameStyle}>{item.name}</div>
-                        ) : null}
-                        <div style={timeStyleMobile}>{item.createdAtLabel}</div>
-                      </div>
-
-                      <div style={conversationRightStyle}>
-                        <div style={timeStyle}>{item.createdAtLabel}</div>
                         <div
-                          style={
-                            item.replied
-                              ? repliedBadgeStyle
-                              : awaitingReplyBadgeStyle
-                          }
-                        >
-                          {item.replied
-                            ? "Customer Replied"
-                            : "Waiting for Customer"}
-                        </div>
+                          style={{
+                            ...listSkeletonLineStyle,
+                            width: 170,
+                            height: 18,
+                          }}
+                        />
+                        <div
+                          style={{
+                            ...listSkeletonLineStyle,
+                            width: 110,
+                            marginTop: 12,
+                            height: 12,
+                          }}
+                        />
+                      </div>
+
+                      <div style={listSkeletonRightStyle}>
+                        <div
+                          style={{
+                            ...listSkeletonLineStyle,
+                            width: 150,
+                            height: 12,
+                          }}
+                        />
+                        <div
+                          style={{
+                            ...listSkeletonPillStyle,
+                            width: 132,
+                            marginTop: 12,
+                          }}
+                        />
                       </div>
                     </div>
 
-                    <div style={messagePreviewStyle}>
-                      {truncateText(item.body || "-")}
-                    </div>
-
-                    <div style={openRowStyle}>
-                      <span style={openTextStyle}>Open conversation</span>
-                      <span style={openArrowStyle}>→</span>
-                    </div>
-                  </Link>
-
-                  <div style={actionWrapStyle}>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setOpenMenuId((prev) =>
-                          prev === item.id ? "" : item.id
-                        );
+                    <div
+                      style={{
+                        ...listSkeletonLineStyle,
+                        width: "88%",
+                        marginTop: 18,
+                        height: 14,
                       }}
-                      style={actionButtonStyle}
-                    >
-                      ⋯
-                    </button>
+                    />
+                    <div
+                      style={{
+                        ...listSkeletonLineStyle,
+                        width: "64%",
+                        marginTop: 12,
+                        height: 14,
+                      }}
+                    />
 
-                    {openMenuId === item.id ? (
+                    <div style={listSkeletonFooterStyle}>
                       <div
-                        style={actionMenuStyle}
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        style={{
+                          ...listSkeletonLineStyle,
+                          width: 132,
+                          height: 14,
                         }}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setOpenMenuId("");
-                            router.push(
-                              `/replies/${encodeURIComponent(item.phone)}`
-                            );
-                          }}
-                          style={menuItemStyle}
-                        >
-                          Open
-                        </button>
+                      />
+                      <div
+                        style={{
+                          ...listSkeletonLineStyle,
+                          width: 18,
+                          height: 18,
+                          borderRadius: 999,
+                        }}
+                      />
+                    </div>
+                  </div>
 
-                        <button
-                          type="button"
-                          onClick={() => handleBlockConversation(item)}
-                          disabled={blockingId === item.id}
+                  <div style={listSkeletonCardStyle}>
+                    <div style={listSkeletonTopRowStyle}>
+                      <div>
+                        <div
                           style={{
-                            ...menuItemStyle,
-                            color: "#b45309",
-                            background: "rgba(245,158,11,0.08)",
-                            opacity: blockingId === item.id ? 0.6 : 1,
+                            ...listSkeletonLineStyle,
+                            width: 160,
+                            height: 18,
                           }}
-                        >
-                          {blockingId === item.id ? "Blocking..." : "Block"}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteConversation(item.id)}
-                          disabled={deletingId === item.id}
+                        />
+                        <div
                           style={{
-                            ...menuItemStyle,
-                            ...dangerMenuItemStyle,
-                            opacity: deletingId === item.id ? 0.6 : 1,
+                            ...listSkeletonLineStyle,
+                            width: 92,
+                            marginTop: 12,
+                            height: 12,
                           }}
-                        >
-                          {deletingId === item.id ? "Deleting..." : "Delete"}
-                        </button>
+                        />
                       </div>
-                    ) : null}
+
+                      <div style={listSkeletonRightStyle}>
+                        <div
+                          style={{
+                            ...listSkeletonLineStyle,
+                            width: 146,
+                            height: 12,
+                          }}
+                        />
+                        <div
+                          style={{
+                            ...listSkeletonPillStyle,
+                            width: 152,
+                            marginTop: 12,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        ...listSkeletonLineStyle,
+                        width: "92%",
+                        marginTop: 18,
+                        height: 14,
+                      }}
+                    />
+                    <div
+                      style={{
+                        ...listSkeletonLineStyle,
+                        width: "58%",
+                        marginTop: 12,
+                        height: 14,
+                      }}
+                    />
+
+                    <div style={listSkeletonFooterStyle}>
+                      <div
+                        style={{
+                          ...listSkeletonLineStyle,
+                          width: 132,
+                          height: 14,
+                        }}
+                      />
+                      <div
+                        style={{
+                          ...listSkeletonLineStyle,
+                          width: 18,
+                          height: 18,
+                          borderRadius: 999,
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={listSkeletonCardStyle}>
+                    <div style={listSkeletonTopRowStyle}>
+                      <div>
+                        <div
+                          style={{
+                            ...listSkeletonLineStyle,
+                            width: 182,
+                            height: 18,
+                          }}
+                        />
+                        <div
+                          style={{
+                            ...listSkeletonLineStyle,
+                            width: 120,
+                            marginTop: 12,
+                            height: 12,
+                          }}
+                        />
+                      </div>
+
+                      <div style={listSkeletonRightStyle}>
+                        <div
+                          style={{
+                            ...listSkeletonLineStyle,
+                            width: 142,
+                            height: 12,
+                          }}
+                        />
+                        <div
+                          style={{
+                            ...listSkeletonPillStyle,
+                            width: 140,
+                            marginTop: 12,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        ...listSkeletonLineStyle,
+                        width: "84%",
+                        marginTop: 18,
+                        height: 14,
+                      }}
+                    />
+                    <div
+                      style={{
+                        ...listSkeletonLineStyle,
+                        width: "70%",
+                        marginTop: 12,
+                        height: 14,
+                      }}
+                    />
+
+                    <div style={listSkeletonFooterStyle}>
+                      <div
+                        style={{
+                          ...listSkeletonLineStyle,
+                          width: 132,
+                          height: 14,
+                        }}
+                      />
+                      <div
+                        style={{
+                          ...listSkeletonLineStyle,
+                          width: 18,
+                          height: 18,
+                          borderRadius: 999,
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-    </main>
+              </div>
+            ) : filteredItems.length === 0 ? (
+              <div style={emptyStateStyle}>
+                <div style={emptyDotStyle} />
+                <div style={emptyTitleStyle}>No SMS found for this filter.</div>
+                <div style={emptyTextStyle}>
+                  New messages and replies will appear here once they are saved
+                  with the correct ownerUid.
+                </div>
+              </div>
+            ) : (
+              <div style={conversationGridStyle}>
+                {filteredItems.map((item) => (
+                  <div key={item.id} style={conversationShellStyle}>
+                    <Link
+                      href={`/replies/${encodeURIComponent(item.phone)}`}
+                      style={conversationCardStyle}
+                    >
+                      <div style={conversationTopStyle}>
+                        <div>
+                          <div style={phoneStyle}>{item.phone}</div>
+                          {item.name ? (
+                            <div style={nameStyle}>{item.name}</div>
+                          ) : null}
+                          <div style={timeStyleMobile}>{item.createdAtLabel}</div>
+                        </div>
+
+                        <div style={conversationRightStyle}>
+                          <div style={timeStyle}>{item.createdAtLabel}</div>
+                          <div
+                            style={
+                              item.replied
+                                ? repliedBadgeStyle
+                                : awaitingReplyBadgeStyle
+                            }
+                          >
+                            {item.replied
+                              ? "Customer Replied"
+                              : "Waiting for Customer"}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={messagePreviewStyle}>
+                        {truncateText(item.body || "-")}
+                      </div>
+
+                      <div style={openRowStyle}>
+                        <span style={openTextStyle}>Open conversation</span>
+                        <span style={openArrowStyle}>→</span>
+                      </div>
+                    </Link>
+
+                    <div style={actionWrapStyle}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setOpenMenuId((prev) =>
+                            prev === item.id ? "" : item.id
+                          );
+                        }}
+                        style={actionButtonStyle}
+                      >
+                        ⋯
+                      </button>
+
+                      {openMenuId === item.id ? (
+                        <div
+                          style={actionMenuStyle}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenMenuId("");
+                              router.push(
+                                `/replies/${encodeURIComponent(item.phone)}`
+                              );
+                            }}
+                            style={menuItemStyle}
+                          >
+                            Open
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleBlockConversation(item)}
+                            disabled={blockingId === item.id}
+                            style={{
+                              ...menuItemStyle,
+                              color: "#b45309",
+                              background: "rgba(245,158,11,0.08)",
+                              opacity: blockingId === item.id ? 0.6 : 1,
+                            }}
+                          >
+                            {blockingId === item.id ? "Blocking..." : "Block"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteConversation(item.id)}
+                            disabled={deletingId === item.id}
+                            style={{
+                              ...menuItemStyle,
+                              ...dangerMenuItemStyle,
+                              opacity: deletingId === item.id ? 0.6 : 1,
+                            }}
+                          >
+                            {deletingId === item.id ? "Deleting..." : "Delete"}
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      </main>
+    </>
   );
 }
 
@@ -1027,4 +1292,79 @@ const loadingSpinnerStyle: CSSProperties = {
   border: "3px solid rgba(15,118,110,0.18)",
   borderTop: "3px solid #0f766e",
   animation: "spin 1s linear infinite",
+};
+
+const listLoadingWrapStyle: CSSProperties = {
+  marginTop: 18,
+  borderRadius: 24,
+  padding: 22,
+  background: "linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)",
+  border: "1px solid #e2e8f0",
+  display: "grid",
+  gap: 18,
+};
+
+const listLoadingHeaderStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  color: "#475569",
+  fontSize: 15,
+  fontWeight: 800,
+};
+
+const listLoadingDotStyle: CSSProperties = {
+  width: 10,
+  height: 10,
+  borderRadius: "50%",
+  background: "#14b8a6",
+};
+
+const listSkeletonGridStyle: CSSProperties = {
+  display: "grid",
+  gap: 14,
+};
+
+const listSkeletonCardStyle: CSSProperties = {
+  borderRadius: 22,
+  padding: 20,
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  boxShadow: "0 8px 20px rgba(15,23,42,0.04)",
+};
+
+const listSkeletonTopRowStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 16,
+  flexWrap: "wrap",
+};
+
+const listSkeletonRightStyle: CSSProperties = {
+  display: "grid",
+  justifyItems: "end",
+};
+
+const listSkeletonFooterStyle: CSSProperties = {
+  marginTop: 18,
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+};
+
+const listSkeletonLineStyle: CSSProperties = {
+  borderRadius: 999,
+  background:
+    "linear-gradient(90deg, #e2e8f0 25%, #f8fafc 50%, #e2e8f0 75%)",
+  backgroundSize: "200% 100%",
+  animation: "shimmer 1.4s linear infinite",
+};
+
+const listSkeletonPillStyle: CSSProperties = {
+  height: 30,
+  borderRadius: 999,
+  background:
+    "linear-gradient(90deg, rgba(20,184,166,0.12) 25%, rgba(204,251,241,0.5) 50%, rgba(20,184,166,0.12) 75%)",
+  backgroundSize: "200% 100%",
+  animation: "shimmer 1.4s linear infinite",
 };
