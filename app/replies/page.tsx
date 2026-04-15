@@ -374,12 +374,14 @@ export default function RepliesPage() {
     }
 
     if (filterMode === "awaiting") {
-      return searchedItems.filter((item) => !item.replied);
+      return searchedItems.filter(
+        (item) => !item.replied && !isOlderThanDays(item.sortSeconds, 5)
+      );
     }
 
     if (filterMode === "stale") {
       return searchedItems.filter(
-        (item) => !item.replied && isOlderThanDays(item.sortSeconds, 7)
+        (item) => !item.replied && isOlderThanDays(item.sortSeconds, 5)
       );
     }
 
@@ -387,9 +389,11 @@ export default function RepliesPage() {
   }, [searchedItems, filterMode]);
 
   const repliedCount = items.filter((item) => item.replied).length;
-  const awaitingCount = items.filter((item) => !item.replied).length;
+  const awaitingCount = items.filter(
+    (item) => !item.replied && !isOlderThanDays(item.sortSeconds, 5)
+  ).length;
   const staleCount = items.filter(
-    (item) => !item.replied && isOlderThanDays(item.sortSeconds, 7)
+    (item) => !item.replied && isOlderThanDays(item.sortSeconds, 5)
   ).length;
 
   if (checking) {
@@ -514,7 +518,7 @@ export default function RepliesPage() {
                     ...(filterMode === "stale" ? activeFilterTabStyle : {}),
                   }}
                 >
-                  No Reply 7+ Days
+                  No Reply 5+ Days
                 </button>
               </div>
 
@@ -529,7 +533,7 @@ export default function RepliesPage() {
                   value={String(awaitingCount)}
                 />
                 <StatCard
-                  label="No Reply 7+ Days"
+                  label="No Reply 5+ Days"
                   value={String(staleCount)}
                 />
               </div>
