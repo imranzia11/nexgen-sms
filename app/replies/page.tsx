@@ -101,8 +101,8 @@ function makeRow(id: string, data: Record<string, any>): SmsRow {
     lastDirection === "inbound"
       ? true
       : lastDirection === "outbound"
-      ? false
-      : data.hasReply === true;
+        ? false
+        : data.hasReply === true;
 
   const displayDate =
     data.lastMessageAt || data.updatedAt || data.createdAt || null;
@@ -132,6 +132,10 @@ export default function RepliesPage() {
   const [deletingId, setDeletingId] = useState("");
   const [blockingId, setBlockingId] = useState("");
   const [openMenuId, setOpenMenuId] = useState("");
+
+  const [selectedPhones, setSelectedPhones] = useState<string[]>([]);
+  const [followUpMessage, setFollowUpMessage] = useState("");
+  const [sendingBulk, setSendingBulk] = useState(false);
 
   async function runQuery(q: Query<DocumentData>) {
     const snap = await getDocs(q);
@@ -222,14 +226,125 @@ export default function RepliesPage() {
     }
   }
 
+  function togglePhoneSelection(phone: string) {
+    const key = phoneKey(phone);
+    setSelectedPhones((prev) =>
+      prev.includes(key)
+        ? prev.filter((value) => value !== key)
+        : [...prev, key]
+    );
+  }
+
+  function handleSelectAllVisible() {
+    const visiblePhones = filteredItems
+      .map((item) => phoneKey(item.phone))
+      .filter(Boolean);
+
+    setSelectedPhones((prev) => {
+      const alreadyAllSelected =
+        visiblePhones.length > 0 &&
+        visiblePhones.every((phone) => prev.includes(phone));
+
+      if (alreadyAllSelected) {
+        return prev.filter((phone) => !visiblePhones.includes(phone));
+      }
+
+      return Array.from(new Set([...prev, ...visiblePhones]));
+    });
+  }
+
+  async function handleSendFollowUp() {
+    const currentUser = auth.currentUser;
+
+    if (!currentUser) {
+      alert("You are not logged in.");
+      router.push("/login");
+      return;
+    }
+
+    const recipients = filteredItems.filter((item) =>
+      selectedPhones.includes(phoneKey(item.phone))
+    );
+
+    if (recipients.length === 0) {
+      alert("Please select at least one customer.");
+      return;
+    }
+
+    if (!followUpMessage.trim()) {
+      alert("Please enter a follow-up message.");
+      return;
+    }
+
+    const ok = window.confirm(
+      `Send follow-up message to ${recipients.length} customer(s)?`
+    );
+    if (!ok) return;
+
+    try {
+      setSendingBulk(true);
+
+      const token = await currentUser.getIdToken();
+
+      const response = await fetch("/api/send-sms", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          campaignName: "Stale Follow Up",
+          fileId: "",
+          fileName: "Replies Page",
+          message: followUpMessage.trim(),
+          leads: recipients.map((item) => ({
+            name: item.name || "",
+            phone: item.phone,
+          })),
+        }),
+      });
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok || result?.ok === false) {
+        throw new Error(result?.error || "Failed to send follow-up messages.");
+      }
+
+      const successCount =
+        typeof result?.success === "number"
+          ? result.success
+          : recipients.length;
+
+      alert(`Follow-up sent to ${successCount} customer(s).`);
+      setSelectedPhones([]);
+      setFollowUpMessage("");
+      await loadItems();
+    } catch (error: any) {
+      console.error("Failed to send follow-up", error);
+      alert(error?.message || "Failed to send follow-up messages.");
+    } finally {
+      setSendingBulk(false);
+    }
+  }
+
   async function handleDeleteConversation(itemId: string) {
     const ok = window.confirm("Delete this conversation?");
     if (!ok) return;
 
     try {
       setDeletingId(itemId);
+
+      const deletedItem = items.find((item) => item.id === itemId);
+
       await deleteDoc(doc(db, "conversations", itemId));
       setItems((prev) => prev.filter((item) => item.id !== itemId));
+
+      if (deletedItem) {
+        setSelectedPhones((prev) =>
+          prev.filter((value) => value !== phoneKey(deletedItem.phone))
+        );
+      }
+
       if (openMenuId === itemId) {
         setOpenMenuId("");
       }
@@ -288,6 +403,9 @@ export default function RepliesPage() {
 
       setBlockedPhones((prev) => [...prev, item.phone]);
       setItems((prev) => prev.filter((row) => row.id !== item.id));
+      setSelectedPhones((prev) =>
+        prev.filter((value) => value !== phoneKey(item.phone))
+      );
       setOpenMenuId("");
     } catch (error) {
       console.error("Failed to block conversation", error);
@@ -355,6 +473,13 @@ export default function RepliesPage() {
     };
   }, [openMenuId]);
 
+  useEffect(() => {
+    if (filterMode !== "stale") {
+      setSelectedPhones([]);
+      setFollowUpMessage("");
+    }
+  }, [filterMode]);
+
   const searchedItems = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return items;
@@ -387,6 +512,19 @@ export default function RepliesPage() {
 
     return searchedItems;
   }, [searchedItems, filterMode]);
+
+  const visibleSelectablePhones = useMemo(() => {
+    if (filterMode !== "stale") return [];
+    return filteredItems.map((item) => phoneKey(item.phone)).filter(Boolean);
+  }, [filteredItems, filterMode]);
+
+  const allVisibleSelected =
+    visibleSelectablePhones.length > 0 &&
+    visibleSelectablePhones.every((phone) => selectedPhones.includes(phone));
+
+  const selectedVisibleCount = visibleSelectablePhones.filter((phone) =>
+    selectedPhones.includes(phone)
+  ).length;
 
   const repliedCount = items.filter((item) => item.replied).length;
   const awaitingCount = items.filter(
@@ -554,6 +692,73 @@ export default function RepliesPage() {
                 Refresh
               </button>
             </div>
+
+            {filterMode === "stale" ? (
+              <div style={bulkFollowUpPanelStyle}>
+                <div style={bulkFollowUpHeaderStyle}>
+                  <div>
+                    <h3 style={bulkFollowUpTitleStyle}>
+                      Follow up with stale customers
+                    </h3>
+                    <p style={bulkFollowUpTextStyle}>
+                      Select customers who have not replied in the past 5 days
+                      and send one follow-up message.
+                    </p>
+                  </div>
+
+                  <label style={selectAllWrapStyle}>
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={handleSelectAllVisible}
+                    />
+                    <span>Select all visible customers</span>
+                  </label>
+                </div>
+
+                <div style={bulkFollowUpMetaStyle}>
+                  {selectedVisibleCount} selected
+                </div>
+
+                <textarea
+                  value={followUpMessage}
+                  onChange={(e) => setFollowUpMessage(e.target.value)}
+                  placeholder="Write your follow-up message here..."
+                  style={followUpTextareaStyle}
+                />
+
+                <div style={bulkFollowUpActionsStyle}>
+                  <button
+                    type="button"
+                    onClick={handleSendFollowUp}
+                    disabled={
+                      sendingBulk ||
+                      selectedVisibleCount === 0 ||
+                      !followUpMessage.trim()
+                    }
+                    style={{
+                      ...sendFollowUpButtonStyle,
+                      opacity:
+                        sendingBulk ||
+                        selectedVisibleCount === 0 ||
+                        !followUpMessage.trim()
+                          ? 0.6
+                          : 1,
+                      cursor:
+                        sendingBulk ||
+                        selectedVisibleCount === 0 ||
+                        !followUpMessage.trim()
+                          ? "not-allowed"
+                          : "pointer",
+                    }}
+                  >
+                    {sendingBulk
+                      ? "Sending..."
+                      : `Send follow-up to ${selectedVisibleCount || 0} customer(s)`}
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
             {loading ? (
               <div style={listLoadingWrapStyle}>
@@ -799,9 +1004,24 @@ export default function RepliesPage() {
               <div style={conversationGridStyle}>
                 {filteredItems.map((item) => (
                   <div key={item.id} style={conversationShellStyle}>
+                    {filterMode === "stale" ? (
+                      <div style={rowCheckboxWrapStyle}>
+                        <input
+                          type="checkbox"
+                          checked={selectedPhones.includes(phoneKey(item.phone))}
+                          onChange={() => togglePhoneSelection(item.phone)}
+                          onClick={(e) => e.stopPropagation()}
+                          style={rowCheckboxStyle}
+                        />
+                      </div>
+                    ) : null}
+
                     <Link
                       href={`/replies/${encodeURIComponent(item.phone)}`}
-                      style={conversationCardStyle}
+                      style={{
+                        ...conversationCardStyle,
+                        paddingLeft: filterMode === "stale" ? 64 : 20,
+                      }}
                     >
                       <div style={conversationTopStyle}>
                         <div>
@@ -1124,6 +1344,83 @@ const refreshButtonStyle: CSSProperties = {
   cursor: "pointer",
 };
 
+const bulkFollowUpPanelStyle: CSSProperties = {
+  marginTop: 18,
+  marginBottom: 18,
+  borderRadius: 22,
+  padding: 20,
+  background: "linear-gradient(180deg, #f0fdfa 0%, #ecfeff 100%)",
+  border: "1px solid rgba(13,148,136,0.14)",
+  display: "grid",
+  gap: 14,
+};
+
+const bulkFollowUpHeaderStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: 16,
+  flexWrap: "wrap",
+};
+
+const bulkFollowUpTitleStyle: CSSProperties = {
+  margin: 0,
+  fontSize: 18,
+  fontWeight: 900,
+  color: "#0f172a",
+};
+
+const bulkFollowUpTextStyle: CSSProperties = {
+  margin: "6px 0 0 0",
+  fontSize: 14,
+  lineHeight: 1.6,
+  color: "#475569",
+};
+
+const selectAllWrapStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 10,
+  fontSize: 14,
+  fontWeight: 700,
+  color: "#0f172a",
+};
+
+const bulkFollowUpMetaStyle: CSSProperties = {
+  fontSize: 14,
+  fontWeight: 800,
+  color: "#0d9488",
+};
+
+const followUpTextareaStyle: CSSProperties = {
+  width: "100%",
+  minHeight: 120,
+  resize: "vertical",
+  borderRadius: 16,
+  border: "1px solid rgba(15,23,42,0.08)",
+  padding: 14,
+  fontSize: 15,
+  lineHeight: 1.6,
+  outline: "none",
+  background: "#ffffff",
+  color: "#0f172a",
+};
+
+const bulkFollowUpActionsStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "flex-end",
+};
+
+const sendFollowUpButtonStyle: CSSProperties = {
+  border: "none",
+  borderRadius: 14,
+  padding: "14px 18px",
+  background: "#0d9488",
+  color: "#ffffff",
+  fontWeight: 800,
+  fontSize: 14,
+};
+
 const conversationGridStyle: CSSProperties = {
   marginTop: 20,
   display: "grid",
@@ -1132,6 +1429,19 @@ const conversationGridStyle: CSSProperties = {
 
 const conversationShellStyle: CSSProperties = {
   position: "relative",
+};
+
+const rowCheckboxWrapStyle: CSSProperties = {
+  position: "absolute",
+  top: 24,
+  left: 18,
+  zIndex: 6,
+};
+
+const rowCheckboxStyle: CSSProperties = {
+  width: 18,
+  height: 18,
+  cursor: "pointer",
 };
 
 const conversationCardStyle: CSSProperties = {
