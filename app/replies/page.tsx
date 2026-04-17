@@ -28,7 +28,7 @@ type SmsRow = {
   body: string;
   createdAtLabel: string;
   sortSeconds: number;
-  hasReply: boolean;
+  replied: boolean;
   lastDirection: string;
 };
 
@@ -91,6 +91,13 @@ function makeRow(id: string, data: Record<string, any>): SmsRow {
 
   const lastDirection = normalizeDirection(data.lastDirection || data.direction);
 
+  const replied =
+    lastDirection === "inbound"
+      ? true
+      : lastDirection === "outbound"
+        ? false
+        : data.hasReply === true;
+
   const displayDate =
     data.lastMessageAt || data.updatedAt || data.createdAt || null;
 
@@ -101,7 +108,7 @@ function makeRow(id: string, data: Record<string, any>): SmsRow {
     body: String(data.lastMessage || data.body || ""),
     createdAtLabel: formatFirestoreDateNY(displayDate),
     sortSeconds: getSortSeconds(displayDate),
-    hasReply: data.hasReply === true,
+    replied,
     lastDirection,
   };
 }
@@ -483,18 +490,18 @@ export default function RepliesPage() {
   const filteredItems = useMemo(() => {
     if (filterMode === "replied") {
       return searchedItems.filter(
-        (item) => item.hasReply && item.lastDirection === "inbound"
+        (item) => item.replied && item.lastDirection === "inbound"
       );
     }
 
     if (filterMode === "awaiting") {
       return searchedItems.filter(
-        (item) => item.hasReply && item.lastDirection === "outbound"
+        (item) => item.replied && item.lastDirection === "outbound"
       );
     }
 
     if (filterMode === "never_replied") {
-      return searchedItems.filter((item) => !item.hasReply);
+      return searchedItems.filter((item) => !item.replied);
     }
 
     return searchedItems;
@@ -514,14 +521,14 @@ export default function RepliesPage() {
   ).length;
 
   const repliedCount = items.filter(
-    (item) => item.hasReply && item.lastDirection === "inbound"
+    (item) => item.replied && item.lastDirection === "inbound"
   ).length;
 
   const awaitingCount = items.filter(
-    (item) => item.hasReply && item.lastDirection === "outbound"
+    (item) => item.replied && item.lastDirection === "outbound"
   ).length;
 
-  const neverRepliedCount = items.filter((item) => !item.hasReply).length;
+  const neverRepliedCount = items.filter((item) => !item.replied).length;
 
   if (checking) {
     return (
@@ -1027,14 +1034,14 @@ export default function RepliesPage() {
                           <div style={timeStyle}>{item.createdAtLabel}</div>
                           <div
                             style={
-                              item.hasReply && item.lastDirection === "inbound"
+                              item.replied && item.lastDirection === "inbound"
                                 ? repliedBadgeStyle
                                 : awaitingReplyBadgeStyle
                             }
                           >
-                            {item.hasReply && item.lastDirection === "inbound"
+                            {item.replied && item.lastDirection === "inbound"
                               ? "Customer Replied"
-                              : item.hasReply && item.lastDirection === "outbound"
+                              : item.replied && item.lastDirection === "outbound"
                                 ? "Waiting for Customer"
                                 : "Never Replied"}
                           </div>
