@@ -1,13 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
@@ -21,11 +15,8 @@ import {
   deleteDoc,
   setDoc,
   serverTimestamp,
-  limit,
-  startAfter,
   type Query,
   type DocumentData,
-  type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
 import { formatFirestoreDateNY } from "../../lib/date";
@@ -37,7 +28,7 @@ type SmsRow = {
   body: string;
   createdAtLabel: string;
   sortSeconds: number;
-  hasReply: boolean;
+  replied: boolean;
   lastDirection: string;
 };
 
@@ -100,6 +91,13 @@ function makeRow(id: string, data: Record<string, any>): SmsRow {
 
   const lastDirection = normalizeDirection(data.lastDirection || data.direction);
 
+  const replied =
+    lastDirection === "inbound"
+      ? true
+      : lastDirection === "outbound"
+        ? false
+        : data.hasReply === true;
+
   const displayDate =
     data.lastMessageAt || data.updatedAt || data.createdAt || null;
 
@@ -110,14 +108,13 @@ function makeRow(id: string, data: Record<string, any>): SmsRow {
     body: String(data.lastMessage || data.body || ""),
     createdAtLabel: formatFirestoreDateNY(displayDate),
     sortSeconds: getSortSeconds(displayDate),
-    hasReply: data.hasReply === true,
+    replied,
     lastDirection,
   };
 }
 
 export default function RepliesPage() {
   const router = useRouter();
-  const PAGE_SIZE = 20;
 
   const [items, setItems] = useState<SmsRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -125,8 +122,7 @@ export default function RepliesPage() {
   const [search, setSearch] = useState("");
   const [blockedPhones, setBlockedPhones] = useState<string[]>([]);
   const [profile, setProfile] = useState<AppUser | null>(null);
-  const [filterMode, setFilterMode] =
-    useState<FilterMode>("never_replied");
+  const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [deletingId, setDeletingId] = useState("");
   const [blockingId, setBlockingId] = useState("");
   const [openMenuId, setOpenMenuId] = useState("");
@@ -135,39 +131,12 @@ export default function RepliesPage() {
   const [followUpMessage, setFollowUpMessage] = useState("");
   const [sendingBulk, setSendingBulk] = useState(false);
 
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [lastDoc, setLastDoc] =
-    useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-
-  const loadMoreRef = useRef<HTMLDivElement | null>(null);
-
-  async function runQueryPage(q: Query<DocumentData>) {
+  async function runQuery(q: Query<DocumentData>) {
     const snap = await getDocs(q);
-
-    return {
-      docs: snap.docs.map((d) => ({
-        id: d.id,
-        data: d.data() as Record<string, any>,
-      })),
-      lastVisible: snap.docs.length ? snap.docs[snap.docs.length - 1] : null,
-      hasMore: snap.docs.length === PAGE_SIZE,
-    };
-  }
-
-  function buildBaseConversationQuery(currentProfile: AppUser) {
-    if (isAdmin(currentProfile.role)) {
-      return query(
-        collection(db, "conversations"),
-        orderBy("lastMessageAt", "desc")
-      );
-    }
-
-    return query(
-      collection(db, "conversations"),
-      where("ownerUid", "==", currentProfile.uid),
-      orderBy("lastMessageAt", "desc")
-    );
+    return snap.docs.map((d) => ({
+      id: d.id,
+      data: d.data() as Record<string, any>,
+    }));
   }
 
   async function loadItems(profileArg?: AppUser) {
@@ -178,8 +147,6 @@ export default function RepliesPage() {
       if (!currentProfile) {
         setItems([]);
         setBlockedPhones([]);
-        setLastDoc(null);
-        setHasMore(false);
         return;
       }
 
@@ -218,10 +185,22 @@ export default function RepliesPage() {
       const blockedSet = new Set(blocked.map((phone) => phoneKey(phone)));
       setBlockedPhones(blocked);
 
-      const baseQuery = buildBaseConversationQuery(currentProfile);
-      const firstPage = await runQueryPage(query(baseQuery, limit(PAGE_SIZE)));
+      let docs: Array<{ id: string; data: Record<string, any> }> = [];
 
-      const rows = firstPage.docs
+      if (isAdmin(currentProfile.role)) {
+        docs = await runQuery(
+          query(collection(db, "conversations"), orderBy("lastMessageAt", "desc"))
+        );
+      } else {
+        docs = await runQuery(
+          query(
+            collection(db, "conversations"),
+            where("ownerUid", "==", currentProfile.uid)
+          )
+        );
+      }
+
+      const rows = docs
         .map((row) => makeRow(row.id, row.data))
         .filter((item) => {
           const p = phoneKey(item.phone);
@@ -232,64 +211,12 @@ export default function RepliesPage() {
         .sort((a, b) => b.sortSeconds - a.sortSeconds);
 
       setItems(rows);
-      setLastDoc(firstPage.lastVisible);
-      setHasMore(firstPage.hasMore);
     } catch (error) {
       console.error("Failed to load sms activity", error);
       setItems([]);
       setBlockedPhones([]);
-      setLastDoc(null);
-      setHasMore(false);
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function loadMoreItems() {
-    const currentProfile = profile;
-    if (!currentProfile || !lastDoc || loadingMore || loading || !hasMore) {
-      return;
-    }
-
-    try {
-      setLoadingMore(true);
-
-      const blockedSet = new Set(blockedPhones.map((phone) => phoneKey(phone)));
-      const baseQuery = buildBaseConversationQuery(currentProfile);
-
-      const nextPage = await runQueryPage(
-        query(baseQuery, startAfter(lastDoc), limit(PAGE_SIZE))
-      );
-
-      const nextRows = nextPage.docs
-        .map((row) => makeRow(row.id, row.data))
-        .filter((item) => {
-          const p = phoneKey(item.phone);
-          if (!p) return false;
-          if (blockedSet.has(p)) return false;
-          return true;
-        })
-        .sort((a, b) => b.sortSeconds - a.sortSeconds);
-
-      setItems((prev) => {
-        const seen = new Set(prev.map((item) => item.id));
-        const merged = [...prev];
-
-        for (const row of nextRows) {
-          if (!seen.has(row.id)) {
-            merged.push(row);
-          }
-        }
-
-        return merged;
-      });
-
-      setLastDoc(nextPage.lastVisible);
-      setHasMore(nextPage.hasMore);
-    } catch (error) {
-      console.error("Failed to load more sms activity", error);
-    } finally {
-      setLoadingMore(false);
     }
   }
 
@@ -547,30 +474,6 @@ export default function RepliesPage() {
     }
   }, [filterMode]);
 
-  useEffect(() => {
-    if (!loadMoreRef.current || loading || loadingMore || !hasMore) return;
-
-    const node = loadMoreRef.current;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const first = entries[0];
-        if (first?.isIntersecting) {
-          loadMoreItems();
-        }
-      },
-      {
-        root: null,
-        rootMargin: "220px 0px",
-        threshold: 0.01,
-      }
-    );
-
-    observer.observe(node);
-
-    return () => observer.disconnect();
-  }, [loading, loadingMore, hasMore, lastDoc, profile, blockedPhones]);
-
   const searchedItems = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return items;
@@ -587,18 +490,18 @@ export default function RepliesPage() {
   const filteredItems = useMemo(() => {
     if (filterMode === "replied") {
       return searchedItems.filter(
-        (item) => item.hasReply && item.lastDirection === "inbound"
+        (item) => item.replied && item.lastDirection === "inbound"
       );
     }
 
     if (filterMode === "awaiting") {
       return searchedItems.filter(
-        (item) => item.hasReply && item.lastDirection === "outbound"
+        (item) => item.replied && item.lastDirection === "outbound"
       );
     }
 
     if (filterMode === "never_replied") {
-      return searchedItems.filter((item) => !item.hasReply);
+      return searchedItems.filter((item) => !item.replied);
     }
 
     return searchedItems;
@@ -618,14 +521,14 @@ export default function RepliesPage() {
   ).length;
 
   const repliedCount = items.filter(
-    (item) => item.hasReply && item.lastDirection === "inbound"
+    (item) => item.replied && item.lastDirection === "inbound"
   ).length;
 
   const awaitingCount = items.filter(
-    (item) => item.hasReply && item.lastDirection === "outbound"
+    (item) => item.replied && item.lastDirection === "outbound"
   ).length;
 
-  const neverRepliedCount = items.filter((item) => !item.hasReply).length;
+  const neverRepliedCount = items.filter((item) => !item.replied).length;
 
   if (checking) {
     return (
@@ -1131,14 +1034,14 @@ export default function RepliesPage() {
                           <div style={timeStyle}>{item.createdAtLabel}</div>
                           <div
                             style={
-                              item.hasReply && item.lastDirection === "inbound"
+                              item.replied && item.lastDirection === "inbound"
                                 ? repliedBadgeStyle
                                 : awaitingReplyBadgeStyle
                             }
                           >
-                            {item.hasReply && item.lastDirection === "inbound"
+                            {item.replied && item.lastDirection === "inbound"
                               ? "Customer Replied"
-                              : item.hasReply && item.lastDirection === "outbound"
+                              : item.replied && item.lastDirection === "outbound"
                                 ? "Waiting for Customer"
                                 : "Never Replied"}
                           </div>
@@ -1221,23 +1124,6 @@ export default function RepliesPage() {
                     </div>
                   </div>
                 ))}
-
-                {hasMore ? (
-                  <div ref={loadMoreRef} style={loadMoreTriggerStyle}>
-                    {loadingMore ? (
-                      <div style={loadMoreCardStyle}>
-                        <div style={loadingSpinnerStyle} />
-                        <span style={loadMoreTextStyle}>
-                          Loading more conversations...
-                        </span>
-                      </div>
-                    ) : (
-                      <div style={loadMoreIdleStyle}>Scroll to load more</div>
-                    )}
-                  </div>
-                ) : filteredItems.length > 0 ? (
-                  <div style={endOfListStyle}>You’ve reached the end</div>
-                ) : null}
               </div>
             )}
           </section>
@@ -1822,42 +1708,4 @@ const listSkeletonPillStyle: CSSProperties = {
     "linear-gradient(90deg, rgba(20,184,166,0.12) 25%, rgba(204,251,241,0.5) 50%, rgba(20,184,166,0.12) 75%)",
   backgroundSize: "200% 100%",
   animation: "shimmer 1.4s linear infinite",
-};
-
-const loadMoreTriggerStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "center",
-  padding: "8px 0 2px",
-};
-
-const loadMoreCardStyle: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 12,
-  padding: "14px 18px",
-  borderRadius: 18,
-  background: "rgba(255,255,255,0.9)",
-  border: "1px solid rgba(15,23,42,0.06)",
-  boxShadow: "0 10px 24px rgba(15,23,42,0.06)",
-};
-
-const loadMoreTextStyle: CSSProperties = {
-  fontSize: 14,
-  fontWeight: 800,
-  color: "#475569",
-};
-
-const loadMoreIdleStyle: CSSProperties = {
-  fontSize: 13,
-  fontWeight: 700,
-  color: "#94a3b8",
-  padding: "10px 12px",
-};
-
-const endOfListStyle: CSSProperties = {
-  textAlign: "center",
-  fontSize: 13,
-  fontWeight: 700,
-  color: "#94a3b8",
-  padding: "14px 0 4px",
 };
