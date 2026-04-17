@@ -115,7 +115,7 @@ export default function RepliesPage() {
   const [search, setSearch] = useState("");
   const [blockedPhones, setBlockedPhones] = useState<string[]>([]);
   const [profile, setProfile] = useState<AppUser | null>(null);
-  const [filterMode, setFilterMode] = useState<FilterMode>("all");
+  const [filterMode, setFilterMode] = useState<FilterMode>("replied");
   const [deletingId, setDeletingId] = useState("");
   const [blockingId, setBlockingId] = useState("");
   const [openMenuId, setOpenMenuId] = useState("");
