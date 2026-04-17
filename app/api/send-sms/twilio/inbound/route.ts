@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import twilio from "twilio";
 import { FieldValue } from "firebase-admin/firestore";
-import { adminDb } from "../../../../../lib/firebaseAdmin";
+import { getDownloadURL } from "firebase-admin/storage";
+import { adminDb, adminStorage } from "../../../../../lib/firebaseAdmin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -75,6 +76,114 @@ function extractInboundMedia(
   }
 
   return media;
+}
+
+function getFileExtensionFromContentType(contentType: string) {
+  const value = String(contentType || "").toLowerCase();
+
+  if (value.includes("jpeg")) return "jpg";
+  if (value.includes("jpg")) return "jpg";
+  if (value.includes("png")) return "png";
+  if (value.includes("gif")) return "gif";
+  if (value.includes("webp")) return "webp";
+  if (value.includes("mp4")) return "mp4";
+  if (value.includes("quicktime")) return "mov";
+  if (value.includes("mpeg")) return "mp3";
+  if (value.includes("mp3")) return "mp3";
+  if (value.includes("wav")) return "wav";
+  if (value.includes("ogg")) return "ogg";
+  if (value.includes("pdf")) return "pdf";
+
+  return "bin";
+}
+
+async function downloadAndStoreTwilioMedia(opts: {
+  ownerUid: string;
+  conversationId: string;
+  messageSid: string;
+  from: string;
+  items: Array<{ url: string; contentType: string }>;
+}) {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID || "";
+  const authToken = process.env.TWILIO_AUTH_TOKEN || "";
+
+  if (!accountSid || !authToken || opts.items.length === 0) {
+    return opts.items.map((item) => ({
+      url: item.url,
+      contentType: item.contentType,
+      storagePath: "",
+      source: "twilio",
+    }));
+  }
+
+  const bucket = adminStorage.bucket();
+
+  const uploaded = await Promise.all(
+    opts.items.map(async (item, index) => {
+      try {
+        const res = await fetch(item.url, {
+          headers: {
+            Authorization:
+              "Basic " +
+              Buffer.from(`${accountSid}:${authToken}`).toString("base64"),
+          },
+        });
+
+        if (!res.ok) {
+          throw new Error(`Failed to fetch media: ${res.status}`);
+        }
+
+        const arrayBuffer = await res.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const ext = getFileExtensionFromContentType(item.contentType);
+        const storagePath =
+          `incoming_mms/${opts.ownerUid}/${opts.conversationId}/` +
+          `${opts.messageSid}-${index + 1}.${ext}`;
+
+        const file = bucket.file(storagePath);
+
+        await file.save(buffer, {
+          resumable: false,
+          metadata: {
+            contentType: item.contentType || "application/octet-stream",
+            metadata: {
+              ownerUid: opts.ownerUid,
+              conversationId: opts.conversationId,
+              messageSid: opts.messageSid,
+              from: opts.from,
+              originalTwilioUrl: item.url,
+            },
+          },
+        });
+
+        const publicUrl = await getDownloadURL(file);
+
+        return {
+          url: publicUrl,
+          contentType: item.contentType,
+          storagePath,
+          source: "firebase_storage",
+          originalUrl: item.url,
+        };
+      } catch (error) {
+        console.error("Failed to mirror inbound media to Firebase Storage", {
+          messageSid: opts.messageSid,
+          url: item.url,
+          error,
+        });
+
+        return {
+          url: item.url,
+          contentType: item.contentType,
+          storagePath: "",
+          source: "twilio",
+          originalUrl: item.url,
+        };
+      }
+    })
+  );
+
+  return uploaded;
 }
 
 const abusiveKeywords = [
@@ -282,9 +391,7 @@ export async function POST(req: NextRequest) {
     const messageSid = String(params.MessageSid || "").trim();
     const smsStatus = String(params.SmsStatus || "received").trim() || "received";
     const messagingServiceSid = String(params.MessagingServiceSid || "").trim();
-    const mediaItems = extractInboundMedia(params);
-    const mediaUrls = mediaItems.map((item) => item.url);
-    const numMedia = mediaItems.length;
+    const inboundMedia = extractInboundMedia(params);
 
     if (!from || !to || !messageSid) {
       console.error("Inbound webhook missing required fields", {
@@ -308,6 +415,17 @@ export async function POST(req: NextRequest) {
 
     const { uid, user, twilioNumber } = owner;
     const conversationId = buildConversationId(uid, from);
+
+    const mirroredMedia = await downloadAndStoreTwilioMedia({
+      ownerUid: uid,
+      conversationId,
+      messageSid,
+      from,
+      items: inboundMedia,
+    });
+
+    const mediaUrls = mirroredMedia.map((item) => item.url).filter(Boolean);
+    const numMedia = mediaUrls.length;
 
     const convoRef = adminDb.collection("conversations").doc(conversationId);
     const threadMessageRef = convoRef.collection("messages").doc(messageSid);
@@ -362,7 +480,7 @@ export async function POST(req: NextRequest) {
       phone: from,
       body,
       mediaUrls,
-      mediaMeta: mediaItems,
+      mediaMeta: mirroredMedia,
       numMedia,
       direction: "inbound",
       status: smsStatus,
@@ -390,7 +508,7 @@ export async function POST(req: NextRequest) {
       to: twilioNumber,
       body,
       mediaUrls,
-      mediaMeta: mediaItems,
+      mediaMeta: mirroredMedia,
       numMedia,
       sid: messageSid,
       twilioSid: messageSid,
