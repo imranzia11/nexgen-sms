@@ -32,6 +32,15 @@ function formatLeadName(name?: string) {
     .join(" ");
 }
 
+function normalizeMediaUrls(value: unknown) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .filter((url) => /^https:\/\//i.test(url));
+}
+
 async function getUserFromRequest(req: NextRequest) {
   const authHeader = req.headers.get("authorization") || "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
@@ -91,12 +100,6 @@ async function getBlacklistRecord(ownerUid: string, phone: string) {
     source: String(data.source || ""),
     data,
   };
-}
-
-async function isBlockedNumber(ownerUid: string, phone: string) {
-  const record = await getBlacklistRecord(ownerUid, phone);
-  if (!record) return false;
-  return record.status === "blocked";
 }
 
 function buildPersonalizedMessage(
@@ -177,17 +180,19 @@ export async function POST(req: NextRequest) {
       fileName,
       message,
       leads,
+      mediaUrls,
     }: {
       campaignName?: string;
       fileId?: string;
       fileName?: string;
       message?: string;
       leads?: LeadInput[];
+      mediaUrls?: string[];
     } = body;
 
-    if (!message?.trim()) {
+    if (!message?.trim() && (!Array.isArray(mediaUrls) || mediaUrls.length === 0)) {
       return NextResponse.json(
-        { ok: false, error: "Message is required." },
+        { ok: false, error: "Message or media is required." },
         { status: 400 }
       );
     }
@@ -195,6 +200,15 @@ export async function POST(req: NextRequest) {
     if (!Array.isArray(leads) || leads.length === 0) {
       return NextResponse.json(
         { ok: false, error: "No leads provided." },
+        { status: 400 }
+      );
+    }
+
+    const safeMediaUrls = normalizeMediaUrls(mediaUrls);
+
+    if (Array.isArray(mediaUrls) && mediaUrls.length > 0 && safeMediaUrls.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: "All media URLs are invalid. Use public HTTPS URLs." },
         { status: 400 }
       );
     }
@@ -211,6 +225,7 @@ export async function POST(req: NextRequest) {
       isFirstMessage?: boolean;
       skipped?: boolean;
       blockedReason?: string;
+      mediaUrls?: string[];
     }> = [];
 
     for (const lead of leads) {
@@ -223,6 +238,7 @@ export async function POST(req: NextRequest) {
           ok: false,
           error: "Invalid phone number",
           code: null,
+          mediaUrls: safeMediaUrls,
         });
         continue;
       }
@@ -249,6 +265,7 @@ export async function POST(req: NextRequest) {
           to: formattedPhone,
           from: twilioNumber,
           body: message?.trim() || "",
+          mediaUrls: safeMediaUrls,
           sid: "",
           twilioSid: "",
           status: "blocked",
@@ -275,6 +292,7 @@ export async function POST(req: NextRequest) {
           error: "Number is blocked or opted out.",
           blockedReason,
           code: null,
+          mediaUrls: safeMediaUrls,
         });
         continue;
       }
@@ -287,17 +305,32 @@ export async function POST(req: NextRequest) {
 
         const isFirstMessage = !alreadyMessaged;
         const finalMessage = buildPersonalizedMessage(
-          message.trim(),
+          message?.trim() || "",
           lead.name,
           isFirstMessage
         );
 
-        const res = await client.messages.create({
-          body: finalMessage,
+        const twilioPayload: {
+          body?: string;
+          to: string;
+          from: string;
+          statusCallback: string;
+          mediaUrl?: string[];
+        } = {
           to: formattedPhone,
           from: twilioNumber,
           statusCallback: `${appBaseUrl}/api/send-sms/twilio/status`,
-        });
+        };
+
+        if (finalMessage) {
+          twilioPayload.body = finalMessage;
+        }
+
+        if (safeMediaUrls.length > 0) {
+          twilioPayload.mediaUrl = safeMediaUrls;
+        }
+
+        const res = await client.messages.create(twilioPayload);
 
         const convoId = `${uid}_${phoneDocId(formattedPhone)}`;
         const convoRef = adminDb.collection("conversations").doc(convoId);
@@ -323,6 +356,7 @@ export async function POST(req: NextRequest) {
           to: formattedPhone,
           phone: formattedPhone,
           body: finalMessage,
+          mediaUrls: safeMediaUrls,
           direction: "outbound",
           status: res.status || "queued",
           read: true,
@@ -345,7 +379,7 @@ export async function POST(req: NextRequest) {
             twilioNumber,
             assignedTwilioNumber: twilioNumber,
             messagingServiceSid: "",
-            lastMessage: finalMessage,
+            lastMessage: finalMessage || (safeMediaUrls.length > 0 ? "Sent media" : ""),
             lastDirection: "outbound",
             lastMessageAt: FieldValue.serverTimestamp(),
             updatedAt: FieldValue.serverTimestamp(),
@@ -379,6 +413,7 @@ export async function POST(req: NextRequest) {
           to: formattedPhone,
           from: res.from || twilioNumber,
           body: finalMessage,
+          mediaUrls: safeMediaUrls,
           sid: res.sid,
           twilioSid: res.sid,
           status: res.status || "queued",
@@ -402,6 +437,7 @@ export async function POST(req: NextRequest) {
           status: res.status || "queued",
           personalizedBody: finalMessage,
           isFirstMessage,
+          mediaUrls: safeMediaUrls,
         });
       } catch (err: any) {
         await adminDb.collection("messages").add({
@@ -417,6 +453,7 @@ export async function POST(req: NextRequest) {
           to: formattedPhone,
           from: twilioNumber,
           body: message?.trim() || "",
+          mediaUrls: safeMediaUrls,
           sid: "",
           twilioSid: "",
           status: "failed",
@@ -437,6 +474,7 @@ export async function POST(req: NextRequest) {
           ok: false,
           error: err?.message || "Failed to send",
           code: err?.code || null,
+          mediaUrls: safeMediaUrls,
         });
       }
     }

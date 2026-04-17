@@ -15,6 +15,15 @@ function phoneDocId(phone: string) {
   return String(phone || "").replace(/[^\d+]/g, "");
 }
 
+function normalizeMediaUrls(value: unknown) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .filter((url) => /^https:\/\//i.test(url));
+}
+
 async function getUserFromRequest(req: NextRequest) {
   const authHeader = req.headers.get("authorization") || "";
   const token = authHeader.startsWith("Bearer ")
@@ -100,6 +109,7 @@ export async function POST(req: NextRequest) {
     const reqBody = await req.json();
     const to = toE164(reqBody?.to || reqBody?.phone || "");
     const messageBody = String(reqBody?.body || "").trim();
+    const mediaUrls = normalizeMediaUrls(reqBody?.mediaUrls);
 
     if (!to) {
       return NextResponse.json(
@@ -108,9 +118,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!messageBody) {
+    if (!messageBody && mediaUrls.length === 0) {
       return NextResponse.json(
-        { ok: false, error: "Reply body is required." },
+        { ok: false, error: "Reply body or media is required." },
+        { status: 400 }
+      );
+    }
+
+    if (
+      Array.isArray(reqBody?.mediaUrls) &&
+      reqBody.mediaUrls.length > 0 &&
+      mediaUrls.length === 0
+    ) {
+      return NextResponse.json(
+        { ok: false, error: "All media URLs are invalid. Use public HTTPS URLs." },
         { status: 400 }
       );
     }
@@ -128,12 +149,27 @@ export async function POST(req: NextRequest) {
 
     const client = twilio(accountSid, authToken);
 
-    const msg = await client.messages.create({
-      body: messageBody,
+    const twilioPayload: {
+      body?: string;
+      to: string;
+      from: string;
+      statusCallback: string;
+      mediaUrl?: string[];
+    } = {
       to,
       from: twilioNumber,
       statusCallback: `${appBaseUrl}/api/send-sms/twilio/status`,
-    });
+    };
+
+    if (messageBody) {
+      twilioPayload.body = messageBody;
+    }
+
+    if (mediaUrls.length > 0) {
+      twilioPayload.mediaUrl = mediaUrls;
+    }
+
+    const msg = await client.messages.create(twilioPayload);
 
     const conversationId = `${uid}_${phoneDocId(to)}`;
     const convoRef = adminDb.collection("conversations").doc(conversationId);
@@ -159,6 +195,8 @@ export async function POST(req: NextRequest) {
       from: msg.from || twilioNumber,
       to,
       body: messageBody,
+      mediaUrls,
+      numMedia: mediaUrls.length,
       direction: "outbound",
       status: msg.status || "queued",
       read: true,
@@ -181,7 +219,7 @@ export async function POST(req: NextRequest) {
         twilioNumber,
         assignedTwilioNumber: twilioNumber,
         messagingServiceSid: "",
-        lastMessage: messageBody,
+        lastMessage: messageBody || (mediaUrls.length > 0 ? "Sent media" : ""),
         lastDirection: "outbound",
         lastMessageAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
@@ -209,6 +247,8 @@ export async function POST(req: NextRequest) {
       to,
       from: msg.from || twilioNumber,
       body: messageBody,
+      mediaUrls,
+      numMedia: mediaUrls.length,
       sid: msg.sid,
       twilioSid: msg.sid,
       status: msg.status || "queued",
@@ -227,6 +267,7 @@ export async function POST(req: NextRequest) {
       sid: msg.sid,
       status: msg.status || "queued",
       conversationId,
+      mediaUrls,
     });
   } catch (error: any) {
     console.error("send-reply error:", error);

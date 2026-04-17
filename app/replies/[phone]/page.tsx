@@ -26,6 +26,11 @@ import {
 import { auth, db } from "../../../lib/firebase";
 import { formatFirestoreDateNY } from "../../../lib/date";
 
+type MediaMetaItem = {
+  url: string;
+  contentType?: string;
+};
+
 type MessageItem = {
   id: string;
   sid?: string;
@@ -35,6 +40,9 @@ type MessageItem = {
   direction?: string;
   status?: string;
   read?: boolean;
+  mediaUrls?: string[];
+  mediaMeta?: MediaMetaItem[];
+  numMedia?: number;
   createdAtLabel: string;
   createdAtMs: number;
 };
@@ -90,6 +98,58 @@ function safeString(value: any) {
   return String(value || "").trim();
 }
 
+function normalizeMediaUrls(value: any) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => safeString(item))
+    .filter(Boolean);
+}
+
+function normalizeMediaMeta(value: any): MediaMetaItem[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => ({
+      url: safeString(item?.url || item?.mediaUrl || ""),
+      contentType: safeString(item?.contentType || item?.type || ""),
+    }))
+    .filter((item) => item.url);
+}
+
+function parseComposerMediaUrls(value: string) {
+  return value
+    .split(/\r?\n|,/g)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((url) => /^https:\/\//i.test(url));
+}
+
+function getMediaKind(url: string, contentType?: string) {
+  const type = safeString(contentType).toLowerCase();
+  const lowerUrl = safeString(url).toLowerCase();
+
+  if (type.startsWith("image/")) return "image";
+  if (type.startsWith("video/")) return "video";
+  if (type.startsWith("audio/")) return "audio";
+
+  if (/\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?|$)/i.test(lowerUrl)) return "image";
+  if (/\.(mp4|mov|webm|m4v|avi)(\?|$)/i.test(lowerUrl)) return "video";
+  if (/\.(mp3|wav|ogg|m4a|aac)(\?|$)/i.test(lowerUrl)) return "audio";
+
+  return "file";
+}
+
+function buildDisplayMedia(msg: MessageItem): MediaMetaItem[] {
+  if (msg.mediaMeta && msg.mediaMeta.length > 0) {
+    return msg.mediaMeta;
+  }
+
+  return (msg.mediaUrls || []).map((url) => ({
+    url,
+    contentType: "",
+  }));
+}
+
 export default function ReplyThreadPage({
   params,
 }: {
@@ -108,6 +168,7 @@ export default function ReplyThreadPage({
   const [threadTitle, setThreadTitle] = useState(routePhone || "Conversation");
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [replyBody, setReplyBody] = useState("");
+  const [replyMediaUrlsText, setReplyMediaUrlsText] = useState("");
   const [status, setStatus] = useState("");
   const [profile, setProfile] = useState<AppUser | null>(null);
   const [conversationMeta, setConversationMeta] =
@@ -124,6 +185,11 @@ export default function ReplyThreadPage({
 
   function makeMessageItem(id: string, data: Record<string, any>): MessageItem {
     const timeValue = data.createdAt || data.updatedAt || null;
+    const mediaMeta = normalizeMediaMeta(data.mediaMeta);
+    const mediaUrls =
+      mediaMeta.length > 0
+        ? mediaMeta.map((item) => item.url)
+        : normalizeMediaUrls(data.mediaUrls);
 
     return {
       id,
@@ -134,6 +200,9 @@ export default function ReplyThreadPage({
       direction: safeString(data.direction || data.type).toLowerCase(),
       status: safeString(data.status),
       read: !!data.read,
+      mediaUrls,
+      mediaMeta,
+      numMedia: Number(data.numMedia || mediaUrls.length || 0),
       createdAtLabel: formatFirestoreDateNY(timeValue),
       createdAtMs: toMillis(timeValue),
     };
@@ -166,6 +235,9 @@ export default function ReplyThreadPage({
         direction: fallbackDirection,
         status: "saved",
         read: true,
+        mediaUrls: [],
+        mediaMeta: [],
+        numMedia: 0,
         createdAtLabel: formatFirestoreDateNY(fallbackTime),
         createdAtMs: toMillis(fallbackTime),
       },
@@ -312,7 +384,7 @@ export default function ReplyThreadPage({
           item.sid ||
           `${item.direction}_${normalizePhone(item.from || "")}_${normalizePhone(
             item.to || ""
-          )}_${item.body}_${item.createdAtMs}`;
+          )}_${item.body}_${(item.mediaUrls || []).join("|")}_${item.createdAtMs}`;
 
         store.set(dedupeKey, item);
       };
@@ -494,8 +566,10 @@ export default function ReplyThreadPage({
       return;
     }
 
-    if (!replyBody.trim()) {
-      setStatus("Please write a reply.");
+    const parsedMediaUrls = parseComposerMediaUrls(replyMediaUrlsText);
+
+    if (!replyBody.trim() && parsedMediaUrls.length === 0) {
+      setStatus("Please write a reply or add at least one media URL.");
       return;
     }
 
@@ -522,6 +596,7 @@ export default function ReplyThreadPage({
           phone: conversationMeta.phone,
           body: replyBody.trim(),
           name: conversationMeta.name || "",
+          mediaUrls: parsedMediaUrls,
         }),
       });
 
@@ -533,6 +608,7 @@ export default function ReplyThreadPage({
       }
 
       setReplyBody("");
+      setReplyMediaUrlsText("");
       setStatus("Reply sent.");
       await handleManualRefresh();
 
@@ -611,8 +687,8 @@ export default function ReplyThreadPage({
                 <div style={heroBadgeStyle}>Conversation Workspace</div>
                 <h1 style={heroTitleStyle}>{threadTitle}</h1>
                 <p style={heroTextStyle}>
-                  View the full SMS thread, monitor inbound and outbound messages,
-                  and send replies from the same premium panel.
+                  View the full SMS and MMS thread, monitor inbound and outbound
+                  messages, and send replies from the same premium panel.
                 </p>
               </div>
 
@@ -636,7 +712,9 @@ export default function ReplyThreadPage({
               <div style={panelHeaderStyle}>
                 <div>
                   <h2 style={panelTitleStyle}>Message Thread</h2>
-                  <p style={panelDescStyle}>Full customer conversation history.</p>
+                  <p style={panelDescStyle}>
+                    Full customer conversation history.
+                  </p>
                 </div>
 
                 <button
@@ -775,6 +853,7 @@ export default function ReplyThreadPage({
                 <div style={threadWrapStyle}>
                   {messages.map((msg) => {
                     const inbound = msg.direction === "inbound";
+                    const displayMedia = buildDisplayMedia(msg);
 
                     return (
                       <div
@@ -817,7 +896,101 @@ export default function ReplyThreadPage({
                             ) : null}
                           </div>
 
-                          <div style={bubbleBodyStyle}>{msg.body || "-"}</div>
+                          {msg.body ? (
+                            <div style={bubbleBodyStyle}>{msg.body}</div>
+                          ) : null}
+
+                          {displayMedia.length > 0 ? (
+                            <div style={mediaGridStyle}>
+                              {displayMedia.map((item, index) => {
+                                const kind = getMediaKind(
+                                  item.url,
+                                  item.contentType
+                                );
+
+                                if (kind === "image") {
+                                  return (
+                                    <a
+                                      key={`${msg.id}-media-${index}`}
+                                      href={item.url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      style={mediaLinkResetStyle}
+                                    >
+                                      <img
+                                        src={item.url}
+                                        alt={`attachment-${index + 1}`}
+                                        style={imageAttachmentStyle}
+                                      />
+                                    </a>
+                                  );
+                                }
+
+                                if (kind === "video") {
+                                  return (
+                                    <video
+                                      key={`${msg.id}-media-${index}`}
+                                      controls
+                                      playsInline
+                                      preload="metadata"
+                                      style={videoAttachmentStyle}
+                                    >
+                                      <source
+                                        src={item.url}
+                                        type={item.contentType || undefined}
+                                      />
+                                    </video>
+                                  );
+                                }
+
+                                if (kind === "audio") {
+                                  return (
+                                    <div
+                                      key={`${msg.id}-media-${index}`}
+                                      style={fileAttachmentStyle}
+                                    >
+                                      <div style={fileBadgeStyle}>Audio</div>
+                                      <audio
+                                        controls
+                                        preload="metadata"
+                                        style={audioAttachmentStyle}
+                                      >
+                                        <source
+                                          src={item.url}
+                                          type={item.contentType || undefined}
+                                        />
+                                      </audio>
+                                      <a
+                                        href={item.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        style={fileLinkStyle}
+                                      >
+                                        Open audio
+                                      </a>
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <div
+                                    key={`${msg.id}-media-${index}`}
+                                    style={fileAttachmentStyle}
+                                  >
+                                    <div style={fileBadgeStyle}>Attachment</div>
+                                    <a
+                                      href={item.url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      style={fileLinkStyle}
+                                    >
+                                      Open file {index + 1}
+                                    </a>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : null}
 
                           <div
                             style={{
@@ -860,9 +1033,17 @@ export default function ReplyThreadPage({
               <textarea
                 value={replyBody}
                 onChange={(e) => setReplyBody(e.target.value)}
-                rows={10}
-                placeholder="Write your SMS reply..."
+                rows={8}
+                placeholder="Write your SMS / MMS reply..."
                 style={textareaStyle}
+              />
+
+              <textarea
+                value={replyMediaUrlsText}
+                onChange={(e) => setReplyMediaUrlsText(e.target.value)}
+                rows={4}
+                placeholder="Optional public media URLs, one per line"
+                style={mediaTextareaStyle}
               />
 
               <div style={replyMetaStyle}>
@@ -873,15 +1054,28 @@ export default function ReplyThreadPage({
               <div style={buttonRowStyle}>
                 <button
                   onClick={handleSendReply}
-                  disabled={sending || !replyBody.trim()}
+                  disabled={
+                    sending ||
+                    (!replyBody.trim() &&
+                      parseComposerMediaUrls(replyMediaUrlsText).length === 0)
+                  }
                   style={{
                     ...sendButtonStyle,
-                    opacity: sending || !replyBody.trim() ? 0.6 : 1,
+                    opacity:
+                      sending ||
+                      (!replyBody.trim() &&
+                        parseComposerMediaUrls(replyMediaUrlsText).length === 0)
+                        ? 0.6
+                        : 1,
                     cursor:
-                      sending || !replyBody.trim() ? "not-allowed" : "pointer",
+                      sending ||
+                      (!replyBody.trim() &&
+                        parseComposerMediaUrls(replyMediaUrlsText).length === 0)
+                        ? "not-allowed"
+                        : "pointer",
                   }}
                 >
-                  {sending ? "Sending..." : "Send SMS Reply"}
+                  {sending ? "Sending..." : "Send Reply"}
                 </button>
 
                 <button
@@ -1158,6 +1352,60 @@ const bubbleTimeStyle: CSSProperties = {
   opacity: 0.82,
 };
 
+const mediaGridStyle: CSSProperties = {
+  marginTop: 12,
+  display: "grid",
+  gap: 10,
+};
+
+const mediaLinkResetStyle: CSSProperties = {
+  textDecoration: "none",
+};
+
+const imageAttachmentStyle: CSSProperties = {
+  width: "100%",
+  maxWidth: 320,
+  maxHeight: 280,
+  objectFit: "cover",
+  borderRadius: 16,
+  display: "block",
+  border: "1px solid rgba(148,163,184,0.24)",
+  background: "#ffffff",
+};
+
+const videoAttachmentStyle: CSSProperties = {
+  width: "100%",
+  maxWidth: 340,
+  borderRadius: 16,
+  background: "#000000",
+};
+
+const audioAttachmentStyle: CSSProperties = {
+  width: "100%",
+};
+
+const fileAttachmentStyle: CSSProperties = {
+  display: "grid",
+  gap: 10,
+  borderRadius: 16,
+  padding: 12,
+  background: "rgba(255,255,255,0.12)",
+  border: "1px solid rgba(148,163,184,0.24)",
+};
+
+const fileBadgeStyle: CSSProperties = {
+  fontSize: 12,
+  fontWeight: 800,
+  opacity: 0.85,
+};
+
+const fileLinkStyle: CSSProperties = {
+  color: "inherit",
+  fontWeight: 800,
+  textDecoration: "underline",
+  wordBreak: "break-all",
+};
+
 const miniInfoGridStyle: CSSProperties = {
   marginTop: 16,
   display: "grid",
@@ -1197,7 +1445,21 @@ const textareaStyle: CSSProperties = {
   fontSize: 15,
   resize: "vertical",
   outline: "none",
-  minHeight: 220,
+  minHeight: 180,
+};
+
+const mediaTextareaStyle: CSSProperties = {
+  width: "100%",
+  marginTop: 14,
+  borderRadius: 18,
+  border: "1px solid #dbe3ed",
+  padding: "14px 16px",
+  background: "#ffffff",
+  color: "#0f172a",
+  fontSize: 14,
+  resize: "vertical",
+  outline: "none",
+  minHeight: 110,
 };
 
 const replyMetaStyle: CSSProperties = {

@@ -54,6 +54,29 @@ function normalizeInboundText(value: string) {
     .trim();
 }
 
+function extractInboundMedia(
+  params: Record<string, string>
+): Array<{ url: string; contentType: string }> {
+  const count = Number(params.NumMedia || "0");
+  if (!Number.isFinite(count) || count <= 0) return [];
+
+  const media: Array<{ url: string; contentType: string }> = [];
+
+  for (let i = 0; i < count; i += 1) {
+    const url = String(params[`MediaUrl${i}`] || "").trim();
+    const contentType = String(params[`MediaContentType${i}`] || "").trim();
+
+    if (!url) continue;
+
+    media.push({
+      url,
+      contentType,
+    });
+  }
+
+  return media;
+}
+
 const abusiveKeywords = [
   "fuck you",
   "fuck off",
@@ -182,10 +205,10 @@ async function upsertBlacklist(opts: {
     reason: isAbuse
       ? "abusive_language"
       : isStop
-      ? "opt_out"
-      : isStart
-      ? "resubscribe"
-      : "manual",
+        ? "opt_out"
+        : isStart
+          ? "resubscribe"
+          : "manual",
     lastBody: body,
     lastKeyword: keyword,
     lastMessageSid: messageSid,
@@ -259,6 +282,9 @@ export async function POST(req: NextRequest) {
     const messageSid = String(params.MessageSid || "").trim();
     const smsStatus = String(params.SmsStatus || "received").trim() || "received";
     const messagingServiceSid = String(params.MessagingServiceSid || "").trim();
+    const mediaItems = extractInboundMedia(params);
+    const mediaUrls = mediaItems.map((item) => item.url);
+    const numMedia = mediaItems.length;
 
     if (!from || !to || !messageSid) {
       console.error("Inbound webhook missing required fields", {
@@ -315,12 +341,13 @@ export async function POST(req: NextRequest) {
     const shouldBeBlockedAfterThisMessage = isStop
       ? true
       : isStart
-      ? false
-      : isAbuse
-      ? true
-      : blockedNow;
+        ? false
+        : isAbuse
+          ? true
+          : blockedNow;
 
     const storedKeyword = isStop || isStart || isHelp ? keyword : isAbuse ? "ABUSE" : "";
+    const previewText = body || (numMedia > 0 ? "Sent media" : "");
 
     const inboundMessageData = {
       sid: messageSid,
@@ -334,6 +361,9 @@ export async function POST(req: NextRequest) {
       to: twilioNumber,
       phone: from,
       body,
+      mediaUrls,
+      mediaMeta: mediaItems,
+      numMedia,
       direction: "inbound",
       status: smsStatus,
       read: false,
@@ -359,6 +389,9 @@ export async function POST(req: NextRequest) {
       from,
       to: twilioNumber,
       body,
+      mediaUrls,
+      mediaMeta: mediaItems,
+      numMedia,
       sid: messageSid,
       twilioSid: messageSid,
       status: smsStatus,
@@ -385,7 +418,7 @@ export async function POST(req: NextRequest) {
       twilioNumber,
       assignedTwilioNumber: twilioNumber,
       messagingServiceSid,
-      lastMessage: body,
+      lastMessage: previewText,
       lastDirection: "inbound",
       lastMessageAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
