@@ -44,7 +44,7 @@ type AppUser = {
   messagingServiceSid?: string;
 };
 
-type FilterMode = "all" | "replied" | "awaiting" | "stale";
+type FilterMode = "all" | "replied" | "awaiting" | "never_replied";
 
 function truncateText(value: string, max = 110) {
   if (!value) return "-";
@@ -70,12 +70,6 @@ function getSortSeconds(value: any) {
   if (typeof value.seconds === "number") return value.seconds;
   if (value instanceof Date) return Math.floor(value.getTime() / 1000);
   return 0;
-}
-
-function isOlderThanDays(sortSeconds: number, days: number) {
-  if (!sortSeconds) return false;
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  return nowSeconds - sortSeconds >= days * 24 * 60 * 60;
 }
 
 function phoneKey(value: unknown) {
@@ -293,7 +287,7 @@ export default function RepliesPage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          campaignName: "Stale Follow Up",
+          campaignName: "Never Replied Follow Up",
           fileId: "",
           fileName: "Replies Page",
           message: followUpMessage.trim(),
@@ -474,7 +468,7 @@ export default function RepliesPage() {
   }, [openMenuId]);
 
   useEffect(() => {
-    if (filterMode !== "stale") {
+    if (filterMode !== "never_replied") {
       setSelectedPhones([]);
       setFollowUpMessage("");
     }
@@ -495,26 +489,26 @@ export default function RepliesPage() {
 
   const filteredItems = useMemo(() => {
     if (filterMode === "replied") {
-      return searchedItems.filter((item) => item.replied);
+      return searchedItems.filter(
+        (item) => item.replied && item.lastDirection === "inbound"
+      );
     }
 
     if (filterMode === "awaiting") {
       return searchedItems.filter(
-        (item) => !item.replied && !isOlderThanDays(item.sortSeconds, 5)
+        (item) => item.replied && item.lastDirection === "outbound"
       );
     }
 
-    if (filterMode === "stale") {
-      return searchedItems.filter(
-        (item) => !item.replied && isOlderThanDays(item.sortSeconds, 5)
-      );
+    if (filterMode === "never_replied") {
+      return searchedItems.filter((item) => !item.replied);
     }
 
     return searchedItems;
   }, [searchedItems, filterMode]);
 
   const visibleSelectablePhones = useMemo(() => {
-    if (filterMode !== "stale") return [];
+    if (filterMode !== "never_replied") return [];
     return filteredItems.map((item) => phoneKey(item.phone)).filter(Boolean);
   }, [filteredItems, filterMode]);
 
@@ -526,13 +520,15 @@ export default function RepliesPage() {
     selectedPhones.includes(phone)
   ).length;
 
-  const repliedCount = items.filter((item) => item.replied).length;
+  const repliedCount = items.filter(
+    (item) => item.replied && item.lastDirection === "inbound"
+  ).length;
+
   const awaitingCount = items.filter(
-    (item) => !item.replied && !isOlderThanDays(item.sortSeconds, 5)
+    (item) => item.replied && item.lastDirection === "outbound"
   ).length;
-  const staleCount = items.filter(
-    (item) => !item.replied && isOlderThanDays(item.sortSeconds, 5)
-  ).length;
+
+  const neverRepliedCount = items.filter((item) => !item.replied).length;
 
   if (checking) {
     return (
@@ -650,13 +646,15 @@ export default function RepliesPage() {
                 </button>
 
                 <button
-                  onClick={() => setFilterMode("stale")}
+                  onClick={() => setFilterMode("never_replied")}
                   style={{
                     ...filterTabStyle,
-                    ...(filterMode === "stale" ? activeFilterTabStyle : {}),
+                    ...(filterMode === "never_replied"
+                      ? activeFilterTabStyle
+                      : {}),
                   }}
                 >
-                  No Reply 5+ Days
+                  Never Replied
                 </button>
               </div>
 
@@ -671,8 +669,8 @@ export default function RepliesPage() {
                   value={String(awaitingCount)}
                 />
                 <StatCard
-                  label="No Reply 5+ Days"
-                  value={String(staleCount)}
+                  label="Never Replied"
+                  value={String(neverRepliedCount)}
                 />
               </div>
             </div>
@@ -693,16 +691,16 @@ export default function RepliesPage() {
               </button>
             </div>
 
-            {filterMode === "stale" ? (
+            {filterMode === "never_replied" ? (
               <div style={bulkFollowUpPanelStyle}>
                 <div style={bulkFollowUpHeaderStyle}>
                   <div>
                     <h3 style={bulkFollowUpTitleStyle}>
-                      Follow up with stale customers
+                      Follow up with customers who never replied
                     </h3>
                     <p style={bulkFollowUpTextStyle}>
-                      Select customers who have not replied in the past 5 days
-                      and send one follow-up message.
+                      Select customers who did not reply at all and send one
+                      follow-up message.
                     </p>
                   </div>
 
@@ -1004,7 +1002,7 @@ export default function RepliesPage() {
               <div style={conversationGridStyle}>
                 {filteredItems.map((item) => (
                   <div key={item.id} style={conversationShellStyle}>
-                    {filterMode === "stale" ? (
+                    {filterMode === "never_replied" ? (
                       <div style={rowCheckboxWrapStyle}>
                         <input
                           type="checkbox"
@@ -1020,7 +1018,7 @@ export default function RepliesPage() {
                       href={`/replies/${encodeURIComponent(item.phone)}`}
                       style={{
                         ...conversationCardStyle,
-                        paddingLeft: filterMode === "stale" ? 64 : 20,
+                        paddingLeft: filterMode === "never_replied" ? 64 : 20,
                       }}
                     >
                       <div style={conversationTopStyle}>
@@ -1036,14 +1034,16 @@ export default function RepliesPage() {
                           <div style={timeStyle}>{item.createdAtLabel}</div>
                           <div
                             style={
-                              item.replied
+                              item.replied && item.lastDirection === "inbound"
                                 ? repliedBadgeStyle
                                 : awaitingReplyBadgeStyle
                             }
                           >
-                            {item.replied
+                            {item.replied && item.lastDirection === "inbound"
                               ? "Customer Replied"
-                              : "Waiting for Customer"}
+                              : item.replied && item.lastDirection === "outbound"
+                                ? "Waiting for Customer"
+                                : "Never Replied"}
                           </div>
                         </div>
                       </div>
