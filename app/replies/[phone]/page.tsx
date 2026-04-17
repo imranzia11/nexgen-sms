@@ -6,6 +6,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type ChangeEvent,
   type CSSProperties,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -23,12 +24,19 @@ import {
   type Query,
   type DocumentData,
 } from "firebase/firestore";
-import { auth, db } from "../../../lib/firebase";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { auth, db, storage } from "../../../lib/firebase";
 import { formatFirestoreDateNY } from "../../../lib/date";
 
 type MediaMetaItem = {
   url: string;
   contentType?: string;
+};
+
+type UploadedMediaItem = {
+  url: string;
+  contentType: string;
+  name: string;
 };
 
 type MessageItem = {
@@ -100,9 +108,7 @@ function safeString(value: any) {
 
 function normalizeMediaUrls(value: any) {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => safeString(item))
-    .filter(Boolean);
+  return value.map((item) => safeString(item)).filter(Boolean);
 }
 
 function normalizeMediaMeta(value: any): MediaMetaItem[] {
@@ -114,14 +120,6 @@ function normalizeMediaMeta(value: any): MediaMetaItem[] {
       contentType: safeString(item?.contentType || item?.type || ""),
     }))
     .filter((item) => item.url);
-}
-
-function parseComposerMediaUrls(value: string) {
-  return value
-    .split(/\r?\n|,/g)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .filter((url) => /^https:\/\//i.test(url));
 }
 
 function getMediaKind(url: string, contentType?: string) {
@@ -160,15 +158,17 @@ export default function ReplyThreadPage({
   const routePhone = decodeURIComponent(resolved.phone || "").trim();
 
   const threadEndRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [checking, setChecking] = useState(true);
   const [loading, setLoading] = useState(true);
   const [initialLoaded, setInitialLoaded] = useState(false);
   const [sending, setSending] = useState(false);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
   const [threadTitle, setThreadTitle] = useState(routePhone || "Conversation");
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [replyBody, setReplyBody] = useState("");
-  const [replyMediaUrlsText, setReplyMediaUrlsText] = useState("");
+  const [uploadedMedia, setUploadedMedia] = useState<UploadedMediaItem[]>([]);
   const [status, setStatus] = useState("");
   const [profile, setProfile] = useState<AppUser | null>(null);
   const [conversationMeta, setConversationMeta] =
@@ -560,16 +560,65 @@ export default function ReplyThreadPage({
     };
   }, [routePhone, router]);
 
+  async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const currentUser = auth.currentUser;
+
+    if (!currentUser) {
+      setStatus("You are not signed in.");
+      return;
+    }
+
+    try {
+      setUploadingMedia(true);
+      setStatus("Uploading media...");
+
+      const storagePath = `outbound_mms/${currentUser.uid}/${Date.now()}-${file.name}`;
+      const storageRef = ref(storage, storagePath);
+
+      await uploadBytes(storageRef, file, {
+        contentType: file.type || "application/octet-stream",
+      });
+
+      const downloadURL = await getDownloadURL(storageRef);
+
+      setUploadedMedia((prev) => [
+        ...prev,
+        {
+          url: downloadURL,
+          contentType: file.type || "",
+          name: file.name,
+        },
+      ]);
+
+      setStatus("Media uploaded.");
+    } catch (error: any) {
+      console.error(error);
+      setStatus(error?.message || "Failed to upload media.");
+    } finally {
+      setUploadingMedia(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  }
+
+  function handleRemoveUploadedMedia(url: string) {
+    setUploadedMedia((prev) => prev.filter((item) => item.url !== url));
+  }
+
   async function handleSendReply() {
     if (!conversationMeta?.phone) {
       setStatus("Phone number is missing.");
       return;
     }
 
-    const parsedMediaUrls = parseComposerMediaUrls(replyMediaUrlsText);
+    const mediaUrls = uploadedMedia.map((item) => item.url).filter(Boolean);
 
-    if (!replyBody.trim() && parsedMediaUrls.length === 0) {
-      setStatus("Please write a reply or add at least one media URL.");
+    if (!replyBody.trim() && mediaUrls.length === 0) {
+      setStatus("Please write a reply or upload at least one file.");
       return;
     }
 
@@ -596,7 +645,7 @@ export default function ReplyThreadPage({
           phone: conversationMeta.phone,
           body: replyBody.trim(),
           name: conversationMeta.name || "",
-          mediaUrls: parsedMediaUrls,
+          mediaUrls,
         }),
       });
 
@@ -608,7 +657,7 @@ export default function ReplyThreadPage({
       }
 
       setReplyBody("");
-      setReplyMediaUrlsText("");
+      setUploadedMedia([]);
       setStatus("Reply sent.");
       await handleManualRefresh();
 
@@ -1038,13 +1087,61 @@ export default function ReplyThreadPage({
                 style={textareaStyle}
               />
 
-              <textarea
-                value={replyMediaUrlsText}
-                onChange={(e) => setReplyMediaUrlsText(e.target.value)}
-                rows={4}
-                placeholder="Optional public media URLs, one per line"
-                style={mediaTextareaStyle}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,video/*,audio/*,.pdf"
+                onChange={handleFileChange}
+                style={{ display: "none" }}
               />
+
+              <div style={uploadActionRowStyle}>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingMedia}
+                  style={{
+                    ...uploadButtonStyle,
+                    opacity: uploadingMedia ? 0.6 : 1,
+                    cursor: uploadingMedia ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {uploadingMedia ? "Uploading..." : "Upload Picture / File"}
+                </button>
+              </div>
+
+              {uploadedMedia.length > 0 ? (
+                <div style={uploadedMediaWrapStyle}>
+                  {uploadedMedia.map((item) => {
+                    const kind = getMediaKind(item.url, item.contentType);
+
+                    return (
+                      <div key={item.url} style={uploadedMediaCardStyle}>
+                        {kind === "image" ? (
+                          <img
+                            src={item.url}
+                            alt={item.name}
+                            style={uploadedPreviewImageStyle}
+                          />
+                        ) : (
+                          <div style={uploadedFileNameStyle}>{item.name}</div>
+                        )}
+
+                        <div style={uploadedMediaActionsStyle}>
+                          <div style={uploadedFileNameStyle}>{item.name}</div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveUploadedMedia(item.url)}
+                            style={removeMediaButtonStyle}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
 
               <div style={replyMetaStyle}>
                 <span>Characters:</span>
@@ -1055,22 +1152,16 @@ export default function ReplyThreadPage({
                 <button
                   onClick={handleSendReply}
                   disabled={
-                    sending ||
-                    (!replyBody.trim() &&
-                      parseComposerMediaUrls(replyMediaUrlsText).length === 0)
+                    sending || uploadingMedia || (!replyBody.trim() && uploadedMedia.length === 0)
                   }
                   style={{
                     ...sendButtonStyle,
                     opacity:
-                      sending ||
-                      (!replyBody.trim() &&
-                        parseComposerMediaUrls(replyMediaUrlsText).length === 0)
+                      sending || uploadingMedia || (!replyBody.trim() && uploadedMedia.length === 0)
                         ? 0.6
                         : 1,
                     cursor:
-                      sending ||
-                      (!replyBody.trim() &&
-                        parseComposerMediaUrls(replyMediaUrlsText).length === 0)
+                      sending || uploadingMedia || (!replyBody.trim() && uploadedMedia.length === 0)
                         ? "not-allowed"
                         : "pointer",
                   }}
@@ -1448,18 +1539,69 @@ const textareaStyle: CSSProperties = {
   minHeight: 180,
 };
 
-const mediaTextareaStyle: CSSProperties = {
-  width: "100%",
+const uploadActionRowStyle: CSSProperties = {
   marginTop: 14,
-  borderRadius: 18,
-  border: "1px solid #dbe3ed",
-  padding: "14px 16px",
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+};
+
+const uploadButtonStyle: CSSProperties = {
+  border: "1px solid rgba(15,23,42,0.08)",
+  borderRadius: 14,
+  padding: "12px 16px",
   background: "#ffffff",
   color: "#0f172a",
+  fontWeight: 800,
   fontSize: 14,
-  resize: "vertical",
-  outline: "none",
-  minHeight: 110,
+};
+
+const uploadedMediaWrapStyle: CSSProperties = {
+  marginTop: 14,
+  display: "grid",
+  gap: 12,
+};
+
+const uploadedMediaCardStyle: CSSProperties = {
+  borderRadius: 16,
+  border: "1px solid #dbe3ed",
+  background: "#ffffff",
+  padding: 12,
+  display: "grid",
+  gap: 10,
+};
+
+const uploadedPreviewImageStyle: CSSProperties = {
+  width: "100%",
+  maxHeight: 220,
+  objectFit: "cover",
+  borderRadius: 12,
+  display: "block",
+};
+
+const uploadedMediaActionsStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  alignItems: "center",
+  flexWrap: "wrap",
+};
+
+const uploadedFileNameStyle: CSSProperties = {
+  fontSize: 13,
+  color: "#475569",
+  wordBreak: "break-all",
+};
+
+const removeMediaButtonStyle: CSSProperties = {
+  border: "none",
+  borderRadius: 10,
+  padding: "8px 12px",
+  background: "rgba(220,38,38,0.08)",
+  color: "#b91c1c",
+  fontWeight: 800,
+  fontSize: 13,
+  cursor: "pointer",
 };
 
 const replyMetaStyle: CSSProperties = {
