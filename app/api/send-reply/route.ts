@@ -149,9 +149,9 @@ export async function POST(req: NextRequest) {
 
     const client = twilio(accountSid, authToken);
 
-const messagingServiceSid = String(
-  userData.messagingServiceSid || ""
-).trim();
+const messagingServiceSid =
+  userData.messagingServiceSid?.trim() ||
+  process.env.TWILIO_MESSAGING_SERVICE_SID;
 
 if (!messagingServiceSid) {
   return NextResponse.json(
