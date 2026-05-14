@@ -149,27 +149,38 @@ export async function POST(req: NextRequest) {
 
     const client = twilio(accountSid, authToken);
 
-    const twilioPayload: {
-      body?: string;
-      to: string;
-      from: string;
-      statusCallback: string;
-      mediaUrl?: string[];
-    } = {
-      to,
-      from: twilioNumber,
-      statusCallback: `${appBaseUrl}/api/send-sms/twilio/status`,
-    };
+const messagingServiceSid = String(
+  userData.messagingServiceSid || ""
+).trim();
 
-    if (messageBody) {
-      twilioPayload.body = messageBody;
-    }
+if (!messagingServiceSid) {
+  return NextResponse.json(
+    { ok: false, error: "Messaging Service SID is missing." },
+    { status: 400 }
+  );
+}
 
-    if (mediaUrls.length > 0) {
-      twilioPayload.mediaUrl = mediaUrls;
-    }
+const twilioPayload: {
+  body?: string;
+  to: string;
+  messagingServiceSid: string;
+  statusCallback: string;
+  mediaUrl?: string[];
+} = {
+  to,
+  messagingServiceSid,
+  statusCallback: `${appBaseUrl}/api/send-sms/twilio/status`,
+};
 
-    const msg = await client.messages.create(twilioPayload);
+if (messageBody) {
+  twilioPayload.body = messageBody;
+}
+
+if (mediaUrls.length > 0) {
+  twilioPayload.mediaUrl = mediaUrls;
+}
+
+const msg = await client.messages.create(twilioPayload);
 
     const conversationId = `${uid}_${phoneDocId(to)}`;
     const convoRef = adminDb.collection("conversations").doc(conversationId);
@@ -202,7 +213,7 @@ export async function POST(req: NextRequest) {
       read: true,
       twilioNumber,
       assignedTwilioNumber: twilioNumber,
-      messagingServiceSid: "",
+      messagingServiceSid,
       conversationId,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
@@ -218,7 +229,7 @@ export async function POST(req: NextRequest) {
         name: existingName,
         twilioNumber,
         assignedTwilioNumber: twilioNumber,
-        messagingServiceSid: "",
+        messagingServiceSid,
         lastMessage: messageBody || (mediaUrls.length > 0 ? "Sent media" : ""),
         lastDirection: "outbound",
         lastMessageAt: FieldValue.serverTimestamp(),
@@ -256,7 +267,7 @@ export async function POST(req: NextRequest) {
       read: true,
       twilioNumber,
       assignedTwilioNumber: twilioNumber,
-      messagingServiceSid: "",
+      messagingServiceSid,
       error: "",
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),

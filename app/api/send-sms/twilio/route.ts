@@ -213,12 +213,12 @@ export async function POST(req: NextRequest) {
           isFirstMessage
         );
 
-        const res = await client.messages.create({
-          body: finalMessage,
-          to: formattedPhone,
-          from: twilioNumber,
-          statusCallback: `${appBaseUrl}/api/send-sms/twilio/status`,
-        });
+       const res = await client.messages.create({
+  body: finalMessage,
+  to: formattedPhone,
+  messagingServiceSid: userData.messagingServiceSid,
+  statusCallback: `${appBaseUrl}/api/send-sms/twilio/status`,
+});
 
         const convoId = `${uid}_${phoneDocId(formattedPhone)}`;
         const convoRef = adminDb.collection("conversations").doc(convoId);
@@ -249,7 +249,7 @@ export async function POST(req: NextRequest) {
           isFirstMessage,
           twilioNumber,
           assignedTwilioNumber: twilioNumber,
-          messagingServiceSid: "",
+          messagingServiceSid: userData.messagingServiceSid || "",
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
         });

@@ -310,17 +310,11 @@ export async function POST(req: NextRequest) {
           isFirstMessage
         );
 
-        const twilioPayload: {
-          body?: string;
-          to: string;
-          from: string;
-          statusCallback: string;
-          mediaUrl?: string[];
-        } = {
-          to: formattedPhone,
-          from: twilioNumber,
-          statusCallback: `${appBaseUrl}/api/send-sms/twilio/status`,
-        };
+      const twilioPayload: any = {
+  to: formattedPhone,
+  messagingServiceSid: userData.messagingServiceSid,
+  statusCallback: `${appBaseUrl}/api/send-sms/twilio/status`,
+};
 
         if (finalMessage) {
           twilioPayload.body = finalMessage;
@@ -363,7 +357,7 @@ export async function POST(req: NextRequest) {
           isFirstMessage,
           twilioNumber,
           assignedTwilioNumber: twilioNumber,
-          messagingServiceSid: "",
+          messagingServiceSid: userData.messagingServiceSid || "",
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
         });
