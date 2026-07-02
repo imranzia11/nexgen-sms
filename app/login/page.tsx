@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, type CSSProperties, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
@@ -50,217 +50,417 @@ export default function LoginPage() {
   };
 
   return (
-    <main style={page}>
-      <div style={bg1} />
-      <div style={bg2} />
+    <>
+      <style jsx global>{`
+        @keyframes floatGlow {
+          0% {
+            transform: translateY(0px);
+          }
+          50% {
+            transform: translateY(-8px);
+          }
+          100% {
+            transform: translateY(0px);
+          }
+        }
 
-      <div style={container}>
-        {/* LEFT */}
-        <div style={left}>
-          <div style={brand}>
-            ⚡ <span style={{ color: "#6366f1" }}>Nexgen AI</span>
-          </div>
+        @keyframes spin {
+          0% {
+            transform: rotate(0deg);
+          }
+          100% {
+            transform: rotate(360deg);
+          }
+        }
 
-          <h1 style={title}>AI SMS Workspace</h1>
+        input::placeholder {
+          color: rgba(226, 232, 240, 0.72);
+        }
+      `}</style>
 
-          <p style={subtitle}>
-            Manage campaigns, leads, and messaging with a clean AI-powered dashboard.
-          </p>
+      <main style={pageStyle}>
+        <div style={bgGlowOne} />
+        <div style={bgGlowTwo} />
 
-          <div style={grid}>
-            <Card title="CSV Imports" text="Upload and manage leads instantly." />
-            <Card title="AI Campaigns" text="Smart bulk SMS automation." />
-            <Card title="Replies Inbox" text="Track customer responses." />
-            <Card title="Secure Login" text="Enterprise authentication." />
-          </div>
-        </div>
+        <div style={shellStyle}>
+          <section style={leftStyle}>
+            <div style={brandRowStyle}>
+              <div style={brandIconStyle}>N</div>
+              <div>
+                <div style={brandTitleStyle}>Nexgen SMS</div>
+                <div style={brandSubStyle}>Portal</div>
+              </div>
+            </div>
 
-        {/* RIGHT */}
-        <div style={right}>
-          <div style={card}>
-            <h2 style={loginTitle}>Sign in</h2>
+            <div style={heroBadgeStyle}>Premium User Workspace</div>
 
-            <form onSubmit={handleLogin} style={form}>
-              <input
-                style={input}
-                type="email"
-                placeholder="Email address"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+            <h1 style={heroTitleStyle}>Sign in to your SMS portal</h1>
+
+            <p style={heroTextStyle}>
+              Manage imported lead files, launch SMS campaigns, monitor replies,
+              and keep your workflow in one premium control center.
+            </p>
+
+            <div style={featureGridStyle}>
+              <FeatureCard
+                title="CSV Imports"
+                text="Upload lead files and organize recipients fast."
               />
-
-              <input
-                style={input}
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+              <FeatureCard
+                title="Bulk SMS"
+                text="Launch campaigns from one clean dashboard."
               />
+              <FeatureCard
+                title="Replies Inbox"
+                text="Track incoming customer responses easily."
+              />
+              <FeatureCard
+                title="User Access"
+                text="Secure sign-in for active portal users."
+              />
+            </div>
+          </section>
 
-              {error && <div style={errorBox}>{error}</div>}
+          <section style={rightWrapStyle}>
+            <div style={cardStyle}>
+              <div style={cardTopStyle}>
+                <div style={loginIconWrapStyle}>
+                  <div style={loginIconStyle}>↗</div>
+                </div>
+                <h2 style={cardTitleStyle}>Portal Login</h2>
+                <p style={cardTextStyle}>
+                  Sign in to continue to Nexgen SMS Portal
+                </p>
+              </div>
 
-              <button style={btn} disabled={loading}>
-                {loading ? "Signing in..." : "Login"}
-              </button>
-            </form>
-          </div>
+              <form onSubmit={handleLogin} style={formStyle}>
+                <div>
+                  <label style={labelStyle}>Email Address</label>
+                  <input
+                    type="email"
+                    placeholder="Enter your email"
+                    style={inputStyle}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Password</label>
+                  <input
+                    type="password"
+                    placeholder="Enter password"
+                    style={inputStyle}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </div>
+
+                {error ? <div style={errorBoxStyle}>{error}</div> : null}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  style={{
+                    ...buttonStyle,
+                    opacity: loading ? 0.75 : 1,
+                    cursor: loading ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {loading ? (
+                    <span style={buttonLoadingWrapStyle}>
+                      <span style={spinnerStyle} />
+                      Logging in...
+                    </span>
+                  ) : (
+                    "Login"
+                  )}
+                </button>
+              </form>
+            </div>
+          </section>
         </div>
-      </div>
-    </main>
+      </main>
+    </>
   );
 }
 
-function Card({ title, text }: any) {
+function FeatureCard({ title, text }: { title: string; text: string }) {
   return (
-    <div style={miniCard}>
-      <div style={dot} />
-      <div style={{ fontWeight: 700 }}>{title}</div>
-      <div style={{ fontSize: 13, opacity: 0.7 }}>{text}</div>
+    <div style={featureCardStyle}>
+      <div style={featureDotStyle} />
+      <div style={featureTitleStyle}>{title}</div>
+      <div style={featureTextStyle}>{text}</div>
     </div>
   );
 }
 
-/* ================= WHITE AI THEME ================= */
-
-const page: any = {
+const pageStyle: CSSProperties = {
   minHeight: "100vh",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  background: "#f7f9fc",
-  padding: 20,
   position: "relative",
   overflow: "hidden",
+  background: "linear-gradient(135deg, #0f766e 0%, #0d9488 45%, #14b8a6 100%)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "32px 20px",
 };
 
-const bg1: any = {
+const bgGlowOne: CSSProperties = {
   position: "absolute",
-  width: 320,
-  height: 320,
+  width: 420,
+  height: 420,
   borderRadius: "50%",
-  background: "rgba(99,102,241,0.15)",
-  filter: "blur(90px)",
-  top: -80,
-  left: -80,
+  background: "rgba(255,255,255,0.10)",
+  top: -120,
+  left: -100,
+  filter: "blur(30px)",
 };
 
-const bg2: any = {
+const bgGlowTwo: CSSProperties = {
   position: "absolute",
-  width: 320,
-  height: 320,
+  width: 420,
+  height: 420,
   borderRadius: "50%",
-  background: "rgba(16,185,129,0.12)",
-  filter: "blur(90px)",
-  bottom: -80,
-  right: -80,
+  background: "rgba(255,255,255,0.08)",
+  bottom: -140,
+  right: -120,
+  filter: "blur(30px)",
 };
 
-const container: any = {
+const shellStyle: CSSProperties = {
   position: "relative",
+  zIndex: 1,
   width: "100%",
-  maxWidth: 1100,
+  maxWidth: 1280,
   display: "grid",
-  gridTemplateColumns: "1.2fr 0.8fr",
-  gap: 40,
+  gridTemplateColumns: "1.1fr 0.9fr",
+  gap: 28,
+  alignItems: "stretch",
 };
 
-const left: any = {
+const leftStyle: CSSProperties = {
+  padding: "22px 8px",
+  color: "#ffffff",
   display: "flex",
   flexDirection: "column",
   justifyContent: "center",
 };
 
-const brand: any = {
-  fontSize: 20,
-  fontWeight: 800,
+const brandRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 16,
 };
 
-const title: any = {
-  fontSize: 54,
-  fontWeight: 900,
-  marginTop: 18,
-  color: "#0f172a",
-};
-
-const subtitle: any = {
-  fontSize: 16,
-  marginTop: 10,
-  color: "#64748b",
-  maxWidth: 500,
-};
-
-const grid: any = {
+const brandIconStyle: CSSProperties = {
+  width: 72,
+  height: 72,
+  borderRadius: 22,
   display: "grid",
-  gridTemplateColumns: "repeat(2,1fr)",
-  gap: 12,
-  marginTop: 28,
+  placeItems: "center",
+  background: "rgba(255,255,255,0.16)",
+  color: "#ffffff",
+  fontSize: 34,
+  fontWeight: 900,
+  boxShadow: "0 16px 40px rgba(0,0,0,0.12)",
+  animation: "floatGlow 4s ease-in-out infinite",
 };
 
-const right: any = {
+const brandTitleStyle: CSSProperties = {
+  fontSize: 38,
+  fontWeight: 900,
+  lineHeight: 1.05,
+};
+
+const brandSubStyle: CSSProperties = {
+  marginTop: 6,
+  fontSize: 18,
+  color: "rgba(236,254,255,0.82)",
+  fontWeight: 500,
+};
+
+const heroBadgeStyle: CSSProperties = {
+  marginTop: 28,
+  width: "fit-content",
+  borderRadius: 999,
+  padding: "9px 16px",
+  background: "rgba(255,255,255,0.12)",
+  border: "1px solid rgba(255,255,255,0.18)",
+  color: "#ecfeff",
+  fontSize: 12,
+  fontWeight: 800,
+  letterSpacing: 0.4,
+};
+
+const heroTitleStyle: CSSProperties = {
+  margin: "22px 0 0 0",
+  fontSize: 56,
+  lineHeight: 1.02,
+  fontWeight: 900,
+  maxWidth: 700,
+};
+
+const heroTextStyle: CSSProperties = {
+  margin: "18px 0 0 0",
+  fontSize: 18,
+  lineHeight: 1.75,
+  color: "rgba(236,254,255,0.9)",
+  maxWidth: 700,
+};
+
+const featureGridStyle: CSSProperties = {
+  marginTop: 28,
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 16,
+  maxWidth: 760,
+};
+
+const featureCardStyle: CSSProperties = {
+  borderRadius: 24,
+  padding: 18,
+  background: "rgba(255,255,255,0.10)",
+  border: "1px solid rgba(255,255,255,0.16)",
+  backdropFilter: "blur(10px)",
+  boxShadow: "0 16px 40px rgba(0,0,0,0.08)",
+};
+
+const featureDotStyle: CSSProperties = {
+  width: 12,
+  height: 12,
+  borderRadius: "50%",
+  background: "#ccfbf1",
+};
+
+const featureTitleStyle: CSSProperties = {
+  marginTop: 14,
+  fontSize: 18,
+  fontWeight: 800,
+  color: "#ffffff",
+};
+
+const featureTextStyle: CSSProperties = {
+  marginTop: 8,
+  fontSize: 14,
+  lineHeight: 1.6,
+  color: "rgba(236,254,255,0.82)",
+};
+
+const rightWrapStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
 };
 
-const card: any = {
+const cardStyle: CSSProperties = {
   width: "100%",
-  padding: 32,
-  borderRadius: 20,
-  background: "white",
-  border: "1px solid #eef2f7",
-  boxShadow: "0 20px 60px rgba(0,0,0,0.06)",
+  maxWidth: 500,
+  borderRadius: 34,
+  padding: 30,
+  background: "rgba(8, 25, 43, 0.78)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  boxShadow: "0 30px 100px rgba(2,8,23,0.28)",
+  backdropFilter: "blur(16px)",
 };
 
-const loginTitle: any = {
-  fontSize: 24,
-  fontWeight: 800,
-  marginBottom: 18,
+const cardTopStyle: CSSProperties = {
+  textAlign: "center",
 };
 
-const form: any = {
+const loginIconWrapStyle: CSSProperties = {
   display: "flex",
-  flexDirection: "column",
-  gap: 12,
+  justifyContent: "center",
 };
 
-const input: any = {
-  padding: 12,
-  borderRadius: 12,
-  border: "1px solid #e5e7eb",
-  outline: "none",
-  fontSize: 14,
+const loginIconStyle: CSSProperties = {
+  width: 74,
+  height: 74,
+  borderRadius: 24,
+  display: "grid",
+  placeItems: "center",
+  background: "rgba(255,255,255,0.12)",
+  color: "#ffffff",
+  fontSize: 32,
+  fontWeight: 900,
+  boxShadow: "0 16px 40px rgba(0,0,0,0.14)",
 };
 
-const btn: any = {
-  marginTop: 10,
-  padding: 12,
-  borderRadius: 12,
-  border: "none",
-  background: "linear-gradient(90deg,#3b82f6,#8b5cf6)",
-  color: "white",
-  fontWeight: 700,
-  cursor: "pointer",
+const cardTitleStyle: CSSProperties = {
+  margin: "20px 0 0 0",
+  fontSize: 34,
+  lineHeight: 1.1,
+  fontWeight: 900,
+  color: "#ffffff",
 };
 
-const errorBox: any = {
-  padding: 10,
-  borderRadius: 10,
-  background: "#fee2e2",
-  color: "#991b1b",
-  fontSize: 13,
+const cardTextStyle: CSSProperties = {
+  margin: "10px 0 0 0",
+  fontSize: 15,
+  lineHeight: 1.6,
+  color: "rgba(226,232,240,0.82)",
 };
 
-const miniCard: any = {
-  padding: 14,
-  borderRadius: 14,
-  background: "white",
-  border: "1px solid #eef2f7",
+const formStyle: CSSProperties = {
+  marginTop: 28,
+  display: "grid",
+  gap: 18,
 };
 
-const dot: any = {
-  width: 10,
-  height: 10,
-  borderRadius: "50%",
-  background: "#6366f1",
+const labelStyle: CSSProperties = {
+  display: "block",
   marginBottom: 8,
+  fontSize: 13,
+  fontWeight: 800,
+  color: "#dbeafe",
+};
+
+const inputStyle: CSSProperties = {
+  width: "100%",
+  borderRadius: 18,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.08)",
+  color: "#ffffff",
+  padding: "15px 16px",
+  fontSize: 15,
+  outline: "none",
+  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
+};
+
+const errorBoxStyle: CSSProperties = {
+  borderRadius: 18,
+  padding: "14px 16px",
+  background: "rgba(220, 38, 38, 0.18)",
+  border: "1px solid rgba(248, 113, 113, 0.35)",
+  color: "#fecaca",
+  fontSize: 14,
+  lineHeight: 1.5,
+};
+
+const buttonStyle: CSSProperties = {
+  marginTop: 4,
+  width: "100%",
+  border: "none",
+  borderRadius: 18,
+  padding: "16px 18px",
+  background: "linear-gradient(135deg, #ccfbf1 0%, #ecfeff 100%)",
+  color: "#0f766e",
+  fontSize: 16,
+  fontWeight: 900,
+  boxShadow: "0 18px 40px rgba(204,251,241,0.20)",
+};
+
+const buttonLoadingWrapStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 10,
+};
+
+const spinnerStyle: CSSProperties = {
+  width: 18,
+  height: 18,
+  borderRadius: "50%",
+  border: "2px solid rgba(15,118,110,0.25)",
+  borderTop: "2px solid #0f766e",
+  animation: "spin 1s linear infinite",
 };
