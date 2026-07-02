@@ -57,6 +57,11 @@ type ToastType = "success" | "error" | "info";
 const DEFAULT_SMS_MESSAGE =
   "Quick question - does your business need extra capital right now? We can approve $10K-$500K within hours. Reply STOP to opt out, Reply YES to get Funds.";
 
+const DEFAULT_FOLLOW_UP_MESSAGE =
+  "Hey, following up to know if you're still interested.";
+
+const FOLLOW_UP_HOUR_OPTIONS = [4, 5, 6, 7, 24];
+
 function getUSPhoneValidation(raw: string) {
   const original = String(raw || "").trim();
 
@@ -240,6 +245,12 @@ export default function DashboardPage() {
   const [message, setMessage] = useState(DEFAULT_SMS_MESSAGE);
   const [campaignName, setCampaignName] = useState("");
   const [singlePhoneNumber, setSinglePhoneNumber] = useState("");
+
+  const [followUpEnabled, setFollowUpEnabled] = useState(false);
+  const [followUpMessage, setFollowUpMessage] = useState(
+    DEFAULT_FOLLOW_UP_MESSAGE
+  );
+  const [followUpHours, setFollowUpHours] = useState<number>(4);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [leadSearch, setLeadSearch] = useState("");
@@ -557,6 +568,62 @@ export default function DashboardPage() {
     }
   };
 
+  const scheduleFollowUp = async (params: {
+    idToken: string;
+    campaignName: string;
+    fileId: string;
+    fileName: string;
+    recipients: { name: string; phone: string }[];
+  }) => {
+    if (!followUpEnabled) return;
+
+    if (!followUpMessage.trim()) {
+      showToast("Follow-up is enabled but the follow-up message is empty, so it was not scheduled.", "error");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/schedule-follow-up", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${params.idToken}`,
+        },
+        body: JSON.stringify({
+          campaignName: params.campaignName,
+          fileId: params.fileId,
+          fileName: params.fileName,
+          message: followUpMessage.trim(),
+          delayHours: followUpHours,
+          recipients: params.recipients,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.ok) {
+        showToast(
+          data.error || "Failed to schedule the follow-up message.",
+          "error"
+        );
+        return;
+      }
+
+      showToast(
+        `Follow-up scheduled for ${followUpHours}h from now (${params.recipients.length} recipient${
+          params.recipients.length === 1 ? "" : "s"
+        }).`,
+        "success"
+      );
+    } catch (error: any) {
+      console.error(error);
+      showToast(
+        error?.message || "Unexpected error while scheduling follow-up.",
+        "error"
+      );
+    }
+  };
+
   const handleSendSms = async () => {
     const user = auth.currentUser;
 
@@ -588,6 +655,8 @@ export default function DashboardPage() {
 
     try {
       const idToken = await user.getIdToken();
+      const resolvedCampaignName =
+        campaignName.trim() || `Campaign for ${selectedUpload.fileName}`;
 
       const res = await fetch("/api/send-sms", {
         method: "POST",
@@ -596,8 +665,7 @@ export default function DashboardPage() {
           Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({
-          campaignName:
-            campaignName.trim() || `Campaign for ${selectedUpload.fileName}`,
+          campaignName: resolvedCampaignName,
           fileId: selectedUploadId,
           fileName: selectedUpload.fileName,
           message: message.trim(),
@@ -620,7 +688,7 @@ export default function DashboardPage() {
         createdBy: user.uid,
         uploadId: selectedUploadId,
         fileName: selectedUpload.fileName,
-        name: campaignName.trim() || `Campaign for ${selectedUpload.fileName}`,
+        name: resolvedCampaignName,
         message: message.trim(),
         totalRecipients: verifiedLeads.length,
         successCount: data.success || 0,
@@ -628,12 +696,25 @@ export default function DashboardPage() {
         status: data.failed > 0 ? "completed_with_failures" : "completed",
         createdByName: userName,
         createdAt: serverTimestamp(),
+        followUpEnabled,
+        followUpHours: followUpEnabled ? followUpHours : null,
       });
 
       showToast(
         `SMS finished. Sent: ${data.success}, Failed: ${data.failed}, Total Verified Sent Attempted: ${data.total}.`,
         data.failed > 0 ? "info" : "success"
       );
+
+      await scheduleFollowUp({
+        idToken,
+        campaignName: resolvedCampaignName,
+        fileId: selectedUploadId,
+        fileName: selectedUpload.fileName,
+        recipients: verifiedLeads.map((lead) => ({
+          name: lead.name || "",
+          phone: lead.phone || "",
+        })),
+      });
 
       setCampaignName("");
       setMessage(DEFAULT_SMS_MESSAGE);
@@ -669,6 +750,7 @@ export default function DashboardPage() {
 
     try {
       const idToken = await user.getIdToken();
+      const directCampaignName = `Direct Send ${new Date().toLocaleString()}`;
 
       const res = await fetch("/api/send-sms", {
         method: "POST",
@@ -677,7 +759,7 @@ export default function DashboardPage() {
           Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({
-          campaignName: `Direct Send ${new Date().toLocaleString()}`,
+          campaignName: directCampaignName,
           fileId: "",
           fileName: "Single USA Number",
           message: message.trim(),
@@ -702,7 +784,7 @@ export default function DashboardPage() {
         createdBy: user.uid,
         uploadId: "",
         fileName: "Single USA Number",
-        name: `Direct Send ${new Date().toLocaleString()}`,
+        name: directCampaignName,
         message: message.trim(),
         totalRecipients: 1,
         successCount: data.success || 0,
@@ -712,12 +794,22 @@ export default function DashboardPage() {
         createdAt: serverTimestamp(),
         isDirectSend: true,
         directPhone: validation.normalized,
+        followUpEnabled,
+        followUpHours: followUpEnabled ? followUpHours : null,
       });
 
       showToast(
         `Message sent. Sent: ${data.success}, Failed: ${data.failed}.`,
         data.failed > 0 ? "info" : "success"
       );
+
+      await scheduleFollowUp({
+        idToken,
+        campaignName: directCampaignName,
+        fileId: "",
+        fileName: "Single USA Number",
+        recipients: [{ name: "", phone: validation.normalized }],
+      });
 
       setSinglePhoneNumber("");
     } catch (error: any) {
@@ -1272,6 +1364,68 @@ export default function DashboardPage() {
                     <strong>{message.length}</strong>
                   </div>
 
+                  <div style={followUpCardStyle}>
+                    <label style={followUpCheckboxRowStyle}>
+                      <input
+                        type="checkbox"
+                        checked={followUpEnabled}
+                        onChange={(e) => setFollowUpEnabled(e.target.checked)}
+                        style={followUpCheckboxStyle}
+                      />
+                      <div>
+                        <div style={followUpCheckboxTitleStyle}>
+                          Send an automated follow-up message
+                        </div>
+                        <div style={followUpCheckboxSubStyle}>
+                          Automatically re-message recipients if they haven't
+                          replied.
+                        </div>
+                      </div>
+                    </label>
+
+                    {followUpEnabled ? (
+                      <div style={followUpBodyStyle}>
+                        <div>
+                          <label style={fieldLabelStyle}>
+                            Follow-up Message
+                          </label>
+                          <textarea
+                            value={followUpMessage}
+                            onChange={(e) =>
+                              setFollowUpMessage(e.target.value)
+                            }
+                            rows={4}
+                            style={fieldTextareaStyle}
+                          />
+                        </div>
+
+                        <div style={{ marginTop: 16 }}>
+                          <label style={fieldLabelStyle}>Send After</label>
+                          <div style={followUpHourOptionsStyle}>
+                            {FOLLOW_UP_HOUR_OPTIONS.map((hours) => {
+                              const active = followUpHours === hours;
+                              return (
+                                <button
+                                  key={hours}
+                                  type="button"
+                                  onClick={() => setFollowUpHours(hours)}
+                                  style={{
+                                    ...followUpHourChipStyle,
+                                    ...(active
+                                      ? followUpHourChipActiveStyle
+                                      : null),
+                                  }}
+                                >
+                                  {hours} hour{hours === 1 ? "" : "s"}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+
                   <div style={sendActionWrapStyle}>
                     <button
                       onClick={handleSendSms}
@@ -1400,6 +1554,10 @@ export default function DashboardPage() {
                       number="4"
                       text="You can also send directly to one USA number from the quick send box."
                     />
+                    <GuideItem
+                      number="5"
+                      text="Enable the follow-up checkbox to automatically re-message recipients after a set number of hours."
+                    />
                   </div>
                 </section>
               </div>
@@ -1446,6 +1604,17 @@ function GlobalStyles() {
         100% {
           opacity: 1;
           transform: translateY(0) scale(1);
+        }
+      }
+
+      @keyframes followUpDropIn {
+        0% {
+          opacity: 0;
+          transform: translateY(-8px);
+        }
+        100% {
+          opacity: 1;
+          transform: translateY(0);
         }
       }
 
@@ -2098,6 +2267,74 @@ const messageHintStyle: CSSProperties = {
   alignItems: "center",
   color: "#64748b",
   fontSize: 13,
+};
+
+const followUpCardStyle: CSSProperties = {
+  marginTop: 18,
+  borderRadius: 20,
+  border: "1px solid #dbe3ed",
+  background: "linear-gradient(180deg, #f8fafc 0%, #ffffff 100%)",
+  padding: 18,
+};
+
+const followUpCheckboxRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "flex-start",
+  gap: 12,
+  cursor: "pointer",
+};
+
+const followUpCheckboxStyle: CSSProperties = {
+  width: 20,
+  height: 20,
+  marginTop: 2,
+  accentColor: "#0d9488",
+  cursor: "pointer",
+  flexShrink: 0,
+};
+
+const followUpCheckboxTitleStyle: CSSProperties = {
+  color: "#0f172a",
+  fontSize: 15,
+  fontWeight: 800,
+};
+
+const followUpCheckboxSubStyle: CSSProperties = {
+  marginTop: 4,
+  color: "#64748b",
+  fontSize: 13,
+  lineHeight: 1.5,
+};
+
+const followUpBodyStyle: CSSProperties = {
+  marginTop: 16,
+  paddingTop: 16,
+  borderTop: "1px dashed #dbe3ed",
+  animation: "followUpDropIn 0.18s ease-out",
+};
+
+const followUpHourOptionsStyle: CSSProperties = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+};
+
+const followUpHourChipStyle: CSSProperties = {
+  border: "1px solid #dbe3ed",
+  borderRadius: 999,
+  padding: "10px 16px",
+  background: "#ffffff",
+  color: "#334155",
+  fontWeight: 800,
+  fontSize: 13,
+  cursor: "pointer",
+};
+
+const followUpHourChipActiveStyle: CSSProperties = {
+  border: "1px solid #0d9488",
+  background: "#0d9488",
+  color: "#ffffff",
+  boxShadow: "0 10px 20px rgba(13,148,136,0.25)",
 };
 
 const sendActionWrapStyle: CSSProperties = {
