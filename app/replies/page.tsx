@@ -30,6 +30,7 @@ type SmsRow = {
   sortSeconds: number;
   hasReply: boolean;
   lastDirection: string;
+  pinned: boolean;
 };
 
 type AppUser = {
@@ -44,7 +45,7 @@ type AppUser = {
   messagingServiceSid?: string;
 };
 
-type FilterMode = "all" | "replied" | "awaiting" | "never_replied";
+type FilterMode = "all" | "replied" | "awaiting" | "never_replied" | "pinned";
 
 function truncateText(value: string, max = 110) {
   if (!value) return "-";
@@ -103,6 +104,7 @@ function makeRow(id: string, data: Record<string, any>): SmsRow {
     sortSeconds: getSortSeconds(displayDate),
     hasReply: data.hasReply === true,
     lastDirection,
+    pinned: data.pinned === true,
   };
 }
 
@@ -119,6 +121,7 @@ export default function RepliesPage() {
   const [deletingId, setDeletingId] = useState("");
   const [blockingId, setBlockingId] = useState("");
   const [openMenuId, setOpenMenuId] = useState("");
+  const [pinningId, setPinningId] = useState("");
 
   const [selectedPhones, setSelectedPhones] = useState<string[]>([]);
   const [followUpMessage, setFollowUpMessage] = useState("");
@@ -402,6 +405,35 @@ export default function RepliesPage() {
     }
   }
 
+  async function handleTogglePin(item: SmsRow) {
+    try {
+      setPinningId(item.id);
+      const nextPinned = !item.pinned;
+
+      await setDoc(
+        doc(db, "conversations", item.id),
+        {
+          pinned: nextPinned,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      setItems((prev) =>
+        prev.map((row) =>
+          row.id === item.id ? { ...row, pinned: nextPinned } : row
+        )
+      );
+
+      setOpenMenuId("");
+    } catch (error) {
+      console.error("Failed to toggle pin", error);
+      alert("Failed to update pin status.");
+    } finally {
+      setPinningId("");
+    }
+  }
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) {
@@ -481,23 +513,29 @@ export default function RepliesPage() {
   }, [items, search]);
 
   const filteredItems = useMemo(() => {
+    if (filterMode === "pinned") {
+      return searchedItems.filter((item) => item.pinned);
+    }
+
+    const nonPinned = searchedItems.filter((item) => !item.pinned);
+
     if (filterMode === "replied") {
-      return searchedItems.filter(
+      return nonPinned.filter(
         (item) => item.hasReply && item.lastDirection === "inbound"
       );
     }
 
     if (filterMode === "awaiting") {
-      return searchedItems.filter(
+      return nonPinned.filter(
         (item) => item.hasReply && item.lastDirection === "outbound"
       );
     }
 
     if (filterMode === "never_replied") {
-      return searchedItems.filter((item) => !item.hasReply);
+      return nonPinned.filter((item) => !item.hasReply);
     }
 
-    return searchedItems;
+    return nonPinned;
   }, [searchedItems, filterMode]);
 
   const visibleSelectablePhones = useMemo(() => {
@@ -514,14 +552,18 @@ export default function RepliesPage() {
   ).length;
 
   const repliedCount = items.filter(
-    (item) => item.hasReply && item.lastDirection === "inbound"
+    (item) => !item.pinned && item.hasReply && item.lastDirection === "inbound"
   ).length;
 
   const awaitingCount = items.filter(
-    (item) => item.hasReply && item.lastDirection === "outbound"
+    (item) => !item.pinned && item.hasReply && item.lastDirection === "outbound"
   ).length;
 
-  const neverRepliedCount = items.filter((item) => !item.hasReply).length;
+  const neverRepliedCount = items.filter(
+    (item) => !item.pinned && !item.hasReply
+  ).length;
+
+  const pinnedCount = items.filter((item) => item.pinned).length;
 
   if (checking) {
     return (
@@ -649,6 +691,16 @@ export default function RepliesPage() {
                 >
                   Never Replied
                 </button>
+
+                <button
+                  onClick={() => setFilterMode("pinned")}
+                  style={{
+                    ...filterTabStyle,
+                    ...(filterMode === "pinned" ? activeFilterTabStyle : {}),
+                  }}
+                >
+                  📌 Pinned Messages
+                </button>
               </div>
 
               <div style={statsGridStyle}>
@@ -665,6 +717,7 @@ export default function RepliesPage() {
                   label="Never Replied"
                   value={String(neverRepliedCount)}
                 />
+                <StatCard label="Pinned" value={String(pinnedCount)} />
               </div>
             </div>
           </div>
@@ -672,10 +725,15 @@ export default function RepliesPage() {
           <section style={panelStyle}>
             <div style={panelHeaderStyle}>
               <div>
-                <h2 style={panelTitleStyle}>Outbound SMS Activity</h2>
+                <h2 style={panelTitleStyle}>
+                  {filterMode === "pinned"
+                    ? "Pinned Messages"
+                    : "Outbound SMS Activity"}
+                </h2>
                 <p style={panelDescStyle}>
-                  Only new conversations with `ownerUid` matching the logged-in
-                  user are shown for non-admin accounts.
+                  {filterMode === "pinned"
+                    ? "Conversations you've pinned for quick access. Unpin to send them back to their normal tab."
+                    : "Only new conversations with `ownerUid` matching the logged-in user are shown for non-admin accounts."}
                 </p>
               </div>
 
@@ -985,10 +1043,15 @@ export default function RepliesPage() {
             ) : filteredItems.length === 0 ? (
               <div style={emptyStateStyle}>
                 <div style={emptyDotStyle} />
-                <div style={emptyTitleStyle}>No SMS found for this filter.</div>
+                <div style={emptyTitleStyle}>
+                  {filterMode === "pinned"
+                    ? "No pinned messages yet."
+                    : "No SMS found for this filter."}
+                </div>
                 <div style={emptyTextStyle}>
-                  New messages and replies will appear here once they are saved
-                  with the correct ownerUid.
+                  {filterMode === "pinned"
+                    ? "Pin a conversation from the ⋯ menu to see it here."
+                    : "New messages and replies will appear here once they are saved with the correct ownerUid."}
                 </div>
               </div>
             ) : (
@@ -1016,7 +1079,10 @@ export default function RepliesPage() {
                     >
                       <div style={conversationTopStyle}>
                         <div>
-                          <div style={phoneStyle}>{item.phone}</div>
+                          <div style={phoneStyle}>
+                            {item.pinned ? "📌 " : ""}
+                            {item.phone}
+                          </div>
                           {item.name ? (
                             <div style={nameStyle}>{item.name}</div>
                           ) : null}
@@ -1084,6 +1150,24 @@ export default function RepliesPage() {
                             style={menuItemStyle}
                           >
                             Open
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePin(item)}
+                            disabled={pinningId === item.id}
+                            style={{
+                              ...menuItemStyle,
+                              color: "#0d9488",
+                              background: "rgba(13,148,136,0.08)",
+                              opacity: pinningId === item.id ? 0.6 : 1,
+                            }}
+                          >
+                            {pinningId === item.id
+                              ? "Updating..."
+                              : item.pinned
+                                ? "Unpin"
+                                : "Pin"}
                           </button>
 
                           <button
@@ -1269,7 +1353,7 @@ const backButtonStyle: CSSProperties = {
 
 const statsGridStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
   gap: 14,
 };
 
