@@ -1,3 +1,5 @@
 env:
   - variable: CRON_SECRET
-    secret: 9828b676e3f5259e5a8390ab2412d3e7906dca70a32a30e12ec967bc2ef5eb0b
+    secret: CRON_SECRET
+    availability:
+      - RUNTIME
