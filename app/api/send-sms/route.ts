@@ -181,6 +181,9 @@ export async function POST(req: NextRequest) {
       message,
       leads,
       mediaUrls,
+      followUpEnabled,
+      followUpMessage,
+      sendAfterHours,
     }: {
       campaignName?: string;
       fileId?: string;
@@ -188,6 +191,9 @@ export async function POST(req: NextRequest) {
       message?: string;
       leads?: LeadInput[];
       mediaUrls?: string[];
+      followUpEnabled?: boolean;
+      followUpMessage?: string;
+      sendAfterHours?: number;
     } = body;
 
     if (!message?.trim() && (!Array.isArray(mediaUrls) || mediaUrls.length === 0)) {
@@ -310,11 +316,11 @@ export async function POST(req: NextRequest) {
           isFirstMessage
         );
 
-      const twilioPayload: any = {
-  to: formattedPhone,
-  messagingServiceSid: userData.messagingServiceSid,
-  statusCallback: `${appBaseUrl}/api/send-sms/twilio/status`,
-};
+        const twilioPayload: any = {
+          to: formattedPhone,
+          messagingServiceSid: userData.messagingServiceSid,
+          statusCallback: `${appBaseUrl}/api/send-sms/twilio/status`,
+        };
 
         if (finalMessage) {
           twilioPayload.body = finalMessage;
@@ -422,6 +428,27 @@ export async function POST(req: NextRequest) {
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
         });
+
+        // --- NEW: schedule a follow-up if the user enabled it ---
+        if (followUpEnabled && sendAfterHours) {
+          const dueAt = new Date(
+            Date.now() + Number(sendAfterHours) * 60 * 60 * 1000
+          );
+
+          await adminDb.collection("followUps").add({
+            ownerUid: uid,
+            conversationId: convoId,
+            phone: formattedPhone,
+            twilioNumber,
+            messagingServiceSid: userData.messagingServiceSid || "",
+            campaignName: campaignName || "",
+            followUpMessage: String(followUpMessage || "").trim(),
+            dueAt,
+            status: "pending",
+            createdAt: FieldValue.serverTimestamp(),
+          });
+        }
+        // --- END NEW ---
 
         results.push({
           name: lead.name,
