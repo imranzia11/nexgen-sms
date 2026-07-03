@@ -60,7 +60,7 @@ const DEFAULT_SMS_MESSAGE =
 const DEFAULT_FOLLOW_UP_MESSAGE =
   "Hey, following up to know if you're still interested.";
 
-const FOLLOW_UP_HOUR_OPTIONS = [4, 5, 6, 7, 24];
+const FOLLOW_UP_HOUR_OPTIONS = [4, 6, 8, 12, 24];
 
 function getUSPhoneValidation(raw: string) {
   const original = String(raw || "").trim();
