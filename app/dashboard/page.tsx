@@ -54,6 +54,14 @@ type UploadItemWithSort = UploadItem & {
 
 type ToastType = "success" | "error" | "info";
 
+type TemplateItem = {
+  id: string;
+  slot: number;
+  name: string;
+  smsMessage: string;
+  followUpMessage: string;
+};
+
 const DEFAULT_SMS_MESSAGE =
   "Quick question - does your business need extra capital right now? We can approve $10K-$500K within hours. Reply STOP to opt out, Reply YES to get Funds.";
 
@@ -252,6 +260,10 @@ export default function DashboardPage() {
   );
   const [followUpHours, setFollowUpHours] = useState<number>(4);
 
+  const [templates, setTemplates] = useState<TemplateItem[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+
   const [searchTerm, setSearchTerm] = useState("");
   const [leadSearch, setLeadSearch] = useState("");
 
@@ -309,6 +321,7 @@ export default function DashboardPage() {
         setProfileUid(user.uid);
         setChecking(false);
         await loadUploads(user.uid);
+        await loadTemplates(user.uid);
       } catch (error) {
         console.error("Failed to validate user access", error);
         await signOut(auth).catch(() => {});
@@ -425,6 +438,45 @@ export default function DashboardPage() {
     }
   };
 
+  const loadTemplates = async (uid?: string) => {
+    try {
+      setLoadingTemplates(true);
+
+      const currentUid = uid || profileUid || auth.currentUser?.uid;
+      if (!currentUid) {
+        setTemplates([]);
+        return;
+      }
+
+      const q = query(
+        collection(db, "messageTemplates"),
+        where("ownerUid", "==", currentUid)
+      );
+
+      const snap = await getDocs(q);
+
+      const items: TemplateItem[] = snap.docs
+        .map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            slot: Number(data.slot || 0),
+            name: String(data.name || `Template ${data.slot || ""}`).trim(),
+            smsMessage: String(data.smsMessage || ""),
+            followUpMessage: String(data.followUpMessage || ""),
+          };
+        })
+        .filter((t) => t.smsMessage.trim() !== "")
+        .sort((a, b) => a.slot - b.slot);
+
+      setTemplates(items);
+    } catch (error) {
+      console.error("Failed to load templates", error);
+    } finally {
+      setLoadingTemplates(false);
+    }
+  };
+
   const handleLogout = async () => {
     await signOut(auth).catch(() => {});
     router.push("/login");
@@ -440,6 +492,25 @@ export default function DashboardPage() {
 
   const handlePickFile = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleTemplateSelect = (e: ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value;
+    setSelectedTemplateId(value);
+
+    if (!value) return;
+
+    const template = templates.find((t) => t.id === value);
+    if (!template) return;
+
+    setMessage(template.smsMessage);
+
+    if (template.followUpMessage.trim()) {
+      setFollowUpMessage(template.followUpMessage);
+      setFollowUpEnabled(true);
+    }
+
+    showToast(`Loaded "${template.name}" into the message fields.`, "success");
   };
 
   const handleCsvUpload = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -718,6 +789,7 @@ export default function DashboardPage() {
 
       setCampaignName("");
       setMessage(DEFAULT_SMS_MESSAGE);
+      setSelectedTemplateId("");
     } catch (error: any) {
       console.error(error);
       showToast(error?.message || "Unexpected error while sending SMS.", "error");
@@ -982,6 +1054,18 @@ export default function DashboardPage() {
                     <div style={sidebarRepliesTitleStyle}>Replies</div>
                     <div style={sidebarRepliesTextStyle}>
                       Open incoming messages
+                    </div>
+                  </div>
+                </Link>
+              </div>
+
+              <div style={sidebarRepliesWrapStyle}>
+                <Link href="/templates" style={sidebarRepliesCardStyle}>
+                  <div style={sidebarRepliesIconStyle}>✎</div>
+                  <div>
+                    <div style={sidebarRepliesTitleStyle}>Templates</div>
+                    <div style={sidebarRepliesTextStyle}>
+                      Set up saved message templates
                     </div>
                   </div>
                 </Link>
@@ -1339,6 +1423,34 @@ export default function DashboardPage() {
                     />
                   </div>
 
+                  <div style={templatePickerWrapStyle}>
+                    <div style={{ flex: 1, minWidth: 220 }}>
+                      <label style={fieldLabelStyle}>Load a saved template</label>
+                      <select
+                        value={selectedTemplateId}
+                        onChange={handleTemplateSelect}
+                        style={templateSelectStyle}
+                        disabled={loadingTemplates}
+                      >
+                        <option value="">
+                          {loadingTemplates
+                            ? "Loading templates..."
+                            : templates.length
+                            ? "Choose a saved template"
+                            : "No templates saved yet"}
+                        </option>
+                        {templates.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <Link href="/templates" style={manageTemplatesLinkStyle}>
+                      Manage templates
+                    </Link>
+                  </div>
+
                   <div style={{ marginTop: 18 }}>
                     <label style={fieldLabelStyle}>Campaign Name</label>
                     <input
@@ -1557,6 +1669,10 @@ export default function DashboardPage() {
                     <GuideItem
                       number="5"
                       text="Enable the follow-up checkbox to automatically re-message recipients after a set number of hours."
+                    />
+                    <GuideItem
+                      number="6"
+                      text="Set up reusable templates from the Templates page and load them here in one click."
                     />
                   </div>
                 </section>
@@ -2205,6 +2321,37 @@ const composeTopGridStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "1fr",
   gap: 12,
+};
+
+const templatePickerWrapStyle: CSSProperties = {
+  marginTop: 18,
+  display: "flex",
+  alignItems: "flex-end",
+  gap: 12,
+  flexWrap: "wrap",
+};
+
+const templateSelectStyle: CSSProperties = {
+  width: "100%",
+  borderRadius: 16,
+  border: "1px solid #dbe3ed",
+  padding: "14px 16px",
+  background: "#ffffff",
+  color: "#0f172a",
+  fontSize: 15,
+  outline: "none",
+};
+
+const manageTemplatesLinkStyle: CSSProperties = {
+  borderRadius: 16,
+  border: "1px solid #dbe3ed",
+  padding: "14px 16px",
+  background: "#f0fdfa",
+  color: "#0f766e",
+  fontWeight: 800,
+  fontSize: 14,
+  textDecoration: "none",
+  whiteSpace: "nowrap",
 };
 
 const infoPanelStyle: CSSProperties = {
