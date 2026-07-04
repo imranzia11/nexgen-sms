@@ -8,6 +8,16 @@ type Recipient = {
   phone: string;
 };
 
+// Normalizes any phone input to E164 format (e.g. "+15163201666").
+// This MUST match the toE164 logic used in /api/send-sms so that
+// conversationId values line up across both code paths.
+function toE164(raw: string) {
+  const cleaned = String(raw || "").replace(/[^\d+]/g, "");
+  if (!cleaned) return "";
+  if (cleaned.startsWith("+")) return cleaned;
+  return `+${cleaned}`;
+}
+
 function phoneDocId(phone: string) {
   return String(phone || "").replace(/[^\d+]/g, "");
 }
@@ -93,10 +103,16 @@ export async function POST(req: NextRequest) {
 
     const batch = adminDb.batch();
     let scheduled = 0;
+    let invalid = 0;
 
     for (const recipient of recipients) {
-      const phone = String(recipient.phone || "").trim();
-      if (!phone) continue;
+      // FIX: normalize to E164 BEFORE building conversationId, so this
+      // matches the ID that /api/send-sms and the thread page compute.
+      const phone = toE164(recipient.phone || "");
+      if (!phone) {
+        invalid++;
+        continue;
+      }
 
       const conversationId = `${uid}_${phoneDocId(phone)}`;
       const ref = adminDb.collection("followUps").doc();
@@ -104,7 +120,7 @@ export async function POST(req: NextRequest) {
       batch.set(ref, {
         ownerUid: uid,
         conversationId,
-        phone,
+        phone, // now guaranteed E164
         twilioNumber,
         messagingServiceSid: userData.messagingServiceSid || "",
         campaignName: campaignName || "",
@@ -125,6 +141,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       scheduled,
+      invalid,
       dueAt: dueAt.toISOString(),
     });
   } catch (err: any) {
