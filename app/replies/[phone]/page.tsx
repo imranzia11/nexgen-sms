@@ -388,17 +388,18 @@ export default function ReplyThreadPage({
 
         store.set(dedupeKey, item);
       };
-const subMessagesDocs = await safeGetDocs(
-  query(
-    collection(db, "conversations", currentMeta.id, "messages"),
-    where("ownerUid", "==", currentProfile.uid),
-    orderBy("createdAt", "asc")
-  )
-);
 
-      subMessagesDocs.forEach((d) => {
-        addToStore("conv", d.id, d.data() as Record<string, any>);
-      });
+      // FIX: build every query up front, then fire them all in parallel
+      // with Promise.all instead of awaiting each one sequentially.
+      // This turns ~9 sequential round-trips into roughly 1 round-trip's
+      // worth of latency (whichever query is slowest), which is what was
+      // causing multi-second load times even for 2-message threads.
+
+      const subMessagesQuery = query(
+        collection(db, "conversations", currentMeta.id, "messages"),
+        where("ownerUid", "==", currentProfile.uid),
+        orderBy("createdAt", "asc")
+      );
 
       const rootMessageQueries: Query<DocumentData>[] = [
         query(collection(db, "messages"), where("conversationId", "==", currentMeta.id)),
@@ -419,13 +420,6 @@ const subMessagesDocs = await safeGetDocs(
         ),
       ];
 
-      for (const q of rootMessageQueries) {
-        const docs = await safeGetDocs(q);
-        docs.forEach((d) => {
-          addToStore("msg", d.id, d.data() as Record<string, any>);
-        });
-      }
-
       const rootReplyQueries: Query<DocumentData>[] = [
         query(collection(db, "replies"), where("conversationId", "==", currentMeta.id)),
         query(
@@ -445,12 +439,30 @@ const subMessagesDocs = await safeGetDocs(
         ),
       ];
 
-      for (const q of rootReplyQueries) {
-        const docs = await safeGetDocs(q);
+      const [subMessagesDocs, ...restResults] = await Promise.all([
+        safeGetDocs(subMessagesQuery),
+        ...rootMessageQueries.map((q) => safeGetDocs(q)),
+        ...rootReplyQueries.map((q) => safeGetDocs(q)),
+      ]);
+
+      const messageResults = restResults.slice(0, rootMessageQueries.length);
+      const replyResults = restResults.slice(rootMessageQueries.length);
+
+      subMessagesDocs.forEach((d) => {
+        addToStore("conv", d.id, d.data() as Record<string, any>);
+      });
+
+      messageResults.forEach((docs) => {
+        docs.forEach((d) => {
+          addToStore("msg", d.id, d.data() as Record<string, any>);
+        });
+      });
+
+      replyResults.forEach((docs) => {
         docs.forEach((d) => {
           addToStore("reply", d.id, d.data() as Record<string, any>);
         });
-      }
+      });
 
       let merged = Array.from(store.values()).sort(
         (a, b) => a.createdAtMs - b.createdAtMs
