@@ -388,13 +388,13 @@ export default function ReplyThreadPage({
 
         store.set(dedupeKey, item);
       };
-
-      const subMessagesDocs = await safeGetDocs(
-        query(
-          collection(db, "conversations", currentMeta.id, "messages"),
-          orderBy("createdAt", "asc")
-        )
-      );
+const subMessagesDocs = await safeGetDocs(
+  query(
+    collection(db, "conversations", currentMeta.id, "messages"),
+    where("ownerUid", "==", currentProfile.uid),
+    orderBy("createdAt", "asc")
+  )
+);
 
       subMessagesDocs.forEach((d) => {
         addToStore("conv", d.id, d.data() as Record<string, any>);
