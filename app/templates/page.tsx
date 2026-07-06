@@ -27,13 +27,18 @@ type SlotState = {
 };
 
 const TOTAL_SLOTS = 6;
+const COMPLIANCE_FOOTER = "Reply STOP to opt out, HELP for help.";
+
+function containsComplianceLine(text: string): boolean {
+  return text.toLowerCase().includes("reply stop to opt out");
+}
 
 function makeEmptySlots(): SlotState[] {
   return Array.from({ length: TOTAL_SLOTS }, (_, i) => ({
     slot: i + 1,
     name: `Template ${i + 1}`,
-    smsMessage: "",
-    followUpMessage: "",
+    smsMessage: COMPLIANCE_FOOTER,
+    followUpMessage: COMPLIANCE_FOOTER,
     saving: false,
   }));
 }
@@ -142,8 +147,8 @@ export default function TemplatesPage() {
           return {
             ...slot,
             name: String(data.name || slot.name),
-            smsMessage: String(data.smsMessage || ""),
-            followUpMessage: String(data.followUpMessage || ""),
+            smsMessage: String(data.smsMessage || COMPLIANCE_FOOTER),
+            followUpMessage: String(data.followUpMessage || COMPLIANCE_FOOTER),
           };
         })
       );
@@ -171,9 +176,30 @@ export default function TemplatesPage() {
     const slot = slots.find((s) => s.slot === slotNum);
     if (!slot) return;
 
+    const slotLabel = slot.name || `Template ${slotNum}`;
+
     if (!slot.smsMessage.trim()) {
       showToast(
-        `Add an SMS message to "${slot.name || `Template ${slotNum}`}" before saving.`,
+        `Add an SMS message to "${slotLabel}" before saving.`,
+        "error"
+      );
+      return;
+    }
+
+    if (!containsComplianceLine(slot.smsMessage)) {
+      showToast(
+        `Don't remove "${COMPLIANCE_FOOTER}" from the SMS message in "${slotLabel}".`,
+        "error"
+      );
+      return;
+    }
+
+    if (
+      slot.followUpMessage.trim() &&
+      !containsComplianceLine(slot.followUpMessage)
+    ) {
+      showToast(
+        `Don't remove "${COMPLIANCE_FOOTER}" from the follow-up message in "${slotLabel}".`,
         "error"
       );
       return;
@@ -196,7 +222,7 @@ export default function TemplatesPage() {
         { merge: true }
       );
 
-      showToast(`"${slot.name || `Template ${slotNum}`}" saved.`, "success");
+      showToast(`"${slotLabel}" saved.`, "success");
     } catch (error: any) {
       console.error(error);
       showToast(error?.message || "Failed to save template.", "error");
@@ -207,14 +233,14 @@ export default function TemplatesPage() {
 
   const handleClearSlot = (slotNum: number) => {
     const ok = window.confirm(
-      "Clear this template? Its saved text will be replaced with blank fields until you save again."
+      "Clear this template? Its saved text will be replaced with blank fields (except the required opt-out line) until you save again."
     );
     if (!ok) return;
 
     updateSlot(slotNum, {
       name: `Template ${slotNum}`,
-      smsMessage: "",
-      followUpMessage: "",
+      smsMessage: COMPLIANCE_FOOTER,
+      followUpMessage: COMPLIANCE_FOOTER,
     });
   };
 
@@ -350,6 +376,13 @@ export default function TemplatesPage() {
               </div>
             </div>
 
+            <div style={complianceBannerStyle}>
+              <strong>⚠️ Do not delete "{COMPLIANCE_FOOTER}"</strong> from any
+              SMS or follow-up message. It's pre-filled in every template and
+              is required for SMS compliance — saving is blocked if it's
+              removed.
+            </div>
+
             <div style={slotsGridStyle}>
               {slots.map((slot) => (
                 <section key={slot.slot} style={slotCardStyle}>
@@ -379,6 +412,12 @@ export default function TemplatesPage() {
                     <span>Characters:</span>
                     <strong>{slot.smsMessage.length}</strong>
                   </div>
+                  {!containsComplianceLine(slot.smsMessage) ? (
+                    <div style={complianceWarningStyle}>
+                      Missing required opt-out line — saving is disabled
+                      until it's added back.
+                    </div>
+                  ) : null}
 
                   <label style={{ ...fieldLabelStyle, marginTop: 14 }}>
                     Follow-up message
@@ -394,6 +433,13 @@ export default function TemplatesPage() {
                     placeholder="Hey, following up to know if you're still interested."
                     style={fieldTextareaStyle}
                   />
+                  {slot.followUpMessage.trim() &&
+                  !containsComplianceLine(slot.followUpMessage) ? (
+                    <div style={complianceWarningStyle}>
+                      Missing required opt-out line — saving is disabled
+                      until it's added back.
+                    </div>
+                  ) : null}
 
                   <div style={slotActionsStyle}>
                     <button
@@ -615,6 +661,23 @@ const heroTextStyle: CSSProperties = {
   color: "rgba(236,254,255,0.86)",
   fontSize: 15,
   lineHeight: 1.6,
+};
+
+const complianceBannerStyle: CSSProperties = {
+  borderRadius: 18,
+  padding: "14px 18px",
+  background: "#fffbeb",
+  border: "1px solid #fbbf24",
+  color: "#92400e",
+  fontSize: 14,
+  lineHeight: 1.5,
+};
+
+const complianceWarningStyle: CSSProperties = {
+  marginTop: 6,
+  color: "#b91c1c",
+  fontSize: 12,
+  fontWeight: 700,
 };
 
 const slotsGridStyle: CSSProperties = {
