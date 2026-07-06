@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
@@ -46,6 +46,15 @@ type AppUser = {
 };
 
 type FilterMode = "all" | "replied" | "awaiting" | "never_replied" | "pinned";
+
+// Module-level cache: survives across client-side navigations within the
+// same session (not across full page reloads). Lets us paint the list
+// instantly on repeat visits while a fresh fetch quietly runs underneath
+// (stale-while-revalidate), instead of showing a loading state every time.
+const repliesCache = new Map<
+  string,
+  { items: SmsRow[]; blocked: string[]; ts: number }
+>();
 
 function truncateText(value: string, max = 110) {
   if (!value) return "-";
@@ -127,6 +136,8 @@ export default function RepliesPage() {
   const [followUpMessage, setFollowUpMessage] = useState("");
   const [sendingBulk, setSendingBulk] = useState(false);
 
+  const profileRef = useRef<AppUser | null>(null);
+
   async function runQuery(q: Query<DocumentData>) {
     const snap = await getDocs(q);
     return snap.docs.map((d) => ({
@@ -135,82 +146,97 @@ export default function RepliesPage() {
     }));
   }
 
-  async function loadItems(profileArg?: AppUser) {
-    try {
-      setLoading(true);
-
-      const currentProfile = profileArg || profile;
-      if (!currentProfile) {
-        setItems([]);
-        setBlockedPhones([]);
-        return;
-      }
-
-      let blocked: string[] = [];
-
-      if (isAdmin(currentProfile.role)) {
-        const blacklistSnap = await getDocs(
-          query(collection(db, "blacklisted_numbers"))
-        );
-        blocked = blacklistSnap.docs
-          .map((d) => {
-            const data = d.data();
-            return String(data.status || "").toLowerCase() === "blocked"
-              ? String(data.phone || "").trim()
-              : "";
-          })
-          .filter(Boolean);
-      } else {
-        const blacklistSnap = await getDocs(
+  async function fetchBlacklist(currentProfile: AppUser) {
+    const blacklistSnap = isAdmin(currentProfile.role)
+      ? await getDocs(query(collection(db, "blacklisted_numbers")))
+      : await getDocs(
           query(
             collection(db, "blacklisted_numbers"),
             where("ownerUid", "==", currentProfile.uid)
           )
         );
 
-        blocked = blacklistSnap.docs
-          .map((d) => {
-            const data = d.data();
-            return String(data.status || "").toLowerCase() === "blocked"
-              ? String(data.phone || "").trim()
-              : "";
-          })
-          .filter(Boolean);
-      }
+    return blacklistSnap.docs
+      .map((d) => {
+        const data = d.data();
+        return String(data.status || "").toLowerCase() === "blocked"
+          ? String(data.phone || "").trim()
+          : "";
+      })
+      .filter(Boolean);
+  }
 
-      const blockedSet = new Set(blocked.map((phone) => phoneKey(phone)));
-      setBlockedPhones(blocked);
-
-      let docs: Array<{ id: string; data: Record<string, any> }> = [];
-
-      if (isAdmin(currentProfile.role)) {
-        docs = await runQuery(
+  async function fetchConversations(currentProfile: AppUser) {
+    return isAdmin(currentProfile.role)
+      ? runQuery(
           query(collection(db, "conversations"), orderBy("lastMessageAt", "desc"))
-        );
-      } else {
-        docs = await runQuery(
+        )
+      : runQuery(
           query(
             collection(db, "conversations"),
             where("ownerUid", "==", currentProfile.uid)
           )
         );
-      }
+  }
 
-      const rows = docs
-        .map((row) => makeRow(row.id, row.data))
-        .filter((item) => {
-          const p = phoneKey(item.phone);
-          if (!p) return false;
-          if (blockedSet.has(p)) return false;
-          return true;
-        })
-        .sort((a, b) => b.sortSeconds - a.sortSeconds);
+  function buildRows(
+    docs: Array<{ id: string; data: Record<string, any> }>,
+    blocked: string[]
+  ) {
+    const blockedSet = new Set(blocked.map((phone) => phoneKey(phone)));
 
-      setItems(rows);
-    } catch (error) {
-      console.error("Failed to load sms activity", error);
+    return docs
+      .map((row) => makeRow(row.id, row.data))
+      .filter((item) => {
+        const p = phoneKey(item.phone);
+        if (!p) return false;
+        if (blockedSet.has(p)) return false;
+        return true;
+      })
+      .sort((a, b) => b.sortSeconds - a.sortSeconds);
+  }
+
+  async function loadItems(profileArg?: AppUser, opts?: { background?: boolean }) {
+    const currentProfile = profileArg || profileRef.current;
+    if (!currentProfile) {
       setItems([]);
       setBlockedPhones([]);
+      setLoading(false);
+      return;
+    }
+
+    const cacheKey = currentProfile.uid;
+    const cached = repliesCache.get(cacheKey);
+    const isBackground = Boolean(opts?.background);
+
+    // Paint instantly from cache, then refresh underneath — no spinner,
+    // no skeleton, no flicker for anything already seen this session.
+    if (cached && !isBackground) {
+      setItems(cached.items);
+      setBlockedPhones(cached.blocked);
+      setLoading(false);
+    } else if (!isBackground) {
+      setLoading(true);
+    }
+
+    try {
+      const [blocked, docs] = await Promise.all([
+        fetchBlacklist(currentProfile),
+        fetchConversations(currentProfile),
+      ]);
+
+      const rows = buildRows(docs, blocked);
+
+      repliesCache.set(cacheKey, { items: rows, blocked, ts: Date.now() });
+
+      setItems(rows);
+      setBlockedPhones(blocked);
+    } catch (error) {
+      console.error("Failed to load sms activity", error);
+      if (!cached) {
+        setItems([]);
+        setBlockedPhones([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -308,7 +334,7 @@ export default function RepliesPage() {
       alert(`Follow-up sent to ${successCount} customer(s).`);
       setSelectedPhones([]);
       setFollowUpMessage("");
-      await loadItems();
+      await loadItems(undefined, { background: true });
     } catch (error: any) {
       console.error("Failed to send follow-up", error);
       alert(error?.message || "Failed to send follow-up messages.");
@@ -327,7 +353,19 @@ export default function RepliesPage() {
       const deletedItem = items.find((item) => item.id === itemId);
 
       await deleteDoc(doc(db, "conversations", itemId));
-      setItems((prev) => prev.filter((item) => item.id !== itemId));
+
+      setItems((prev) => {
+        const next = prev.filter((item) => item.id !== itemId);
+        if (profileRef.current) {
+          const cached = repliesCache.get(profileRef.current.uid);
+          repliesCache.set(profileRef.current.uid, {
+            items: next,
+            blocked: cached?.blocked || blockedPhones,
+            ts: Date.now(),
+          });
+        }
+        return next;
+      });
 
       if (deletedItem) {
         setSelectedPhones((prev) =>
@@ -392,7 +430,18 @@ export default function RepliesPage() {
       );
 
       setBlockedPhones((prev) => [...prev, item.phone]);
-      setItems((prev) => prev.filter((row) => row.id !== item.id));
+      setItems((prev) => {
+        const next = prev.filter((row) => row.id !== item.id);
+        if (profileRef.current) {
+          const cached = repliesCache.get(profileRef.current.uid);
+          repliesCache.set(profileRef.current.uid, {
+            items: next,
+            blocked: [...(cached?.blocked || blockedPhones), item.phone],
+            ts: Date.now(),
+          });
+        }
+        return next;
+      });
       setSelectedPhones((prev) =>
         prev.filter((value) => value !== phoneKey(item.phone))
       );
@@ -419,11 +468,20 @@ export default function RepliesPage() {
         { merge: true }
       );
 
-      setItems((prev) =>
-        prev.map((row) =>
+      setItems((prev) => {
+        const next = prev.map((row) =>
           row.id === item.id ? { ...row, pinned: nextPinned } : row
-        )
-      );
+        );
+        if (profileRef.current) {
+          const cached = repliesCache.get(profileRef.current.uid);
+          repliesCache.set(profileRef.current.uid, {
+            items: next,
+            blocked: cached?.blocked || blockedPhones,
+            ts: Date.now(),
+          });
+        }
+        return next;
+      });
 
       setOpenMenuId("");
     } catch (error) {
@@ -465,9 +523,22 @@ export default function RepliesPage() {
           messagingServiceSid: String(userData.messagingServiceSid || ""),
         };
 
+        profileRef.current = safeProfile;
         setProfile(safeProfile);
         setChecking(false);
-        await loadItems(safeProfile);
+
+        // Paint from cache immediately if we have it (instant, no loading
+        // state at all), then always kick off a background refresh so
+        // data never goes stale.
+        const cached = repliesCache.get(safeProfile.uid);
+        if (cached) {
+          setItems(cached.items);
+          setBlockedPhones(cached.blocked);
+          setLoading(false);
+          loadItems(safeProfile, { background: true });
+        } else {
+          await loadItems(safeProfile);
+        }
       } catch (error) {
         console.error("Failed to validate user access", error);
         await signOut(auth).catch(() => {});
@@ -567,53 +638,21 @@ export default function RepliesPage() {
 
   if (checking) {
     return (
-      <>
-        <style jsx global>{`
-          @keyframes spin {
-            0% {
-              transform: rotate(0deg);
-            }
-            100% {
-              transform: rotate(360deg);
-            }
-          }
-        `}</style>
-
-        <main style={pageStyle}>
-          <div style={pageWrapStyle}>
-            <section style={panelStyle}>
-              <div style={emptyStateStyle}>
-                <div style={loadingSpinnerStyle} />
-                <div style={emptyTitleStyle}>Checking account access...</div>
-              </div>
-            </section>
-          </div>
-        </main>
-      </>
+      <main style={pageStyle}>
+        <div style={pageWrapStyle}>
+          <section style={panelStyle}>
+            <div style={emptyStateStyle}>
+              <div style={emptyTitleStyle}>Checking account access...</div>
+            </div>
+          </section>
+        </div>
+      </main>
     );
   }
 
   return (
     <>
       <style jsx global>{`
-        @keyframes spin {
-          0% {
-            transform: rotate(0deg);
-          }
-          100% {
-            transform: rotate(360deg);
-          }
-        }
-
-        @keyframes shimmer {
-          0% {
-            background-position: 200% 0;
-          }
-          100% {
-            background-position: -200% 0;
-          }
-        }
-
         input::placeholder {
           color: rgba(236, 254, 255, 0.72);
         }
@@ -737,7 +776,10 @@ export default function RepliesPage() {
                 </p>
               </div>
 
-              <button onClick={() => loadItems()} style={refreshButtonStyle}>
+              <button
+                onClick={() => loadItems(undefined, { background: true })}
+                style={refreshButtonStyle}
+              >
                 Refresh
               </button>
             </div>
@@ -817,227 +859,81 @@ export default function RepliesPage() {
                 </div>
 
                 <div style={listSkeletonGridStyle}>
-                  <div style={listSkeletonCardStyle}>
-                    <div style={listSkeletonTopRowStyle}>
-                      <div>
-                        <div
-                          style={{
-                            ...listSkeletonLineStyle,
-                            width: 170,
-                            height: 18,
-                          }}
-                        />
-                        <div
-                          style={{
-                            ...listSkeletonLineStyle,
-                            width: 110,
-                            marginTop: 12,
-                            height: 12,
-                          }}
-                        />
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} style={listSkeletonCardStyle}>
+                      <div style={listSkeletonTopRowStyle}>
+                        <div>
+                          <div
+                            style={{
+                              ...listSkeletonLineStyle,
+                              width: 170,
+                              height: 18,
+                            }}
+                          />
+                          <div
+                            style={{
+                              ...listSkeletonLineStyle,
+                              width: 110,
+                              marginTop: 12,
+                              height: 12,
+                            }}
+                          />
+                        </div>
+
+                        <div style={listSkeletonRightStyle}>
+                          <div
+                            style={{
+                              ...listSkeletonLineStyle,
+                              width: 150,
+                              height: 12,
+                            }}
+                          />
+                          <div
+                            style={{
+                              ...listSkeletonPillStyle,
+                              width: 132,
+                              marginTop: 12,
+                            }}
+                          />
+                        </div>
                       </div>
 
-                      <div style={listSkeletonRightStyle}>
+                      <div
+                        style={{
+                          ...listSkeletonLineStyle,
+                          width: "88%",
+                          marginTop: 18,
+                          height: 14,
+                        }}
+                      />
+                      <div
+                        style={{
+                          ...listSkeletonLineStyle,
+                          width: "64%",
+                          marginTop: 12,
+                          height: 14,
+                        }}
+                      />
+
+                      <div style={listSkeletonFooterStyle}>
                         <div
                           style={{
                             ...listSkeletonLineStyle,
-                            width: 150,
-                            height: 12,
-                          }}
-                        />
-                        <div
-                          style={{
-                            ...listSkeletonPillStyle,
                             width: 132,
-                            marginTop: 12,
+                            height: 14,
                           }}
                         />
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        ...listSkeletonLineStyle,
-                        width: "88%",
-                        marginTop: 18,
-                        height: 14,
-                      }}
-                    />
-                    <div
-                      style={{
-                        ...listSkeletonLineStyle,
-                        width: "64%",
-                        marginTop: 12,
-                        height: 14,
-                      }}
-                    />
-
-                    <div style={listSkeletonFooterStyle}>
-                      <div
-                        style={{
-                          ...listSkeletonLineStyle,
-                          width: 132,
-                          height: 14,
-                        }}
-                      />
-                      <div
-                        style={{
-                          ...listSkeletonLineStyle,
-                          width: 18,
-                          height: 18,
-                          borderRadius: 999,
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  <div style={listSkeletonCardStyle}>
-                    <div style={listSkeletonTopRowStyle}>
-                      <div>
                         <div
                           style={{
                             ...listSkeletonLineStyle,
-                            width: 160,
+                            width: 18,
                             height: 18,
-                          }}
-                        />
-                        <div
-                          style={{
-                            ...listSkeletonLineStyle,
-                            width: 92,
-                            marginTop: 12,
-                            height: 12,
-                          }}
-                        />
-                      </div>
-
-                      <div style={listSkeletonRightStyle}>
-                        <div
-                          style={{
-                            ...listSkeletonLineStyle,
-                            width: 146,
-                            height: 12,
-                          }}
-                        />
-                        <div
-                          style={{
-                            ...listSkeletonPillStyle,
-                            width: 152,
-                            marginTop: 12,
+                            borderRadius: 999,
                           }}
                         />
                       </div>
                     </div>
-
-                    <div
-                      style={{
-                        ...listSkeletonLineStyle,
-                        width: "92%",
-                        marginTop: 18,
-                        height: 14,
-                      }}
-                    />
-                    <div
-                      style={{
-                        ...listSkeletonLineStyle,
-                        width: "58%",
-                        marginTop: 12,
-                        height: 14,
-                      }}
-                    />
-
-                    <div style={listSkeletonFooterStyle}>
-                      <div
-                        style={{
-                          ...listSkeletonLineStyle,
-                          width: 132,
-                          height: 14,
-                        }}
-                      />
-                      <div
-                        style={{
-                          ...listSkeletonLineStyle,
-                          width: 18,
-                          height: 18,
-                          borderRadius: 999,
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  <div style={listSkeletonCardStyle}>
-                    <div style={listSkeletonTopRowStyle}>
-                      <div>
-                        <div
-                          style={{
-                            ...listSkeletonLineStyle,
-                            width: 182,
-                            height: 18,
-                          }}
-                        />
-                        <div
-                          style={{
-                            ...listSkeletonLineStyle,
-                            width: 120,
-                            marginTop: 12,
-                            height: 12,
-                          }}
-                        />
-                      </div>
-
-                      <div style={listSkeletonRightStyle}>
-                        <div
-                          style={{
-                            ...listSkeletonLineStyle,
-                            width: 142,
-                            height: 12,
-                          }}
-                        />
-                        <div
-                          style={{
-                            ...listSkeletonPillStyle,
-                            width: 140,
-                            marginTop: 12,
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        ...listSkeletonLineStyle,
-                        width: "84%",
-                        marginTop: 18,
-                        height: 14,
-                      }}
-                    />
-                    <div
-                      style={{
-                        ...listSkeletonLineStyle,
-                        width: "70%",
-                        marginTop: 12,
-                        height: 14,
-                      }}
-                    />
-
-                    <div style={listSkeletonFooterStyle}>
-                      <div
-                        style={{
-                          ...listSkeletonLineStyle,
-                          width: 132,
-                          height: 14,
-                        }}
-                      />
-                      <div
-                        style={{
-                          ...listSkeletonLineStyle,
-                          width: 18,
-                          height: 18,
-                          borderRadius: 999,
-                        }}
-                      />
-                    </div>
-                  </div>
+                  ))}
                 </div>
               </div>
             ) : filteredItems.length === 0 ? (
@@ -1703,15 +1599,9 @@ const emptyTextStyle: CSSProperties = {
   maxWidth: 460,
 };
 
-const loadingSpinnerStyle: CSSProperties = {
-  width: 28,
-  height: 28,
-  borderRadius: "50%",
-  border: "3px solid rgba(15,118,110,0.18)",
-  borderTop: "3px solid #0f766e",
-  animation: "spin 1s linear infinite",
-};
-
+// Static, non-animated loading state. No shimmer, no spinner — flat
+// placeholder blocks that match the final layout. Combined with the
+// cache above, this is rarely seen after the first load.
 const listLoadingWrapStyle: CSSProperties = {
   marginTop: 18,
   borderRadius: 24,
@@ -1772,17 +1662,11 @@ const listSkeletonFooterStyle: CSSProperties = {
 
 const listSkeletonLineStyle: CSSProperties = {
   borderRadius: 999,
-  background:
-    "linear-gradient(90deg, #e2e8f0 25%, #f8fafc 50%, #e2e8f0 75%)",
-  backgroundSize: "200% 100%",
-  animation: "shimmer 1.4s linear infinite",
+  background: "#e2e8f0",
 };
 
 const listSkeletonPillStyle: CSSProperties = {
   height: 30,
   borderRadius: 999,
-  background:
-    "linear-gradient(90deg, rgba(20,184,166,0.12) 25%, rgba(204,251,241,0.5) 50%, rgba(20,184,166,0.12) 75%)",
-  backgroundSize: "200% 100%",
-  animation: "shimmer 1.4s linear infinite",
+  background: "rgba(20,184,166,0.12)",
 };

@@ -84,6 +84,14 @@ type ConversationMeta = {
   updatedAt?: any;
 };
 
+// Module-level cache: instant repaint of a thread already opened this
+// session, while a fresh fetch (and the live onSnapshot listener) keeps
+// it correct underneath. Keyed by `${uid}_${normalizedPhone}`.
+const threadCache = new Map<
+  string,
+  { meta: ConversationMeta; messages: MessageItem[]; ts: number }
+>();
+
 function normalizePhone(value: string) {
   return String(value || "").replace(/[^\d+]/g, "").trim();
 }
@@ -181,6 +189,10 @@ export default function ReplyThreadPage({
         block: "end",
       });
     });
+  }
+
+  function cacheKeyFor(profileArg: AppUser, phone: string) {
+    return `${profileArg.uid}_${normalizePhone(phone)}`;
   }
 
   function makeMessageItem(id: string, data: Record<string, any>): MessageItem {
@@ -342,14 +354,14 @@ export default function ReplyThreadPage({
     opts?: { silent?: boolean }
   ) {
     try {
+      const currentMeta = metaArg || conversationMeta;
+      const currentProfile = profileArg || profile;
+
       if (!opts?.silent && !initialLoaded) {
         setLoading(true);
       }
 
       setStatus("");
-
-      const currentMeta = metaArg || conversationMeta;
-      const currentProfile = profileArg || profile;
 
       if (!currentProfile || !currentMeta?.id) {
         setMessages([]);
@@ -389,12 +401,10 @@ export default function ReplyThreadPage({
         store.set(dedupeKey, item);
       };
 
-      // FIX: build every query up front, then fire them all in parallel
-      // with Promise.all instead of awaiting each one sequentially.
-      // This turns ~9 sequential round-trips into roughly 1 round-trip's
-      // worth of latency (whichever query is slowest), which is what was
-      // causing multi-second load times even for 2-message threads.
-
+      // Every query is built up front, then fired together with
+      // Promise.all instead of awaited one-by-one — ~9 sequential
+      // round-trips collapse into roughly 1 round-trip's worth of
+      // latency (whichever query is slowest).
       const subMessagesQuery = query(
         collection(db, "conversations", currentMeta.id, "messages"),
         where("ownerUid", "==", currentProfile.uid),
@@ -473,6 +483,12 @@ export default function ReplyThreadPage({
       }
 
       setMessages(merged);
+      threadCache.set(cacheKeyFor(currentProfile, currentMeta.phone), {
+        meta: currentMeta,
+        messages: merged,
+        ts: Date.now(),
+      });
+
       await markConversationRead(currentMeta, currentProfile);
     } catch (error: any) {
       console.error(error);
@@ -531,14 +547,35 @@ export default function ReplyThreadPage({
         setProfile(safeProfile);
         setChecking(false);
 
+        // Instant paint from cache (no loading state at all) if this
+        // thread was already opened this session, then always refresh
+        // underneath so it never goes stale.
+        const cacheKey = cacheKeyFor(safeProfile, routePhone);
+        const cached = threadCache.get(cacheKey);
+
+        if (cached) {
+          setConversationMeta(cached.meta);
+          setThreadTitle(
+            cached.meta.name
+              ? `${cached.meta.name} · ${cached.meta.phone}`
+              : cached.meta.phone || "Conversation"
+          );
+          setMessages(cached.messages);
+          setLoading(false);
+          setInitialLoaded(true);
+          setTimeout(() => scrollToBottom(false), 60);
+        }
+
         const meta = await loadConversationMeta(safeProfile);
         if (!meta) {
-          setLoading(false);
-          setMessages([]);
+          if (!cached) {
+            setLoading(false);
+            setMessages([]);
+          }
           return;
         }
 
-        await loadThreadOnce(meta, safeProfile);
+        await loadThreadOnce(meta, safeProfile, { silent: Boolean(cached) });
 
         const refreshFromThreadChange = async () => {
           const latestMeta = await loadConversationMeta(safeProfile);
@@ -686,53 +723,21 @@ export default function ReplyThreadPage({
 
   if (checking) {
     return (
-      <>
-        <style jsx global>{`
-          @keyframes spin {
-            0% {
-              transform: rotate(0deg);
-            }
-            100% {
-              transform: rotate(360deg);
-            }
-          }
-        `}</style>
-
-        <main style={pageStyle}>
-          <div style={pageWrapStyle}>
-            <section style={threadPanelStyle}>
-              <div style={emptyStateStyle}>
-                <div style={loadingSpinnerStyle} />
-                <div style={emptyTitleStyle}>Checking account access...</div>
-              </div>
-            </section>
-          </div>
-        </main>
-      </>
+      <main style={pageStyle}>
+        <div style={pageWrapStyle}>
+          <section style={threadPanelStyle}>
+            <div style={emptyStateStyle}>
+              <div style={emptyTitleStyle}>Checking account access...</div>
+            </div>
+          </section>
+        </div>
+      </main>
     );
   }
 
   return (
     <>
       <style jsx global>{`
-        @keyframes spin {
-          0% {
-            transform: rotate(0deg);
-          }
-          100% {
-            transform: rotate(360deg);
-          }
-        }
-
-        @keyframes shimmer {
-          0% {
-            background-position: 200% 0;
-          }
-          100% {
-            background-position: -200% 0;
-          }
-        }
-
         textarea::placeholder {
           color: rgba(100, 116, 139, 0.9);
         }
@@ -1698,15 +1703,9 @@ const emptyTextStyle: CSSProperties = {
   maxWidth: 460,
 };
 
-const loadingSpinnerStyle: CSSProperties = {
-  width: 28,
-  height: 28,
-  borderRadius: "50%",
-  border: "3px solid rgba(15,118,110,0.18)",
-  borderTop: "3px solid #0f766e",
-  animation: "spin 1s linear infinite",
-};
-
+// Static, non-animated skeleton — flat placeholder blocks matching the
+// final bubble layout, no shimmer/spin. Rarely seen after first load
+// thanks to the cache above.
 const threadLoadingWrapStyle: CSSProperties = {
   marginTop: 18,
   borderRadius: 24,
@@ -1758,35 +1757,23 @@ const threadSkeletonBubbleOutgoingStyle: CSSProperties = {
 const threadSkeletonLineStyle: CSSProperties = {
   height: 10,
   borderRadius: 999,
-  background:
-    "linear-gradient(90deg, #e2e8f0 25%, #f8fafc 50%, #e2e8f0 75%)",
-  backgroundSize: "200% 100%",
-  animation: "shimmer 1.4s linear infinite",
+  background: "#e2e8f0",
 };
 
 const threadSkeletonTimeStyle: CSSProperties = {
   height: 8,
   borderRadius: 999,
-  background:
-    "linear-gradient(90deg, #cbd5e1 25%, #f8fafc 50%, #cbd5e1 75%)",
-  backgroundSize: "200% 100%",
-  animation: "shimmer 1.4s linear infinite",
+  background: "#cbd5e1",
 };
 
 const threadSkeletonLineLightStyle: CSSProperties = {
   height: 10,
   borderRadius: 999,
-  background:
-    "linear-gradient(90deg, rgba(255,255,255,0.18) 25%, rgba(255,255,255,0.34) 50%, rgba(255,255,255,0.18) 75%)",
-  backgroundSize: "200% 100%",
-  animation: "shimmer 1.4s linear infinite",
+  background: "rgba(255,255,255,0.28)",
 };
 
 const threadSkeletonTimeLightStyle: CSSProperties = {
   height: 8,
   borderRadius: 999,
-  background:
-    "linear-gradient(90deg, rgba(236,254,255,0.18) 25%, rgba(236,254,255,0.34) 50%, rgba(236,254,255,0.18) 75%)",
-  backgroundSize: "200% 100%",
-  animation: "shimmer 1.4s linear infinite",
+  background: "rgba(236,254,255,0.28)",
 };
