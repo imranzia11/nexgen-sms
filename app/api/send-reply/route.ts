@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import twilio from "twilio";
 import { getAuth } from "firebase-admin/auth";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../../../lib/firebaseAdmin";
+import { sendSmsForUser } from "../../../lib/twilioSend";
 
 function toE164(raw: string) {
   const cleaned = String(raw || "").replace(/[^\d+]/g, "");
@@ -147,8 +147,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const client = twilio(accountSid, authToken);
-
 const messagingServiceSid =
   userData.messagingServiceSid?.trim() ||
   process.env.TWILIO_MESSAGING_SERVICE_SID;
@@ -160,27 +158,15 @@ if (!messagingServiceSid) {
   );
 }
 
-const twilioPayload: {
-  body?: string;
-  to: string;
-  messagingServiceSid: string;
-  statusCallback: string;
-  mediaUrl?: string[];
-} = {
+// Routed through the shared sendSmsForUser helper (lib/twilioSend.ts) so
+// `from` is always pinned to this user's own number — see that file for
+// why that matters.
+const msg = await sendSmsForUser({
+  userData: { ...userData, messagingServiceSid },
   to,
-  messagingServiceSid,
-  statusCallback: `${appBaseUrl}/api/send-sms/twilio/status`,
-};
-
-if (messageBody) {
-  twilioPayload.body = messageBody;
-}
-
-if (mediaUrls.length > 0) {
-  twilioPayload.mediaUrl = mediaUrls;
-}
-
-const msg = await client.messages.create(twilioPayload);
+  body: messageBody,
+  mediaUrls,
+});
 
     const conversationId = `${uid}_${phoneDocId(to)}`;
     const convoRef = adminDb.collection("conversations").doc(conversationId);

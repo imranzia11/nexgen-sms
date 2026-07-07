@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import twilio from "twilio";
 import { getAuth } from "firebase-admin/auth";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../../../../lib/firebaseAdmin";
+import { sendSmsForUser } from "../../../../lib/twilioSend";
 
 type LeadInput = {
   name?: string;
@@ -142,8 +142,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const client = twilio(accountSid, authToken);
-
     const body = await req.json();
 
     const {
@@ -213,12 +211,14 @@ export async function POST(req: NextRequest) {
           isFirstMessage
         );
 
-       const res = await client.messages.create({
-  body: finalMessage,
-  to: formattedPhone,
-  messagingServiceSid: userData.messagingServiceSid,
-  statusCallback: `${appBaseUrl}/api/send-sms/twilio/status`,
-});
+        // Routed through the shared sendSmsForUser helper so `from` is
+        // always pinned to this user's own number, never picked from the
+        // shared Messaging Service pool.
+        const res = await sendSmsForUser({
+          userData,
+          to: formattedPhone,
+          body: finalMessage,
+        });
 
         const convoId = `${uid}_${phoneDocId(formattedPhone)}`;
         const convoRef = adminDb.collection("conversations").doc(convoId);

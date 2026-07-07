@@ -245,6 +245,36 @@ async function findOwnerByTwilioNumber(inboundTo: string) {
   const normalizedTo = toE164(inboundTo);
   if (!normalizedTo) return null;
 
+  // Fast path: numberAssignments/{e164} is a structural 1:1 mapping (doc ID
+  // = the number) written at provisioning time via create-only semantics,
+  // so it can never point at more than one user. Check it first.
+  const assignmentSnap = await adminDb
+    .collection("numberAssignments")
+    .doc(normalizedTo)
+    .get();
+
+  if (assignmentSnap.exists) {
+    const assignment = assignmentSnap.data() || {};
+    const ownerUid = String(assignment.ownerUid || "");
+
+    if (ownerUid) {
+      const userDoc = await adminDb.collection("users").doc(ownerUid).get();
+
+      if (userDoc.exists) {
+        const data = userDoc.data() || {};
+        if (data.isActive === true) {
+          return {
+            uid: userDoc.id,
+            user: data,
+            twilioNumber: normalizedTo,
+          };
+        }
+      }
+    }
+  }
+
+  // Fallback path for numbers not yet backfilled into numberAssignments:
+  // the original where()-query lookup against the users collection.
   let snap = await adminDb
     .collection("users")
     .where("twilioNumber", "==", normalizedTo)

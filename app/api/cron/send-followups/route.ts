@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import twilio from "twilio";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../../../../lib/firebaseAdmin";
-
-const accountSid = process.env.TWILIO_ACCOUNT_SID!;
-const authToken = process.env.TWILIO_AUTH_TOKEN!;
-const client = twilio(accountSid, authToken);
+import { sendSmsForUser } from "../../../../lib/twilioSend";
 
 export async function GET(req: NextRequest) {
   // 1. Protect this route so randoms on the internet can't trigger it
@@ -67,13 +63,17 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    // 5. Send the follow-up SMS
+    // 5. Send the follow-up SMS. Routed through the shared sendSmsForUser
+    // helper so `from` is always pinned to the number stored on the
+    // followUps doc, never picked from the shared Messaging Service pool.
     try {
-      const msg = await client.messages.create({
+      const msg = await sendSmsForUser({
+        userData: {
+          twilioNumber: data.twilioNumber,
+          messagingServiceSid: data.messagingServiceSid,
+        },
         to: data.phone,
         body: data.followUpMessage,
-        messagingServiceSid: data.messagingServiceSid,
-        statusCallback: `${process.env.APP_BASE_URL}/api/send-sms/twilio/status`,
       });
 
       await doc.ref.update({

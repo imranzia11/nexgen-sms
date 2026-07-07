@@ -1,0 +1,132 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function ownsResource() {
+      return signedIn() && resource.data.ownerUid == request.auth.uid;
+    }
+
+    function ownsNewResource() {
+      return signedIn() && request.resource.data.ownerUid == request.auth.uid;
+    }
+
+    // Blocks reassigning a document to a different owner mid-update.
+    function ownerUidUnchanged() {
+      return request.resource.data.ownerUid == resource.data.ownerUid;
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn() && request.auth.uid == userId;
+
+      allow create: if signedIn() && request.auth.uid == userId
+        // Prevent granting yourself a privileged role at signup.
+        && (!('role' in request.resource.data) || request.resource.data.role == 'user');
+
+      allow update: if signedIn() && request.auth.uid == userId
+        // Users can edit their own profile, but not their own role or
+        // active/inactive flag — that should only ever be changed via a
+        // trusted server-side path (e.g. an admin API route using the
+        // Firebase Admin SDK, which bypasses these rules entirely).
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.isActive == resource.data.isActive;
+
+      allow delete: if false;
+    }
+
+    // Maps a normalized E.164 phone number (the document ID) to exactly one
+    // owning user. This collection only exists to make number-to-user
+    // ownership structurally unique: doc ID = the number, so two users can
+    // never claim the same number, even under a race condition, because
+    // Firestore rejects a create() against an ID that already exists.
+    //
+    // Written only by trusted server-side code (Admin SDK, which bypasses
+    // these rules entirely) during number provisioning and by the inbound
+    // Twilio webhook's reconciliation path. Regular client access is
+    // intentionally denied — there is no legitimate reason for a signed-in
+    // user's browser to read or write this collection directly.
+    match /numberAssignments/{e164Number} {
+      allow read, write: if false;
+    }
+
+    match /conversations/{conversationId} {
+      allow read: if ownsResource();
+      allow create: if ownsNewResource();
+      allow update: if ownsResource() && ownerUidUnchanged();
+      allow delete: if ownsResource();
+
+      match /messages/{messageId} {
+        allow read: if ownsResource();
+        allow create: if ownsNewResource();
+        allow update: if ownsResource() && ownerUidUnchanged();
+        allow delete: if ownsResource();
+      }
+    }
+
+    match /messages/{messageId} {
+      allow read: if ownsResource();
+      allow create: if ownsNewResource();
+      allow update: if ownsResource() && ownerUidUnchanged();
+      allow delete: if false;
+    }
+
+    match /replies/{replyId} {
+      allow read: if ownsResource();
+      allow create: if ownsNewResource();
+      allow update: if ownsResource() && ownerUidUnchanged();
+      allow delete: if false;
+    }
+
+    match /blacklisted_numbers/{docId} {
+      allow read: if ownsResource();
+      allow create: if ownsNewResource();
+      allow update: if ownsResource() && ownerUidUnchanged();
+      allow delete: if false;
+    }
+
+    match /blacklist_events/{docId} {
+      allow read: if ownsResource();
+      allow create: if ownsNewResource();
+      allow update: if ownsResource() && ownerUidUnchanged();
+      allow delete: if false;
+    }
+
+    match /uploads/{docId} {
+      allow read: if ownsResource();
+      allow create: if ownsNewResource();
+      allow update: if ownsResource() && ownerUidUnchanged();
+      allow delete: if ownsResource();
+    }
+
+    match /leads/{docId} {
+      allow read: if ownsResource();
+      allow create: if ownsNewResource();
+      allow update: if ownsResource() && ownerUidUnchanged();
+      allow delete: if ownsResource();
+    }
+
+    match /campaigns/{docId} {
+      allow read: if ownsResource();
+      allow create: if ownsNewResource();
+      allow update: if ownsResource() && ownerUidUnchanged();
+      allow delete: if ownsResource();
+    }
+
+    match /messageTemplates/{docId} {
+      allow read: if ownsResource();
+      allow create: if ownsNewResource();
+      allow update: if ownsResource() && ownerUidUnchanged();
+      allow delete: if ownsResource();
+    }
+
+    match /followUps/{docId} {
+      allow read: if ownsResource();
+      allow create: if ownsNewResource();
+      allow update: if ownsResource() && ownerUidUnchanged();
+      allow delete: if ownsResource();
+    }
+  }
+}
