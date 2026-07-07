@@ -826,119 +826,9 @@ export default function ReplyThreadPage({
 
               {loading ? (
                 <div style={threadLoadingWrapStyle}>
-                  <div style={threadLoadingHeaderStyle}>
-                    <div style={threadLoadingDotStyle} />
-                    <span>Loading conversation...</span>
-                  </div>
-
-                  <div style={threadSkeletonListStyle}>
-                    <div
-                      style={{
-                        ...threadSkeletonRowStyle,
-                        justifyContent: "flex-start",
-                      }}
-                    >
-                      <div style={{ ...threadSkeletonBubbleStyle, width: "56%" }}>
-                        <div style={{ ...threadSkeletonLineStyle, width: "32%" }} />
-                        <div
-                          style={{
-                            ...threadSkeletonLineStyle,
-                            width: "88%",
-                            marginTop: 14,
-                          }}
-                        />
-                        <div
-                          style={{
-                            ...threadSkeletonLineStyle,
-                            width: "72%",
-                            marginTop: 10,
-                          }}
-                        />
-                        <div
-                          style={{
-                            ...threadSkeletonTimeStyle,
-                            width: "26%",
-                            marginTop: 14,
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        ...threadSkeletonRowStyle,
-                        justifyContent: "flex-end",
-                      }}
-                    >
-                      <div
-                        style={{
-                          ...threadSkeletonBubbleStyle,
-                          ...threadSkeletonBubbleOutgoingStyle,
-                          width: "48%",
-                        }}
-                      >
-                        <div
-                          style={{
-                            ...threadSkeletonLineLightStyle,
-                            width: "28%",
-                          }}
-                        />
-                        <div
-                          style={{
-                            ...threadSkeletonLineLightStyle,
-                            width: "84%",
-                            marginTop: 14,
-                          }}
-                        />
-                        <div
-                          style={{
-                            ...threadSkeletonLineLightStyle,
-                            width: "62%",
-                            marginTop: 10,
-                          }}
-                        />
-                        <div
-                          style={{
-                            ...threadSkeletonTimeLightStyle,
-                            width: "24%",
-                            marginTop: 14,
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        ...threadSkeletonRowStyle,
-                        justifyContent: "flex-start",
-                      }}
-                    >
-                      <div style={{ ...threadSkeletonBubbleStyle, width: "64%" }}>
-                        <div style={{ ...threadSkeletonLineStyle, width: "30%" }} />
-                        <div
-                          style={{
-                            ...threadSkeletonLineStyle,
-                            width: "92%",
-                            marginTop: 14,
-                          }}
-                        />
-                        <div
-                          style={{
-                            ...threadSkeletonLineStyle,
-                            width: "68%",
-                            marginTop: 10,
-                          }}
-                        />
-                        <div
-                          style={{
-                            ...threadSkeletonTimeStyle,
-                            width: "22%",
-                            marginTop: 14,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
+                  <span style={threadLoadingTextStyle}>
+                    Loading conversation...
+                  </span>
                 </div>
               ) : messages.length === 0 ? (
                 <div style={emptyStateStyle}>
@@ -1736,77 +1626,17 @@ const emptyTextStyle: CSSProperties = {
   maxWidth: 460,
 };
 
-// Static, non-animated skeleton — flat placeholder blocks matching the
-// final bubble layout, no shimmer/spin. Rarely seen after first load
-// thanks to the cache above.
+// No fake bubble mockup, no decorative shapes — just a plain, quiet
+// line of text while the real thread loads. Nothing to animate.
 const threadLoadingWrapStyle: CSSProperties = {
-  marginTop: 18,
-  borderRadius: 24,
-  padding: 22,
-  background: "linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)",
-  border: "1px solid #e2e8f0",
-  display: "grid",
-  gap: 18,
-};
-
-const threadLoadingHeaderStyle: CSSProperties = {
+  marginTop: 40,
   display: "flex",
-  alignItems: "center",
-  gap: 10,
-  color: "#475569",
-  fontSize: 15,
-  fontWeight: 800,
+  justifyContent: "center",
 };
 
-const threadLoadingDotStyle: CSSProperties = {
-  width: 10,
-  height: 10,
-  borderRadius: "50%",
-  background: "#14b8a6",
+const threadLoadingTextStyle: CSSProperties = {
+  color: "#94a3b8",
+  fontSize: 14,
+  fontWeight: 600,
 };
 
-const threadSkeletonListStyle: CSSProperties = {
-  display: "grid",
-  gap: 14,
-};
-
-const threadSkeletonRowStyle: CSSProperties = {
-  display: "flex",
-};
-
-const threadSkeletonBubbleStyle: CSSProperties = {
-  borderRadius: 24,
-  padding: 16,
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
-  boxShadow: "0 8px 20px rgba(15,23,42,0.04)",
-};
-
-const threadSkeletonBubbleOutgoingStyle: CSSProperties = {
-  background: "linear-gradient(135deg, #0f766e 0%, #0d9488 100%)",
-  border: "1px solid rgba(13,148,136,0.18)",
-};
-
-const threadSkeletonLineStyle: CSSProperties = {
-  height: 10,
-  borderRadius: 999,
-  background: "#e2e8f0",
-};
-
-const threadSkeletonTimeStyle: CSSProperties = {
-  height: 8,
-  borderRadius: 999,
-  background: "#cbd5e1",
-};
-
-const threadSkeletonLineLightStyle: CSSProperties = {
-  height: 10,
-  borderRadius: 999,
-  background: "rgba(255,255,255,0.28)",
-};
-
-const threadSkeletonTimeLightStyle: CSSProperties = {
-  height: 8,
-  borderRadius: 999,
-  background: "rgba(236,254,255,0.28)",
-};
