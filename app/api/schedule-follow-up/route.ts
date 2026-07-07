@@ -104,10 +104,11 @@ export async function POST(req: NextRequest) {
     const batch = adminDb.batch();
     let scheduled = 0;
     let invalid = 0;
+    let superseded = 0;
 
     for (const recipient of recipients) {
-      // FIX: normalize to E164 BEFORE building conversationId, so this
-      // matches the ID that /api/send-sms and the thread page compute.
+      // Normalize to E164 BEFORE building conversationId, so this matches
+      // the ID that /api/send-sms and the thread page compute.
       const phone = toE164(recipient.phone || "");
       if (!phone) {
         invalid++;
@@ -115,6 +116,32 @@ export async function POST(req: NextRequest) {
       }
 
       const conversationId = `${uid}_${phoneDocId(phone)}`;
+
+      // FIX: without this, sending a follow-up-enabled campaign to a lead
+      // more than once (e.g. re-testing, or a second outreach) leaves the
+      // OLDER pending follow-up docs still sitting in the queue alongside
+      // the new one. The cron correctly fires each doc exactly once, but
+      // since nothing ever cancels the earlier ones, the same lead ends up
+      // getting the same follow-up text multiple times, hours apart, as
+      // each stacked doc reaches its own dueAt. Cancel any still-pending
+      // follow-ups for this exact conversation before queuing the new one,
+      // so only the latest follow-up is ever active per conversation.
+      const existingPendingSnap = await adminDb
+        .collection("followUps")
+        .where("ownerUid", "==", uid)
+        .where("conversationId", "==", conversationId)
+        .where("status", "==", "pending")
+        .get();
+
+      existingPendingSnap.docs.forEach((existingDoc) => {
+        batch.update(existingDoc.ref, {
+          status: "superseded",
+          supersededAt: FieldValue.serverTimestamp(),
+          supersededReason: "Replaced by a newer follow-up for this lead.",
+        });
+        superseded++;
+      });
+
       const ref = adminDb.collection("followUps").doc();
 
       batch.set(ref, {
@@ -142,6 +169,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       scheduled,
       invalid,
+      superseded,
       dueAt: dueAt.toISOString(),
     });
   } catch (err: any) {
