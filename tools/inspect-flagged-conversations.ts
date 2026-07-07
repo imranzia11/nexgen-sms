@@ -45,26 +45,60 @@ async function main() {
           data.assignedTwilioNumber || "(none)"
         }`
       );
+      console.log(
+        `  [conversation doc counters] outboundCount=${data.outboundCount ?? "(none)"} inboundCount=${
+          data.inboundCount ?? "(none)"
+        } messageCount=${data.messageCount ?? "(none)"} lastDirection=${data.lastDirection || "(none)"} ` +
+          `firstOutboundAt=${data.firstOutboundAt?.toDate?.().toISOString() || "(none)"} lastOutboundAt=${
+            data.lastOutboundAt?.toDate?.().toISOString() || "(none)"
+          }`
+      );
 
       const messagesSnap = await convoDoc.ref
         .collection("messages")
         .orderBy("createdAt", "asc")
         .get();
 
+      console.log(`  --- conversations/${convoDoc.id}/messages subcollection (${messagesSnap.size}) ---`);
       if (messagesSnap.empty) {
         console.log("  (no messages in subcollection)");
-        continue;
+      } else {
+        messagesSnap.docs.forEach((m) => {
+          const md = m.data() || {};
+          const when = md.createdAt?.toDate ? md.createdAt.toDate().toISOString() : "(no timestamp)";
+          console.log(
+            `  [${when}] dir=${md.direction} from=${md.from} to=${md.to} ownerUid=${md.ownerUid || "(none)"} body="${String(
+              md.body || ""
+            ).slice(0, 80)}"`
+          );
+        });
       }
 
-      messagesSnap.docs.forEach((m) => {
-        const md = m.data() || {};
-        const when = md.createdAt?.toDate ? md.createdAt.toDate().toISOString() : "(no timestamp)";
-        console.log(
-          `  [${when}] dir=${md.direction} from=${md.from} to=${md.to} ownerUid=${md.ownerUid || "(none)"} body="${String(
-            md.body || ""
-          ).slice(0, 80)}"`
-        );
-      });
+      // Outbound sends are ALSO written to a separate root-level `messages`
+      // collection (see send-sms/twilio/route.ts, send-sms/route.ts). If a
+      // send partially failed, the subcollection above could be missing
+      // entries that this root collection still has.
+      const rootMsgsSnap = await adminDb
+        .collection("messages")
+        .where("conversationId", "==", convoDoc.id)
+        .get();
+
+      console.log(`  --- root messages collection, conversationId=${convoDoc.id} (${rootMsgsSnap.size}) ---`);
+      if (rootMsgsSnap.empty) {
+        console.log("  (none)");
+      } else {
+        rootMsgsSnap.docs
+          .sort((a, b) => (a.data()?.createdAt?.toMillis?.() || 0) - (b.data()?.createdAt?.toMillis?.() || 0))
+          .forEach((m) => {
+            const md = m.data() || {};
+            const when = md.createdAt?.toDate ? md.createdAt.toDate().toISOString() : "(no timestamp)";
+            console.log(
+              `  [${when}] dir=${md.direction} from=${md.from} to=${md.to} status=${md.status} ownerUid=${
+                md.ownerUid || "(none)"
+              } body="${String(md.body || "").slice(0, 80)}"`
+            );
+          });
+      }
     }
   }
 }

@@ -164,11 +164,29 @@ export default function LoginPage() {
             animation: none !important;
           }
         }
+
+        /* Below this width the two-column grid has no room to breathe —
+           the sign-in card was getting squeezed down to an unusable
+           sliver. Stack to a single column and let the sign-in card take
+           the full width instead; the marketing side steps aside since
+           the form is what every user actually needs on a small screen. */
+        @media (max-width: 860px) {
+          .login-shell {
+            display: block !important;
+            max-width: 440px !important;
+          }
+          .login-left {
+            display: none !important;
+          }
+          .login-right {
+            width: 100% !important;
+          }
+        }
       `}</style>
 
       <main style={pageStyle}>
-        <div style={shellStyle}>
-          <section style={leftStyle}>
+        <div style={shellStyle} className="login-shell">
+          <section style={leftStyle} className="login-left">
             <div style={brandRowStyle}>
               <div style={brandIconStyle}>N</div>
               <div>
@@ -294,7 +312,7 @@ export default function LoginPage() {
             </div>
           </section>
 
-          <section style={rightWrapStyle}>
+          <section style={rightWrapStyle} className="login-right">
             <div style={cardStyle}>
               <div style={cardTopStyle}>
                 <h2 style={cardTitleStyle}>Sign in</h2>
@@ -756,8 +774,12 @@ const inputStyle: CSSProperties = {
   border: "1px solid #d7e3e0",
   background: "#ffffff",
   color: "#0f172a",
-  padding: "12px 14px",
-  fontSize: 14.5,
+  padding: "13px 14px",
+  // 16px is the minimum that keeps iOS Safari from auto-zooming the whole
+  // page in when a user taps into this field — below that threshold, the
+  // browser silently zooms to make the text legible, which looks like the
+  // page unexpectedly jumping/zooming for the user.
+  fontSize: 16,
   outline: "none",
 };
 
