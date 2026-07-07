@@ -1639,4 +1639,3 @@ const threadLoadingTextStyle: CSSProperties = {
   fontSize: 14,
   fontWeight: 600,
 };
-
