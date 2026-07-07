@@ -13,12 +13,14 @@ import { useRouter } from "next/navigation";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
   onSnapshot,
   orderBy,
   query,
+  serverTimestamp,
   where,
   updateDoc,
   type Query,
@@ -82,6 +84,7 @@ type ConversationMeta = {
   lastMessage?: string;
   lastMessageAt?: any;
   updatedAt?: any;
+  pinned?: boolean;
 };
 
 // Module-level cache: instant repaint of a thread already opened this
@@ -91,6 +94,22 @@ const threadCache = new Map<
   string,
   { meta: ConversationMeta; messages: MessageItem[]; ts: number }
 >();
+
+// Anything cached longer ago than this is treated as too stale to paint
+// instantly — better to show the (plain) loading state than flash old data.
+const CACHE_FRESHNESS_MS = 20_000;
+
+function buildCacheKey(uid: string, phone: string) {
+  return `${uid}_${normalizePhone(phone)}`;
+}
+
+function getFreshCacheEntry(uid: string | undefined, phone: string) {
+  if (!uid) return undefined;
+  const entry = threadCache.get(buildCacheKey(uid, phone));
+  if (!entry) return undefined;
+  if (Date.now() - entry.ts >= CACHE_FRESHNESS_MS) return undefined;
+  return entry;
+}
 
 function normalizePhone(value: string) {
   return String(value || "").replace(/[^\d+]/g, "").trim();
@@ -169,19 +188,40 @@ export default function ReplyThreadPage({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previousPhoneRef = useRef<string>("");
 
-  const [checking, setChecking] = useState(true);
-  const [loading, setLoading] = useState(true);
-  const [initialLoaded, setInitialLoaded] = useState(false);
+  // If the user is already signed in when this component mounts (true for
+  // any in-app navigation, as opposed to a hard page reload) and we have a
+  // fresh cache entry for this exact thread, compute the initial state
+  // synchronously here. This means the very first render already shows the
+  // real content — there's no frame where "Checking..."/"Loading..." briefly
+  // flashes before the effect below corrects it a moment later.
+  const initialUid =
+    typeof window !== "undefined" ? auth.currentUser?.uid : undefined;
+  const initialCacheEntry = getFreshCacheEntry(initialUid, routePhone);
+
+  const [checking, setChecking] = useState(!initialUid);
+  const [loading, setLoading] = useState(!initialCacheEntry);
+  const [initialLoaded, setInitialLoaded] = useState(Boolean(initialCacheEntry));
   const [sending, setSending] = useState(false);
+  const [pinning, setPinning] = useState(false);
+  const [deletingThread, setDeletingThread] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
-  const [threadTitle, setThreadTitle] = useState(routePhone || "Conversation");
-  const [messages, setMessages] = useState<MessageItem[]>([]);
+  const [threadTitle, setThreadTitle] = useState(() => {
+    if (initialCacheEntry) {
+      return initialCacheEntry.meta.name
+        ? `${initialCacheEntry.meta.name} · ${initialCacheEntry.meta.phone}`
+        : initialCacheEntry.meta.phone || routePhone || "Conversation";
+    }
+    return routePhone || "Conversation";
+  });
+  const [messages, setMessages] = useState<MessageItem[]>(
+    () => initialCacheEntry?.messages || []
+  );
   const [replyBody, setReplyBody] = useState("");
   const [uploadedMedia, setUploadedMedia] = useState<UploadedMediaItem[]>([]);
   const [status, setStatus] = useState("");
   const [profile, setProfile] = useState<AppUser | null>(null);
   const [conversationMeta, setConversationMeta] =
-    useState<ConversationMeta | null>(null);
+    useState<ConversationMeta | null>(initialCacheEntry?.meta || null);
 
   function scrollToBottom(smooth = true) {
     requestAnimationFrame(() => {
@@ -335,6 +375,7 @@ export default function ReplyThreadPage({
         lastMessage: safeString(data.lastMessage),
         lastMessageAt: data.lastMessageAt || null,
         updatedAt: data.updatedAt || null,
+        pinned: data.pinned === true,
       };
 
       setConversationMeta(meta);
@@ -518,6 +559,54 @@ export default function ReplyThreadPage({
     await loadThreadOnce(meta, undefined, { silent: true });
   }
 
+  async function handleTogglePin() {
+    if (!conversationMeta) return;
+
+    try {
+      setPinning(true);
+      const nextPinned = !conversationMeta.pinned;
+
+      await updateDoc(doc(db, "conversations", conversationMeta.id), {
+        pinned: nextPinned,
+        updatedAt: serverTimestamp(),
+      });
+
+      setConversationMeta((prev) =>
+        prev ? { ...prev, pinned: nextPinned } : prev
+      );
+
+      setStatus(
+        nextPinned
+          ? "Pinned. This conversation now shows under the Pinned tab in Replies."
+          : "Unpinned. This conversation moved back to its normal tab in Replies."
+      );
+    } catch (error: any) {
+      console.error("Failed to toggle pin", error);
+      setStatus(error?.message || "Failed to update pin status.");
+    } finally {
+      setPinning(false);
+    }
+  }
+
+  async function handleDeleteThread() {
+    if (!conversationMeta) return;
+
+    const ok = window.confirm(
+      "Delete this conversation? This will permanently remove the thread and cannot be undone."
+    );
+    if (!ok) return;
+
+    try {
+      setDeletingThread(true);
+      await deleteDoc(doc(db, "conversations", conversationMeta.id));
+      router.push("/replies");
+    } catch (error: any) {
+      console.error("Failed to delete conversation", error);
+      setStatus(error?.message || "Failed to delete conversation.");
+      setDeletingThread(false);
+    }
+  }
+
   useEffect(() => {
     if (!routePhone) return;
 
@@ -577,14 +666,13 @@ export default function ReplyThreadPage({
         // session can be badly out of date (missing dozens of newer
         // messages), and briefly flashing that stale snapshot before the
         // real fetch replaces it is confusing. Anything older than this
-        // window just shows the normal loading skeleton instead.
-        const CACHE_FRESHNESS_MS = 20_000;
-        const cacheKey = cacheKeyFor(safeProfile, routePhone);
-        const rawCached = threadCache.get(cacheKey);
-        const cached =
-          rawCached && Date.now() - rawCached.ts < CACHE_FRESHNESS_MS
-            ? rawCached
-            : undefined;
+        // window just shows the plain loading text instead.
+        //
+        // Note: if the lazy state initializers above already picked this
+        // exact cache entry up synchronously on mount (the common case —
+        // already-signed-in user, fresh cache), this is a no-op re-set of
+        // the same values, not a second visible state change.
+        const cached = getFreshCacheEntry(safeProfile.uid, routePhone);
 
         if (cached) {
           setConversationMeta(cached.meta);
@@ -816,12 +904,50 @@ export default function ReplyThreadPage({
                   </p>
                 </div>
 
-                <button
-                  onClick={() => void handleManualRefresh()}
-                  style={refreshButtonStyle}
-                >
-                  Refresh
-                </button>
+                <div style={panelHeaderActionsStyle}>
+                  <button
+                    type="button"
+                    onClick={() => void handleTogglePin()}
+                    disabled={pinning || !conversationMeta}
+                    style={{
+                      ...pinButtonStyle,
+                      opacity: pinning || !conversationMeta ? 0.6 : 1,
+                      cursor:
+                        pinning || !conversationMeta
+                          ? "not-allowed"
+                          : "pointer",
+                    }}
+                  >
+                    {pinning
+                      ? "Updating..."
+                      : conversationMeta?.pinned
+                        ? "📌 Unpin"
+                        : "📌 Pin"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteThread()}
+                    disabled={deletingThread || !conversationMeta}
+                    style={{
+                      ...deleteThreadButtonStyle,
+                      opacity: deletingThread || !conversationMeta ? 0.6 : 1,
+                      cursor:
+                        deletingThread || !conversationMeta
+                          ? "not-allowed"
+                          : "pointer",
+                    }}
+                  >
+                    {deletingThread ? "Deleting..." : "Delete"}
+                  </button>
+
+                  <button
+                    onClick={() => void handleManualRefresh()}
+                    style={refreshButtonStyle}
+                  >
+                    Refresh
+                  </button>
+                </div>
               </div>
 
               {loading ? (
@@ -1299,6 +1425,32 @@ const panelDescStyle: CSSProperties = {
   lineHeight: 1.5,
 };
 
+const panelHeaderActionsStyle: CSSProperties = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+};
+
+const pinButtonStyle: CSSProperties = {
+  border: "1px solid rgba(13,148,136,0.25)",
+  borderRadius: 14,
+  padding: "12px 16px",
+  background: "rgba(13,148,136,0.08)",
+  color: "#0f766e",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const deleteThreadButtonStyle: CSSProperties = {
+  border: "1px solid rgba(220,38,38,0.2)",
+  borderRadius: 14,
+  padding: "12px 16px",
+  background: "rgba(220,38,38,0.06)",
+  color: "#b91c1c",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
 const refreshButtonStyle: CSSProperties = {
   border: "1px solid rgba(15,23,42,0.08)",
   borderRadius: 14,
@@ -1639,3 +1791,4 @@ const threadLoadingTextStyle: CSSProperties = {
   fontSize: 14,
   fontWeight: 600,
 };
+
