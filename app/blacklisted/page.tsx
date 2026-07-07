@@ -11,6 +11,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  where,
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
 import { formatFirestoreDateNY } from "../../lib/date";
@@ -74,6 +75,7 @@ export default function BlacklistedPage() {
   const router = useRouter();
 
   const [checking, setChecking] = useState(true);
+  const [uid, setUid] = useState("");
   const [adminName, setAdminName] = useState("User");
   const [loadingList, setLoadingList] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -111,6 +113,7 @@ export default function BlacklistedPage() {
         }
 
         setAdminName(snap.data().name || "User");
+        setUid(user.uid);
         setChecking(false);
       } catch (error) {
         console.error("Failed to validate user access", error);
@@ -123,10 +126,11 @@ export default function BlacklistedPage() {
   }, [router]);
 
   useEffect(() => {
-    if (checking) return;
+    if (checking || !uid) return;
 
     const q = query(
       collection(db, "blacklisted_numbers"),
+      where("ownerUid", "==", uid),
       orderBy("updatedAt", "desc")
     );
 
@@ -164,13 +168,14 @@ export default function BlacklistedPage() {
     );
 
     return () => unsub();
-  }, [checking]);
+  }, [checking, uid]);
 
   useEffect(() => {
-    if (checking) return;
+    if (checking || !uid) return;
 
     const q = query(
       collection(db, "replies"),
+      where("ownerUid", "==", uid),
       orderBy("createdAt", "desc")
     );
 
@@ -198,7 +203,7 @@ export default function BlacklistedPage() {
     );
 
     return () => unsub();
-  }, [checking]);
+  }, [checking, uid]);
 
   const handleLogout = async () => {
     await signOut(auth);
