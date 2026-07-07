@@ -52,6 +52,16 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Platform-wide opt-out list (doc ID = normalized E.164 number). A STOP
+    // to ANY user's number blocks that number for every user, not just the
+    // one they replied to — required for TCPA/CTIA opt-out compliance.
+    // Written only by the inbound webhook (Admin SDK, bypasses these
+    // rules) and checked by every send path via lib/twilioSend.ts. No
+    // legitimate reason for client-side read/write access.
+    match /globalBlacklist/{e164Number} {
+      allow read, write: if false;
+    }
+
     match /conversations/{conversationId} {
       allow read: if ownsResource();
       allow create: if ownsNewResource();

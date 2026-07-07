@@ -3,6 +3,7 @@ import twilio from "twilio";
 import { FieldValue } from "firebase-admin/firestore";
 import { getDownloadURL } from "firebase-admin/storage";
 import { adminDb, adminStorage } from "../../../../../lib/firebaseAdmin";
+import { upsertGlobalBlocklist } from "../../../../../lib/globalBlocklist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -482,6 +483,20 @@ export async function POST(req: NextRequest) {
         messageSid,
         body,
         source: isAbuse ? "inbound_auto_block" : "twilio_inbound",
+      });
+
+      // Compliance requirement: an opt-out (or auto-detected abuse) must
+      // stop ALL users from messaging this number, not just the one whose
+      // number the customer happened to reply to. blacklisted_numbers
+      // above is scoped per-owner; this is the platform-wide backstop,
+      // checked inside sendSmsForUser on every single send path.
+      await upsertGlobalBlocklist({
+        phone: from,
+        keyword: isAbuse ? "ABUSE" : keyword,
+        triggeredByUid: uid,
+        triggeredByTwilioNumber: twilioNumber,
+        messageSid,
+        body,
       });
     }
 

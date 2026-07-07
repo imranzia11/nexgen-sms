@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuth } from "firebase-admin/auth";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../../../lib/firebaseAdmin";
-import { sendSmsForUser } from "../../../lib/twilioSend";
+import { sendSmsForUser, BlockedNumberError } from "../../../lib/twilioSend";
 
 function toE164(raw: string) {
   const cleaned = String(raw || "").replace(/[^\d+]/g, "");
@@ -267,6 +267,10 @@ const msg = await sendSmsForUser({
       mediaUrls,
     });
   } catch (error: any) {
+    if (error instanceof BlockedNumberError) {
+      return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
+    }
+
     console.error("send-reply error:", error);
 
     return NextResponse.json(

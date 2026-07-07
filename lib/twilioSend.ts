@@ -1,5 +1,8 @@
 import twilio from "twilio";
 import { toE164 } from "./phone";
+import { assertNotGloballyBlocked, BlockedNumberError } from "./globalBlocklist";
+
+export { BlockedNumberError };
 
 // Single choke point for every outbound Twilio send in the app.
 //
@@ -79,6 +82,12 @@ export async function sendSmsForUser(opts: {
   const to = toE164(opts.to);
   const body = String(opts.body || "").trim();
   const mediaUrl = (opts.mediaUrls || []).filter(Boolean);
+
+  // Platform-wide opt-out check. This runs regardless of whether the
+  // calling route did its own per-owner blacklist check (one of them,
+  // send-sms/twilio/route.ts, never did) — so this is the one place a
+  // STOP can never be bypassed by any current or future send path.
+  await assertNotGloballyBlocked(to);
 
   const client = twilio(accountSid, authToken);
 
