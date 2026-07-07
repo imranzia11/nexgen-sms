@@ -62,29 +62,56 @@ async function main() {
     byPhone.set(phone, list);
   });
 
-  let flagged = 0;
+  // Two different signals live in this data, and only one of them matters:
+  //
+  // 1. Benign overlap: the same phone number shows up under multiple
+  //    owners, each with their own outbound campaign history to it. This
+  //    just means two users' lead lists overlap — normal, expected, not a
+  //    bug. Most of what this script used to print was this.
+  //
+  // 2. The actual leak signature: an owner has ZERO outbound messages to a
+  //    number but a real inbound reply anyway. They never sent anything —
+  //    so a reply could only have landed on their account if it was
+  //    originally sent by a DIFFERENT user whose number Twilio's Messaging
+  //    Service pool substituted in (the bug we fixed). This is the only
+  //    pattern worth a human looking at.
+  let benignOverlapCount = 0;
+  let leakSuspects = 0;
 
   for (const [phone, entries] of byPhone.entries()) {
     const distinctOwners = new Set(entries.map((e) => e.ownerUid));
     if (distinctOwners.size <= 1) continue;
 
-    flagged++;
-    console.log(`FLAGGED: ${phone} appears under ${distinctOwners.size} different owners:`);
+    const suspicious = entries.filter(
+      (e) => e.outboundCount === 0 && e.inboundCount > 0
+    );
+
+    if (suspicious.length === 0) {
+      benignOverlapCount++;
+      continue;
+    }
+
+    leakSuspects++;
+    console.log(`SUSPECTED LEAK: ${phone} appears under ${distinctOwners.size} different owners:`);
     entries.forEach((e) => {
-      const suspicious = e.outboundCount === 0 && e.inboundCount > 0;
+      const flag = e.outboundCount === 0 && e.inboundCount > 0;
       console.log(
         `  - conversationId=${e.conversationId} owner=${e.ownerEmail || e.ownerUid} ` +
           `outbound=${e.outboundCount} inbound=${e.inboundCount} hasReply=${e.hasReply}` +
-          `${suspicious ? "  <-- inbound-only, no outbound campaign: likely the leaked side" : ""}`
+          `${flag ? "  <-- received a reply despite sending nothing: likely the leaked side" : ""}`
       );
     });
     console.log("");
   }
 
-  if (flagged === 0) {
-    console.log("No customer phone number appears under more than one owner. No leaked conversations found.");
+  console.log(
+    `${benignOverlapCount} phone number(s) overlap across owners with normal outbound history on both sides (not a bug, ignored).`
+  );
+
+  if (leakSuspects === 0) {
+    console.log("No conversations matching the leak signature (reply with zero outbound) were found.");
   } else {
-    console.log(`Found ${flagged} phone number(s) split across multiple owners. Review each before merging/reassigning.`);
+    console.log(`Found ${leakSuspects} phone number(s) matching the leak signature. Review each before reassigning.`);
   }
 }
 
