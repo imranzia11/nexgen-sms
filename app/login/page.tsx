@@ -450,10 +450,10 @@ const pageStyle: CSSProperties = {
 
 const shellStyle: CSSProperties = {
   width: "100%",
-  maxWidth: 1180,
+  maxWidth: 1360,
   display: "grid",
   gridTemplateColumns: "1.05fr 0.8fr",
-  gap: 36,
+  gap: 40,
   alignItems: "stretch",
 };
 
@@ -517,19 +517,19 @@ const heroBadgeStyle: CSSProperties = {
 const heroTitleStyle: CSSProperties = {
   margin: "20px 0 0 0",
   fontFamily: "'Space Grotesk', sans-serif",
-  fontSize: 60,
-  lineHeight: 1.08,
+  fontSize: 72,
+  lineHeight: 1.06,
   fontWeight: 700,
   color: "#ffffff",
-  maxWidth: 560,
+  maxWidth: 640,
 };
 
 const heroTextStyle: CSSProperties = {
-  margin: "18px 0 0 0",
-  fontSize: 17,
+  margin: "20px 0 0 0",
+  fontSize: 19,
   lineHeight: 1.7,
   color: "rgba(255, 255, 255, 0.86)",
-  maxWidth: 500,
+  maxWidth: 540,
 };
 
 const threadCardStyle: CSSProperties = {
@@ -727,9 +727,9 @@ const rightWrapStyle: CSSProperties = {
 
 const cardStyle: CSSProperties = {
   width: "100%",
-  maxWidth: 400,
-  borderRadius: 24,
-  padding: 32,
+  maxWidth: 460,
+  borderRadius: 26,
+  padding: 40,
   background: "#f4fbf9",
   boxShadow: "0 30px 80px rgba(2,8,23,0.35)",
 };
@@ -741,29 +741,29 @@ const cardTopStyle: CSSProperties = {
 const cardTitleStyle: CSSProperties = {
   margin: 0,
   fontFamily: "'Space Grotesk', sans-serif",
-  fontSize: 26,
+  fontSize: 32,
   lineHeight: 1.1,
   fontWeight: 700,
   color: "#0f172a",
 };
 
 const cardTextStyle: CSSProperties = {
-  margin: "8px 0 0 0",
-  fontSize: 14,
+  margin: "10px 0 0 0",
+  fontSize: 15.5,
   lineHeight: 1.6,
   color: "#64748b",
 };
 
 const formStyle: CSSProperties = {
-  marginTop: 26,
+  marginTop: 28,
   display: "grid",
-  gap: 16,
+  gap: 18,
 };
 
 const labelStyle: CSSProperties = {
   display: "block",
-  marginBottom: 7,
-  fontSize: 12.5,
+  marginBottom: 8,
+  fontSize: 14,
   fontWeight: 600,
   color: "#334155",
 };
@@ -774,12 +774,13 @@ const inputStyle: CSSProperties = {
   border: "1px solid #d7e3e0",
   background: "#ffffff",
   color: "#0f172a",
-  padding: "13px 14px",
+  padding: "16px 16px",
   // 16px is the minimum that keeps iOS Safari from auto-zooming the whole
   // page in when a user taps into this field — below that threshold, the
   // browser silently zooms to make the text legible, which looks like the
-  // page unexpectedly jumping/zooming for the user.
-  fontSize: 16,
+  // page unexpectedly jumping/zooming for the user. Bumped further to
+  // 17px so it reads clearly at a glance on any screen size.
+  fontSize: 17,
   outline: "none",
 };
 
@@ -812,14 +813,14 @@ const errorBoxStyle: CSSProperties = {
 };
 
 const buttonStyle: CSSProperties = {
-  marginTop: 4,
+  marginTop: 6,
   width: "100%",
   border: "none",
   borderRadius: 12,
-  padding: "14px 18px",
+  padding: "17px 18px",
   background: "linear-gradient(135deg, #0f766e 0%, #0d9488 100%)",
   color: "#ffffff",
-  fontSize: 15,
+  fontSize: 17,
   fontWeight: 700,
   boxShadow: "0 14px 30px rgba(13,148,136,0.24)",
 };
