@@ -11,7 +11,6 @@ import {
   query,
   doc,
   where,
-  orderBy,
   deleteDoc,
   setDoc,
   serverTimestamp,
@@ -127,8 +126,25 @@ function getCache(uid: string) {
   return undefined;
 }
 
+// Only trust the persisted cache for the very first synchronous render if
+// it demonstrably belongs to whoever is actually signed in right now. The
+// localStorage key above is shared by the whole browser, not scoped per
+// account — without this check, whichever account last wrote to it gets
+// painted on screen immediately for ANY account that loads this page next,
+// until the auth check a moment later corrects it. That's the "flicker"
+// where the page briefly shows one person's conversations before
+// snapping to another's: Firebase Auth persists the session, so
+// auth.currentUser is already populated synchronously for an
+// already-logged-in user by the time this runs — we just have to actually
+// check it instead of trusting the cache unconditionally.
 function getInitialCache(): PersistedCache | null {
-  return readPersistedCache();
+  const currentUid = auth.currentUser?.uid;
+  if (!currentUid) return null;
+
+  const persisted = readPersistedCache();
+  if (persisted && persisted.uid === currentUid) return persisted;
+
+  return null;
 }
 
 // Wraps a promise with a hard ceiling so a dead network connection can
@@ -159,19 +175,6 @@ function truncateText(value: string, max = 110) {
   if (!value) return "-";
   if (value.length <= max) return value;
   return `${value.slice(0, max)}...`;
-}
-
-function normalizeRole(value: unknown) {
-  return String(value || "").trim().toLowerCase();
-}
-
-function isAdmin(role?: string) {
-  const normalized = normalizeRole(role);
-  return (
-    normalized === "admin" ||
-    normalized === "superadmin" ||
-    normalized === "super_admin"
-  );
 }
 
 function getSortSeconds(value: any) {
@@ -252,14 +255,18 @@ export default function RepliesPage() {
   }
 
   async function fetchBlacklist(currentProfile: AppUser) {
-    const blacklistSnap = isAdmin(currentProfile.role)
-      ? await getDocs(query(collection(db, "blacklisted_numbers")))
-      : await getDocs(
-          query(
-            collection(db, "blacklisted_numbers"),
-            where("ownerUid", "==", currentProfile.uid)
-          )
-        );
+    // Always scoped to the signed-in user's own uid. There used to be an
+    // isAdmin() branch here that queried the whole collection unfiltered —
+    // Firestore's rules don't grant admins any read exception, so that
+    // branch would only ever throw a permission error, never actually
+    // return everyone's data. Removed rather than left as a landmine for
+    // a future rules change to accidentally activate.
+    const blacklistSnap = await getDocs(
+      query(
+        collection(db, "blacklisted_numbers"),
+        where("ownerUid", "==", currentProfile.uid)
+      )
+    );
 
     return blacklistSnap.docs
       .map((d) => {
@@ -272,16 +279,14 @@ export default function RepliesPage() {
   }
 
   async function fetchConversations(currentProfile: AppUser) {
-    return isAdmin(currentProfile.role)
-      ? runQuery(
-          query(collection(db, "conversations"), orderBy("lastMessageAt", "desc"))
-        )
-      : runQuery(
-          query(
-            collection(db, "conversations"),
-            where("ownerUid", "==", currentProfile.uid)
-          )
-        );
+    // Same reasoning as fetchBlacklist above — always scoped to the
+    // signed-in user's own uid, no admin bypass.
+    return runQuery(
+      query(
+        collection(db, "conversations"),
+        where("ownerUid", "==", currentProfile.uid)
+      )
+    );
   }
 
   function buildRows(
