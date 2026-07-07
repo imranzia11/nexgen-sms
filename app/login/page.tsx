@@ -1,18 +1,78 @@
 "use client";
 
-import { useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+
+type ThreadStep =
+  | "idle"
+  | "typingOut"
+  | "outSent"
+  | "outDelivered"
+  | "typingIn"
+  | "inReceived";
+
+const STEP_SEQUENCE: { step: ThreadStep; holdMs: number }[] = [
+  { step: "typingOut", holdMs: 900 },
+  { step: "outSent", holdMs: 900 },
+  { step: "outDelivered", holdMs: 1400 },
+  { step: "typingIn", holdMs: 900 },
+  { step: "inReceived", holdMs: 2600 },
+];
 
 export default function LoginPage() {
   const router = useRouter();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const [threadStep, setThreadStep] = useState<ThreadStep>("idle");
+  const stepIndexRef = useRef(0);
+  const reducedMotionRef = useRef(false);
+
+  useEffect(() => {
+    reducedMotionRef.current =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (reducedMotionRef.current) {
+      setThreadStep("inReceived");
+      return;
+    }
+
+    let timer: number | undefined;
+    let cancelled = false;
+
+    const runStep = () => {
+      if (cancelled) return;
+      const current = STEP_SEQUENCE[stepIndexRef.current];
+      setThreadStep(current.step);
+
+      timer = window.setTimeout(() => {
+        stepIndexRef.current =
+          (stepIndexRef.current + 1) % STEP_SEQUENCE.length;
+
+        if (stepIndexRef.current === 0) {
+          setThreadStep("idle");
+          timer = window.setTimeout(runStep, 700);
+        } else {
+          runStep();
+        }
+      }, current.holdMs);
+    };
+
+    timer = window.setTimeout(runStep, 500);
+
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, []);
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
@@ -49,20 +109,18 @@ export default function LoginPage() {
     setLoading(false);
   };
 
+  const showOutBubble =
+    threadStep === "outSent" ||
+    threadStep === "outDelivered" ||
+    threadStep === "typingIn" ||
+    threadStep === "inReceived";
+
+  const showInBubble = threadStep === "inReceived";
+
   return (
     <>
       <style jsx global>{`
-        @keyframes floatGlow {
-          0% {
-            transform: translateY(0px);
-          }
-          50% {
-            transform: translateY(-8px);
-          }
-          100% {
-            transform: translateY(0px);
-          }
-        }
+        @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
 
         @keyframes spin {
           0% {
@@ -73,87 +131,198 @@ export default function LoginPage() {
           }
         }
 
+        @keyframes bubbleIn {
+          0% {
+            opacity: 0;
+            transform: translateY(6px) scale(0.98);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        @keyframes dotPulse {
+          0%,
+          80%,
+          100% {
+            opacity: 0.25;
+            transform: translateY(0);
+          }
+          40% {
+            opacity: 1;
+            transform: translateY(-2px);
+          }
+        }
+
         input::placeholder {
-          color: rgba(226, 232, 240, 0.72);
+          color: rgba(148, 163, 184, 0.7);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .thread-bubble {
+            animation: none !important;
+          }
         }
       `}</style>
 
       <main style={pageStyle}>
-        <div style={bgGlowOne} />
-        <div style={bgGlowTwo} />
-
         <div style={shellStyle}>
           <section style={leftStyle}>
             <div style={brandRowStyle}>
               <div style={brandIconStyle}>N</div>
               <div>
                 <div style={brandTitleStyle}>Nexgen SMS</div>
-                <div style={brandSubStyle}>Portal</div>
+                <div style={brandSubStyle}>Outreach Portal</div>
               </div>
             </div>
 
-            <div style={heroBadgeStyle}>Premium User Workspace</div>
+            <div style={heroBadgeStyle}>For teams running SMS outreach</div>
 
-            <h1 style={heroTitleStyle}>Sign in to your SMS portal</h1>
+            <h1 style={heroTitleStyle}>
+              Every conversation,
+              <br />
+              accounted for.
+            </h1>
 
             <p style={heroTextStyle}>
-              Manage imported lead files, launch SMS campaigns, monitor replies,
-              and keep your workflow in one premium control center.
+              Send campaigns, track delivery status, and reply to customers
+              from one place — built around the messages themselves, not
+              dashboards for their own sake.
             </p>
 
-            <div style={featureGridStyle}>
-              <FeatureCard
-                title="CSV Imports"
-                text="Upload lead files and organize recipients fast."
-              />
-              <FeatureCard
-                title="Bulk SMS"
-                text="Launch campaigns from one clean dashboard."
-              />
-              <FeatureCard
-                title="Replies Inbox"
-                text="Track incoming customer responses easily."
-              />
-              <FeatureCard
-                title="User Access"
-                text="Secure sign-in for active portal users."
-              />
+            <div style={threadCardStyle}>
+              <div style={threadTopBarStyle}>
+                <span style={threadTopDotStyle} />
+                <span style={threadTopLabelStyle}>+1 (914) 555-0142</span>
+                <span style={threadTopStatusStyle}>live thread</span>
+              </div>
+
+              <div style={threadBodyStyle}>
+                <div style={threadRowOutStyle}>
+                  {showOutBubble ? (
+                    <div
+                      className="thread-bubble"
+                      style={{
+                        ...threadBubbleStyle,
+                        ...threadBubbleOutStyle,
+                        animation: "bubbleIn 0.35s ease-out",
+                      }}
+                    >
+                      <div style={threadBubbleTextStyle}>
+                        Hi Sarah — following up on the paperwork, need
+                        anything from us?
+                      </div>
+                      <div style={threadMetaOutStyle}>
+                        <span>9:41 AM</span>
+                        <span
+                          style={{
+                            color:
+                              threadStep === "outDelivered" ||
+                              threadStep === "typingIn" ||
+                              threadStep === "inReceived"
+                                ? "#5eead4"
+                                : "rgba(255,255,255,0.55)",
+                          }}
+                        >
+                          {threadStep === "outSent" ? "sent ✓" : "delivered ✓✓"}
+                        </span>
+                      </div>
+                    </div>
+                  ) : threadStep === "typingOut" ? (
+                    <div
+                      className="thread-bubble"
+                      style={{ ...typingBubbleStyle, ...typingBubbleOutStyle }}
+                    >
+                      <TypingDots />
+                    </div>
+                  ) : (
+                    <div style={{ height: 1 }} />
+                  )}
+                </div>
+
+                <div style={threadRowInStyle}>
+                  {showInBubble ? (
+                    <div
+                      className="thread-bubble"
+                      style={{
+                        ...threadBubbleStyle,
+                        ...threadBubbleInStyle,
+                        animation: "bubbleIn 0.35s ease-out",
+                      }}
+                    >
+                      <div style={threadBubbleTextInStyle}>
+                        Not yet — I'll get it over by Friday!
+                      </div>
+                      <div style={threadMetaInStyle}>9:44 AM</div>
+                    </div>
+                  ) : threadStep === "typingIn" ? (
+                    <div
+                      className="thread-bubble"
+                      style={{ ...typingBubbleStyle, ...typingBubbleInStyle }}
+                    >
+                      <TypingDots dark />
+                    </div>
+                  ) : (
+                    <div style={{ height: 1 }} />
+                  )}
+                </div>
+              </div>
+
+              <div style={threadFooterStyle}>
+                Reply STOP to opt out, HELP for help.
+              </div>
+            </div>
+
+            <div style={statsRowStyle}>
+              <Stat label="Delivered" value="98.2%" />
+              <Stat label="Avg. reply time" value="4m" />
+              <Stat label="Active numbers" value="12" />
             </div>
           </section>
 
           <section style={rightWrapStyle}>
             <div style={cardStyle}>
               <div style={cardTopStyle}>
-                <div style={loginIconWrapStyle}>
-                  <div style={loginIconStyle}>↗</div>
-                </div>
-                <h2 style={cardTitleStyle}>Portal Login</h2>
-                <p style={cardTextStyle}>
-                  Sign in to continue to Nexgen SMS Portal
-                </p>
+                <h2 style={cardTitleStyle}>Sign in</h2>
+                <p style={cardTextStyle}>Continue to your outreach portal</p>
               </div>
 
               <form onSubmit={handleLogin} style={formStyle}>
                 <div>
-                  <label style={labelStyle}>Email Address</label>
+                  <label style={labelStyle}>Email address</label>
                   <input
                     type="email"
-                    placeholder="Enter your email"
+                    placeholder="you@company.com"
                     style={inputStyle}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    autoComplete="username"
                   />
                 </div>
 
                 <div>
                   <label style={labelStyle}>Password</label>
-                  <input
-                    type="password"
-                    placeholder="Enter password"
-                    style={inputStyle}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
+                  <div style={passwordWrapStyle}>
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Enter password"
+                      style={{ ...inputStyle, paddingRight: 46 }}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      autoComplete="current-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      style={passwordToggleStyle}
+                      aria-label={
+                        showPassword ? "Hide password" : "Show password"
+                      }
+                    >
+                      {showPassword ? "Hide" : "Show"}
+                    </button>
+                  </div>
                 </div>
 
                 {error ? <div style={errorBoxStyle}>{error}</div> : null}
@@ -170,13 +339,17 @@ export default function LoginPage() {
                   {loading ? (
                     <span style={buttonLoadingWrapStyle}>
                       <span style={spinnerStyle} />
-                      Logging in...
+                      Signing in...
                     </span>
                   ) : (
-                    "Login"
+                    "Sign in"
                   )}
                 </button>
               </form>
+
+              <div style={cardFooterStyle}>
+                Access is limited to active portal accounts.
+              </div>
             </div>
           </section>
         </div>
@@ -185,63 +358,59 @@ export default function LoginPage() {
   );
 }
 
-function FeatureCard({ title, text }: { title: string; text: string }) {
+function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div style={featureCardStyle}>
-      <div style={featureDotStyle} />
-      <div style={featureTitleStyle}>{title}</div>
-      <div style={featureTextStyle}>{text}</div>
+    <div style={statItemStyle}>
+      <div style={statValueStyle}>{value}</div>
+      <div style={statLabelStyle}>{label}</div>
+    </div>
+  );
+}
+
+function TypingDots({ dark = false }: { dark?: boolean }) {
+  const dotColor = dark ? "#64748b" : "rgba(255,255,255,0.85)";
+
+  return (
+    <div style={{ display: "flex", gap: 4, padding: "2px 0" }}>
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          style={{
+            width: 5,
+            height: 5,
+            borderRadius: "50%",
+            background: dotColor,
+            display: "inline-block",
+            animation: `dotPulse 1.1s ease-in-out ${i * 0.15}s infinite`,
+          }}
+        />
+      ))}
     </div>
   );
 }
 
 const pageStyle: CSSProperties = {
   minHeight: "100vh",
-  position: "relative",
-  overflow: "hidden",
-  background: "linear-gradient(135deg, #0f766e 0%, #0d9488 45%, #14b8a6 100%)",
+  background: "#0a2b28",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  padding: "32px 20px",
-};
-
-const bgGlowOne: CSSProperties = {
-  position: "absolute",
-  width: 420,
-  height: 420,
-  borderRadius: "50%",
-  background: "rgba(255,255,255,0.10)",
-  top: -120,
-  left: -100,
-  filter: "blur(30px)",
-};
-
-const bgGlowTwo: CSSProperties = {
-  position: "absolute",
-  width: 420,
-  height: 420,
-  borderRadius: "50%",
-  background: "rgba(255,255,255,0.08)",
-  bottom: -140,
-  right: -120,
-  filter: "blur(30px)",
+  padding: "40px 20px",
+  fontFamily: "'Inter', system-ui, sans-serif",
 };
 
 const shellStyle: CSSProperties = {
-  position: "relative",
-  zIndex: 1,
   width: "100%",
-  maxWidth: 1280,
+  maxWidth: 1180,
   display: "grid",
-  gridTemplateColumns: "1.1fr 0.9fr",
-  gap: 28,
+  gridTemplateColumns: "1.05fr 0.8fr",
+  gap: 36,
   alignItems: "stretch",
 };
 
 const leftStyle: CSSProperties = {
-  padding: "22px 8px",
-  color: "#ffffff",
+  padding: "12px 8px",
+  color: "#ecfeff",
   display: "flex",
   flexDirection: "column",
   justifyContent: "center",
@@ -250,101 +419,213 @@ const leftStyle: CSSProperties = {
 const brandRowStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 16,
+  gap: 14,
 };
 
 const brandIconStyle: CSSProperties = {
-  width: 72,
-  height: 72,
-  borderRadius: 22,
+  width: 46,
+  height: 46,
+  borderRadius: 14,
   display: "grid",
   placeItems: "center",
-  background: "rgba(255,255,255,0.16)",
-  color: "#ffffff",
-  fontSize: 34,
-  fontWeight: 900,
-  boxShadow: "0 16px 40px rgba(0,0,0,0.12)",
-  animation: "floatGlow 4s ease-in-out infinite",
+  background: "rgba(45, 212, 191, 0.14)",
+  border: "1px solid rgba(45, 212, 191, 0.3)",
+  color: "#5eead4",
+  fontSize: 20,
+  fontWeight: 700,
+  fontFamily: "'Space Grotesk', sans-serif",
 };
 
 const brandTitleStyle: CSSProperties = {
-  fontSize: 38,
-  fontWeight: 900,
-  lineHeight: 1.05,
+  fontFamily: "'Space Grotesk', sans-serif",
+  fontSize: 18,
+  fontWeight: 700,
+  lineHeight: 1.1,
+  color: "#ffffff",
 };
 
 const brandSubStyle: CSSProperties = {
-  marginTop: 6,
-  fontSize: 18,
-  color: "rgba(236,254,255,0.82)",
+  marginTop: 2,
+  fontSize: 13,
+  color: "rgba(190, 242, 232, 0.6)",
   fontWeight: 500,
 };
 
 const heroBadgeStyle: CSSProperties = {
-  marginTop: 28,
+  marginTop: 32,
   width: "fit-content",
   borderRadius: 999,
-  padding: "9px 16px",
-  background: "rgba(255,255,255,0.12)",
-  border: "1px solid rgba(255,255,255,0.18)",
-  color: "#ecfeff",
+  padding: "7px 14px",
+  background: "rgba(45, 212, 191, 0.10)",
+  border: "1px solid rgba(45, 212, 191, 0.22)",
+  color: "#99f6e4",
   fontSize: 12,
-  fontWeight: 800,
-  letterSpacing: 0.4,
+  fontWeight: 500,
+  fontFamily: "'IBM Plex Mono', monospace",
+  letterSpacing: 0.2,
 };
 
 const heroTitleStyle: CSSProperties = {
-  margin: "22px 0 0 0",
-  fontSize: 56,
-  lineHeight: 1.02,
-  fontWeight: 900,
-  maxWidth: 700,
+  margin: "20px 0 0 0",
+  fontFamily: "'Space Grotesk', sans-serif",
+  fontSize: 44,
+  lineHeight: 1.12,
+  fontWeight: 700,
+  color: "#ffffff",
+  maxWidth: 520,
 };
 
 const heroTextStyle: CSSProperties = {
-  margin: "18px 0 0 0",
-  fontSize: 18,
-  lineHeight: 1.75,
-  color: "rgba(236,254,255,0.9)",
-  maxWidth: 700,
+  margin: "16px 0 0 0",
+  fontSize: 15.5,
+  lineHeight: 1.7,
+  color: "rgba(203, 245, 237, 0.72)",
+  maxWidth: 460,
 };
 
-const featureGridStyle: CSSProperties = {
-  marginTop: 28,
-  display: "grid",
-  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-  gap: 16,
-  maxWidth: 760,
-};
-
-const featureCardStyle: CSSProperties = {
-  borderRadius: 24,
+const threadCardStyle: CSSProperties = {
+  marginTop: 32,
+  width: "100%",
+  maxWidth: 440,
+  borderRadius: 20,
+  background: "rgba(255,255,255,0.04)",
+  border: "1px solid rgba(255,255,255,0.08)",
   padding: 18,
-  background: "rgba(255,255,255,0.10)",
-  border: "1px solid rgba(255,255,255,0.16)",
-  backdropFilter: "blur(10px)",
-  boxShadow: "0 16px 40px rgba(0,0,0,0.08)",
 };
 
-const featureDotStyle: CSSProperties = {
-  width: 12,
-  height: 12,
+const threadTopBarStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  paddingBottom: 12,
+  borderBottom: "1px solid rgba(255,255,255,0.07)",
+};
+
+const threadTopDotStyle: CSSProperties = {
+  width: 7,
+  height: 7,
   borderRadius: "50%",
-  background: "#ccfbf1",
+  background: "#2dd4bf",
+  flexShrink: 0,
 };
 
-const featureTitleStyle: CSSProperties = {
-  marginTop: 14,
-  fontSize: 18,
-  fontWeight: 800,
+const threadTopLabelStyle: CSSProperties = {
+  fontFamily: "'IBM Plex Mono', monospace",
+  fontSize: 12.5,
+  color: "rgba(236,254,255,0.75)",
+  flex: 1,
+};
+
+const threadTopStatusStyle: CSSProperties = {
+  fontSize: 11,
+  color: "rgba(94, 234, 212, 0.7)",
+  fontFamily: "'IBM Plex Mono', monospace",
+};
+
+const threadBodyStyle: CSSProperties = {
+  padding: "16px 2px",
+  display: "grid",
+  gap: 10,
+  minHeight: 118,
+};
+
+const threadRowOutStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "flex-end",
+};
+
+const threadRowInStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "flex-start",
+};
+
+const threadBubbleStyle: CSSProperties = {
+  maxWidth: "82%",
+  borderRadius: 14,
+  padding: "10px 13px",
+};
+
+const threadBubbleOutStyle: CSSProperties = {
+  background: "linear-gradient(135deg, #0f766e 0%, #0d9488 100%)",
+};
+
+const threadBubbleInStyle: CSSProperties = {
+  background: "rgba(255,255,255,0.92)",
+};
+
+const threadBubbleTextStyle: CSSProperties = {
+  fontSize: 13,
+  lineHeight: 1.5,
   color: "#ffffff",
 };
 
-const featureTextStyle: CSSProperties = {
-  marginTop: 8,
-  fontSize: 14,
-  lineHeight: 1.6,
-  color: "rgba(236,254,255,0.82)",
+const threadBubbleTextInStyle: CSSProperties = {
+  fontSize: 13,
+  lineHeight: 1.5,
+  color: "#0f172a",
+};
+
+const threadMetaOutStyle: CSSProperties = {
+  marginTop: 6,
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 10,
+  fontFamily: "'IBM Plex Mono', monospace",
+  fontSize: 10.5,
+  color: "rgba(255,255,255,0.6)",
+};
+
+const threadMetaInStyle: CSSProperties = {
+  marginTop: 6,
+  fontFamily: "'IBM Plex Mono', monospace",
+  fontSize: 10.5,
+  color: "#94a3b8",
+};
+
+const typingBubbleStyle: CSSProperties = {
+  borderRadius: 14,
+  padding: "10px 13px",
+  width: "fit-content",
+};
+
+const typingBubbleOutStyle: CSSProperties = {
+  background: "rgba(15, 118, 110, 0.5)",
+};
+
+const typingBubbleInStyle: CSSProperties = {
+  background: "rgba(255,255,255,0.5)",
+};
+
+const threadFooterStyle: CSSProperties = {
+  paddingTop: 12,
+  borderTop: "1px solid rgba(255,255,255,0.07)",
+  fontFamily: "'IBM Plex Mono', monospace",
+  fontSize: 10.5,
+  color: "rgba(203, 245, 237, 0.4)",
+};
+
+const statsRowStyle: CSSProperties = {
+  marginTop: 30,
+  display: "flex",
+  gap: 28,
+};
+
+const statItemStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 2,
+};
+
+const statValueStyle: CSSProperties = {
+  fontFamily: "'Space Grotesk', sans-serif",
+  fontSize: 20,
+  fontWeight: 700,
+  color: "#ffffff",
+};
+
+const statLabelStyle: CSSProperties = {
+  fontSize: 12,
+  color: "rgba(190, 242, 232, 0.55)",
 };
 
 const rightWrapStyle: CSSProperties = {
@@ -355,85 +636,83 @@ const rightWrapStyle: CSSProperties = {
 
 const cardStyle: CSSProperties = {
   width: "100%",
-  maxWidth: 500,
-  borderRadius: 34,
-  padding: 30,
-  background: "rgba(8, 25, 43, 0.78)",
-  border: "1px solid rgba(255,255,255,0.12)",
-  boxShadow: "0 30px 100px rgba(2,8,23,0.28)",
-  backdropFilter: "blur(16px)",
+  maxWidth: 400,
+  borderRadius: 24,
+  padding: 32,
+  background: "#f4fbf9",
+  boxShadow: "0 30px 80px rgba(2,8,23,0.35)",
 };
 
 const cardTopStyle: CSSProperties = {
-  textAlign: "center",
-};
-
-const loginIconWrapStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "center",
-};
-
-const loginIconStyle: CSSProperties = {
-  width: 74,
-  height: 74,
-  borderRadius: 24,
-  display: "grid",
-  placeItems: "center",
-  background: "rgba(255,255,255,0.12)",
-  color: "#ffffff",
-  fontSize: 32,
-  fontWeight: 900,
-  boxShadow: "0 16px 40px rgba(0,0,0,0.14)",
+  textAlign: "left",
 };
 
 const cardTitleStyle: CSSProperties = {
-  margin: "20px 0 0 0",
-  fontSize: 34,
+  margin: 0,
+  fontFamily: "'Space Grotesk', sans-serif",
+  fontSize: 26,
   lineHeight: 1.1,
-  fontWeight: 900,
-  color: "#ffffff",
+  fontWeight: 700,
+  color: "#0f172a",
 };
 
 const cardTextStyle: CSSProperties = {
-  margin: "10px 0 0 0",
-  fontSize: 15,
+  margin: "8px 0 0 0",
+  fontSize: 14,
   lineHeight: 1.6,
-  color: "rgba(226,232,240,0.82)",
+  color: "#64748b",
 };
 
 const formStyle: CSSProperties = {
-  marginTop: 28,
+  marginTop: 26,
   display: "grid",
-  gap: 18,
+  gap: 16,
 };
 
 const labelStyle: CSSProperties = {
   display: "block",
-  marginBottom: 8,
-  fontSize: 13,
-  fontWeight: 800,
-  color: "#dbeafe",
+  marginBottom: 7,
+  fontSize: 12.5,
+  fontWeight: 600,
+  color: "#334155",
 };
 
 const inputStyle: CSSProperties = {
   width: "100%",
-  borderRadius: 18,
-  border: "1px solid rgba(255,255,255,0.14)",
-  background: "rgba(255,255,255,0.08)",
-  color: "#ffffff",
-  padding: "15px 16px",
-  fontSize: 15,
+  borderRadius: 12,
+  border: "1px solid #d7e3e0",
+  background: "#ffffff",
+  color: "#0f172a",
+  padding: "12px 14px",
+  fontSize: 14.5,
   outline: "none",
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
+};
+
+const passwordWrapStyle: CSSProperties = {
+  position: "relative",
+};
+
+const passwordToggleStyle: CSSProperties = {
+  position: "absolute",
+  top: "50%",
+  right: 10,
+  transform: "translateY(-50%)",
+  border: "none",
+  background: "transparent",
+  color: "#0f766e",
+  fontSize: 12.5,
+  fontWeight: 700,
+  cursor: "pointer",
+  padding: "6px 4px",
 };
 
 const errorBoxStyle: CSSProperties = {
-  borderRadius: 18,
-  padding: "14px 16px",
-  background: "rgba(220, 38, 38, 0.18)",
-  border: "1px solid rgba(248, 113, 113, 0.35)",
-  color: "#fecaca",
-  fontSize: 14,
+  borderRadius: 12,
+  padding: "12px 14px",
+  background: "rgba(220, 38, 38, 0.08)",
+  border: "1px solid rgba(220, 38, 38, 0.18)",
+  color: "#b91c1c",
+  fontSize: 13.5,
   lineHeight: 1.5,
 };
 
@@ -441,26 +720,34 @@ const buttonStyle: CSSProperties = {
   marginTop: 4,
   width: "100%",
   border: "none",
-  borderRadius: 18,
-  padding: "16px 18px",
-  background: "linear-gradient(135deg, #ccfbf1 0%, #ecfeff 100%)",
-  color: "#0f766e",
-  fontSize: 16,
-  fontWeight: 900,
-  boxShadow: "0 18px 40px rgba(204,251,241,0.20)",
+  borderRadius: 12,
+  padding: "14px 18px",
+  background: "linear-gradient(135deg, #0f766e 0%, #0d9488 100%)",
+  color: "#ffffff",
+  fontSize: 15,
+  fontWeight: 700,
+  boxShadow: "0 14px 30px rgba(13,148,136,0.24)",
 };
 
 const buttonLoadingWrapStyle: CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   gap: 10,
+  justifyContent: "center",
 };
 
 const spinnerStyle: CSSProperties = {
-  width: 18,
-  height: 18,
+  width: 16,
+  height: 16,
   borderRadius: "50%",
-  border: "2px solid rgba(15,118,110,0.25)",
-  borderTop: "2px solid #0f766e",
+  border: "2px solid rgba(255,255,255,0.35)",
+  borderTop: "2px solid #ffffff",
   animation: "spin 1s linear infinite",
+};
+
+const cardFooterStyle: CSSProperties = {
+  marginTop: 20,
+  fontSize: 12,
+  color: "#94a3b8",
+  textAlign: "center",
 };
