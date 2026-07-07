@@ -422,7 +422,7 @@ function TypingDots({ dark = false }: { dark?: boolean }) {
 
 const pageStyle: CSSProperties = {
   minHeight: "100vh",
-  background: "#0a2b28",
+  background: "linear-gradient(135deg, #0f766e 0%, #0d9488 48%, #14b8a6 100%)",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
@@ -459,9 +459,9 @@ const brandIconStyle: CSSProperties = {
   borderRadius: 14,
   display: "grid",
   placeItems: "center",
-  background: "rgba(45, 212, 191, 0.14)",
-  border: "1px solid rgba(45, 212, 191, 0.3)",
-  color: "#5eead4",
+  background: "rgba(255,255,255,0.16)",
+  border: "1px solid rgba(255,255,255,0.28)",
+  color: "#ffffff",
   fontSize: 20,
   fontWeight: 700,
   fontFamily: "'Space Grotesk', sans-serif",
@@ -478,7 +478,7 @@ const brandTitleStyle: CSSProperties = {
 const brandSubStyle: CSSProperties = {
   marginTop: 2,
   fontSize: 13,
-  color: "rgba(190, 242, 232, 0.6)",
+  color: "rgba(255, 255, 255, 0.7)",
   fontWeight: 500,
 };
 
@@ -487,9 +487,9 @@ const heroBadgeStyle: CSSProperties = {
   width: "fit-content",
   borderRadius: 999,
   padding: "7px 14px",
-  background: "rgba(45, 212, 191, 0.10)",
-  border: "1px solid rgba(45, 212, 191, 0.22)",
-  color: "#99f6e4",
+  background: "rgba(255,255,255,0.14)",
+  border: "1px solid rgba(255,255,255,0.24)",
+  color: "#ecfeff",
   fontSize: 12,
   fontWeight: 500,
   fontFamily: "'IBM Plex Mono', monospace",
@@ -499,19 +499,19 @@ const heroBadgeStyle: CSSProperties = {
 const heroTitleStyle: CSSProperties = {
   margin: "20px 0 0 0",
   fontFamily: "'Space Grotesk', sans-serif",
-  fontSize: 44,
-  lineHeight: 1.12,
+  fontSize: 60,
+  lineHeight: 1.08,
   fontWeight: 700,
   color: "#ffffff",
-  maxWidth: 520,
+  maxWidth: 560,
 };
 
 const heroTextStyle: CSSProperties = {
-  margin: "16px 0 0 0",
-  fontSize: 15.5,
+  margin: "18px 0 0 0",
+  fontSize: 17,
   lineHeight: 1.7,
-  color: "rgba(203, 245, 237, 0.72)",
-  maxWidth: 460,
+  color: "rgba(255, 255, 255, 0.86)",
+  maxWidth: 500,
 };
 
 const threadCardStyle: CSSProperties = {
@@ -519,8 +519,8 @@ const threadCardStyle: CSSProperties = {
   width: "100%",
   maxWidth: 440,
   borderRadius: 20,
-  background: "rgba(255,255,255,0.04)",
-  border: "1px solid rgba(255,255,255,0.08)",
+  background: "rgba(8, 30, 27, 0.28)",
+  border: "1px solid rgba(255,255,255,0.16)",
   padding: 18,
 };
 
@@ -529,27 +529,27 @@ const threadTopBarStyle: CSSProperties = {
   alignItems: "center",
   gap: 8,
   paddingBottom: 12,
-  borderBottom: "1px solid rgba(255,255,255,0.07)",
+  borderBottom: "1px solid rgba(255,255,255,0.14)",
 };
 
 const threadTopDotStyle: CSSProperties = {
   width: 7,
   height: 7,
   borderRadius: "50%",
-  background: "#2dd4bf",
+  background: "#ffffff",
   flexShrink: 0,
 };
 
 const threadTopLabelStyle: CSSProperties = {
   fontFamily: "'IBM Plex Mono', monospace",
   fontSize: 12.5,
-  color: "rgba(236,254,255,0.75)",
+  color: "rgba(255,255,255,0.85)",
   flex: 1,
 };
 
 const threadTopStatusStyle: CSSProperties = {
   fontSize: 11,
-  color: "rgba(94, 234, 212, 0.7)",
+  color: "rgba(255,255,255,0.75)",
   fontFamily: "'IBM Plex Mono', monospace",
 };
 
@@ -584,7 +584,8 @@ const threadBubbleStyle: CSSProperties = {
 };
 
 const threadBubbleOutStyle: CSSProperties = {
-  background: "linear-gradient(135deg, #0f766e 0%, #0d9488 100%)",
+  background: "rgba(8, 30, 27, 0.55)",
+  border: "1px solid rgba(255,255,255,0.14)",
 };
 
 const threadBubbleInStyle: CSSProperties = {
@@ -627,19 +628,19 @@ const typingBubbleStyle: CSSProperties = {
 };
 
 const typingBubbleOutStyle: CSSProperties = {
-  background: "rgba(15, 118, 110, 0.5)",
+  background: "rgba(8, 30, 27, 0.4)",
 };
 
 const typingBubbleInStyle: CSSProperties = {
-  background: "rgba(255,255,255,0.5)",
+  background: "rgba(255,255,255,0.55)",
 };
 
 const threadFooterStyle: CSSProperties = {
   paddingTop: 12,
-  borderTop: "1px solid rgba(255,255,255,0.07)",
+  borderTop: "1px solid rgba(255,255,255,0.14)",
   fontFamily: "'IBM Plex Mono', monospace",
   fontSize: 10.5,
-  color: "rgba(203, 245, 237, 0.4)",
+  color: "rgba(255, 255, 255, 0.55)",
 };
 
 const statsRowStyle: CSSProperties = {
@@ -677,8 +678,8 @@ const featureGridStyle: CSSProperties = {
 const featureCardStyle: CSSProperties = {
   borderRadius: 16,
   padding: 16,
-  background: "rgba(255,255,255,0.04)",
-  border: "1px solid rgba(255,255,255,0.08)",
+  background: "rgba(8, 30, 27, 0.22)",
+  border: "1px solid rgba(255,255,255,0.16)",
 };
 
 const featureIconStyle: CSSProperties = {
@@ -688,16 +689,16 @@ const featureIconStyle: CSSProperties = {
 const featureTitleStyle: CSSProperties = {
   marginTop: 10,
   fontFamily: "'Space Grotesk', sans-serif",
-  fontSize: 14,
+  fontSize: 15,
   fontWeight: 700,
   color: "#ffffff",
 };
 
 const featureTextStyle: CSSProperties = {
   marginTop: 6,
-  fontSize: 12.5,
-  lineHeight: 1.5,
-  color: "rgba(203, 245, 237, 0.62)",
+  fontSize: 13.5,
+  lineHeight: 1.55,
+  color: "rgba(255, 255, 255, 0.82)",
 };
 
 const rightWrapStyle: CSSProperties = {
