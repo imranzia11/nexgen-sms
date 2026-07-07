@@ -172,23 +172,23 @@ export default function LoginPage() {
             <div style={brandRowStyle}>
               <div style={brandIconStyle}>N</div>
               <div>
-                <div style={brandTitleStyle}>Nexgen SMS</div>
-                <div style={brandSubStyle}>Outreach Portal</div>
+                <div style={brandTitleStyle}>Nexgen Marketing</div>
+                <div style={brandSubStyle}>AI Marketing Platform</div>
               </div>
             </div>
 
-            <div style={heroBadgeStyle}>For teams running SMS outreach</div>
+            <div style={heroBadgeStyle}>AI-powered outreach for growth teams</div>
 
             <h1 style={heroTitleStyle}>
-              Every conversation,
+              Turn conversations
               <br />
-              accounted for.
+              into customers.
             </h1>
 
             <p style={heroTextStyle}>
-              Send campaigns, track delivery status, and reply to customers
-              from one place — built around the messages themselves, not
-              dashboards for their own sake.
+              Launch campaigns, get AI-assisted replies, and track every lead
+              from first message to closed deal — all from one marketing
+              portal built for growth.
             </p>
 
             <div style={threadCardStyle}>
@@ -236,9 +236,7 @@ export default function LoginPage() {
                     >
                       <TypingDots />
                     </div>
-                  ) : (
-                    <div style={{ height: 1 }} />
-                  )}
+                  ) : null}
                 </div>
 
                 <div style={threadRowInStyle}>
@@ -263,9 +261,7 @@ export default function LoginPage() {
                     >
                       <TypingDots dark />
                     </div>
-                  ) : (
-                    <div style={{ height: 1 }} />
-                  )}
+                  ) : null}
                 </div>
               </div>
 
@@ -274,10 +270,27 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <div style={statsRowStyle}>
-              <Stat label="Delivered" value="98.2%" />
-              <Stat label="Avg. reply time" value="4m" />
-              <Stat label="Active numbers" value="12" />
+            <div style={featureGridStyle}>
+              <FeatureCard
+                icon="✨"
+                title="AI-Assisted Replies"
+                text="Smart suggestions help you respond to leads faster."
+              />
+              <FeatureCard
+                icon="📣"
+                title="Bulk Campaigns"
+                text="Launch personalized outreach to thousands at once."
+              />
+              <FeatureCard
+                icon="💬"
+                title="Reply Tracking"
+                text="See every response and follow up at the right time."
+              />
+              <FeatureCard
+                icon="🛡️"
+                title="Built-in Compliance"
+                text="Opt-outs and STOP requests are handled automatically."
+              />
             </div>
           </section>
 
@@ -285,7 +298,7 @@ export default function LoginPage() {
             <div style={cardStyle}>
               <div style={cardTopStyle}>
                 <h2 style={cardTitleStyle}>Sign in</h2>
-                <p style={cardTextStyle}>Continue to your outreach portal</p>
+                <p style={cardTextStyle}>Continue to your marketing portal</p>
               </div>
 
               <form onSubmit={handleLogin} style={formStyle}>
@@ -363,6 +376,24 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div style={statItemStyle}>
       <div style={statValueStyle}>{value}</div>
       <div style={statLabelStyle}>{label}</div>
+    </div>
+  );
+}
+
+function FeatureCard({
+  icon,
+  title,
+  text,
+}: {
+  icon: string;
+  title: string;
+  text: string;
+}) {
+  return (
+    <div style={featureCardStyle}>
+      <div style={featureIconStyle}>{icon}</div>
+      <div style={featureTitleStyle}>{title}</div>
+      <div style={featureTextStyle}>{text}</div>
     </div>
   );
 }
@@ -524,17 +555,24 @@ const threadTopStatusStyle: CSSProperties = {
 
 const threadBodyStyle: CSSProperties = {
   padding: "16px 2px",
-  display: "grid",
-  gap: 10,
-  minHeight: 118,
+  position: "relative",
+  height: 148,
 };
 
 const threadRowOutStyle: CSSProperties = {
+  position: "absolute",
+  top: 8,
+  right: 2,
+  left: 2,
   display: "flex",
   justifyContent: "flex-end",
 };
 
 const threadRowInStyle: CSSProperties = {
+  position: "absolute",
+  top: 84,
+  right: 2,
+  left: 2,
   display: "flex",
   justifyContent: "flex-start",
 };
@@ -626,6 +664,40 @@ const statValueStyle: CSSProperties = {
 const statLabelStyle: CSSProperties = {
   fontSize: 12,
   color: "rgba(190, 242, 232, 0.55)",
+};
+
+const featureGridStyle: CSSProperties = {
+  marginTop: 28,
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 12,
+  maxWidth: 460,
+};
+
+const featureCardStyle: CSSProperties = {
+  borderRadius: 16,
+  padding: 16,
+  background: "rgba(255,255,255,0.04)",
+  border: "1px solid rgba(255,255,255,0.08)",
+};
+
+const featureIconStyle: CSSProperties = {
+  fontSize: 18,
+};
+
+const featureTitleStyle: CSSProperties = {
+  marginTop: 10,
+  fontFamily: "'Space Grotesk', sans-serif",
+  fontSize: 14,
+  fontWeight: 700,
+  color: "#ffffff",
+};
+
+const featureTextStyle: CSSProperties = {
+  marginTop: 6,
+  fontSize: 12.5,
+  lineHeight: 1.5,
+  color: "rgba(203, 245, 237, 0.62)",
 };
 
 const rightWrapStyle: CSSProperties = {
