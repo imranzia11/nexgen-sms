@@ -56,6 +56,105 @@ const repliesCache = new Map<
   { items: SmsRow[]; blocked: string[]; ts: number }
 >();
 
+// --- Persisted (localStorage) cache -----------------------------------
+// The module-level Map above only survives client-side navigation. A hard
+// refresh of the browser tab wipes it, which is exactly when the old
+// skeleton screen used to reappear every single time. Mirroring the same
+// cache into localStorage means a returning visitor - even after closing
+// the tab - gets an instant paint instead of a loading screen, while we
+// still validate their session and refresh the data quietly underneath.
+const CACHE_STORAGE_KEY = "sms_replies_cache_v1";
+const NETWORK_TIMEOUT_MS = 12000;
+
+type PersistedCache = {
+  uid: string;
+  items: SmsRow[];
+  blocked: string[];
+  ts: number;
+};
+
+function readPersistedCache(): PersistedCache | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(CACHE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      !parsed ||
+      typeof parsed.uid !== "string" ||
+      !Array.isArray(parsed.items)
+    ) {
+      return null;
+    }
+    return parsed as PersistedCache;
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedCache(uid: string, items: SmsRow[], blocked: string[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      CACHE_STORAGE_KEY,
+      JSON.stringify({ uid, items, blocked, ts: Date.now() })
+    );
+  } catch {
+    // Private browsing / storage quota can throw here. Safe to ignore -
+    // the in-memory cache still keeps same-session navigation instant.
+  }
+}
+
+function setCache(uid: string, items: SmsRow[], blocked: string[]) {
+  repliesCache.set(uid, { items, blocked, ts: Date.now() });
+  writePersistedCache(uid, items, blocked);
+}
+
+function getCache(uid: string) {
+  const inMemory = repliesCache.get(uid);
+  if (inMemory) return inMemory;
+
+  const persisted = readPersistedCache();
+  if (persisted && persisted.uid === uid) {
+    repliesCache.set(uid, {
+      items: persisted.items,
+      blocked: persisted.blocked,
+      ts: persisted.ts,
+    });
+    return repliesCache.get(uid);
+  }
+
+  return undefined;
+}
+
+function getInitialCache(): PersistedCache | null {
+  return readPersistedCache();
+}
+
+// Wraps a promise with a hard ceiling so a dead network connection can
+// never leave the page stuck on a loading state forever. Firestore calls
+// that never resolve (rather than erroring) are the usual cause of a
+// "stuck loading" screen - this guarantees we always fall through to an
+// error/retry state instead of spinning indefinitely.
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
 function truncateText(value: string, max = 110) {
   if (!value) return "-";
   if (value.length <= max) return value;
@@ -120,11 +219,17 @@ function makeRow(id: string, data: Record<string, any>): SmsRow {
 export default function RepliesPage() {
   const router = useRouter();
 
-  const [items, setItems] = useState<SmsRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [checking, setChecking] = useState(true);
+  const [items, setItems] = useState<SmsRow[]>(
+    () => getInitialCache()?.items || []
+  );
+  const [loading, setLoading] = useState<boolean>(() => !getInitialCache());
+  const [checking, setChecking] = useState<boolean>(() => !getInitialCache());
+  const [authTimedOut, setAuthTimedOut] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [search, setSearch] = useState("");
-  const [blockedPhones, setBlockedPhones] = useState<string[]>([]);
+  const [blockedPhones, setBlockedPhones] = useState<string[]>(
+    () => getInitialCache()?.blocked || []
+  );
   const [profile, setProfile] = useState<AppUser | null>(null);
   const [filterMode, setFilterMode] = useState<FilterMode>("replied");
   const [deletingId, setDeletingId] = useState("");
@@ -206,11 +311,12 @@ export default function RepliesPage() {
     }
 
     const cacheKey = currentProfile.uid;
-    const cached = repliesCache.get(cacheKey);
+    const cached = getCache(cacheKey);
     const isBackground = Boolean(opts?.background);
 
     // Paint instantly from cache, then refresh underneath — no spinner,
-    // no skeleton, no flicker for anything already seen this session.
+    // no skeleton, no flicker for anything already seen this session (or
+    // a previous one, now that the cache is also persisted to disk).
     if (cached && !isBackground) {
       setItems(cached.items);
       setBlockedPhones(cached.blocked);
@@ -221,21 +327,23 @@ export default function RepliesPage() {
 
     try {
       const [blocked, docs] = await Promise.all([
-        fetchBlacklist(currentProfile),
-        fetchConversations(currentProfile),
+        withTimeout(fetchBlacklist(currentProfile), NETWORK_TIMEOUT_MS, "Blacklist fetch"),
+        withTimeout(fetchConversations(currentProfile), NETWORK_TIMEOUT_MS, "Conversations fetch"),
       ]);
 
       const rows = buildRows(docs, blocked);
 
-      repliesCache.set(cacheKey, { items: rows, blocked, ts: Date.now() });
+      setCache(cacheKey, rows, blocked);
 
       setItems(rows);
       setBlockedPhones(blocked);
+      setLoadError(false);
     } catch (error) {
       console.error("Failed to load sms activity", error);
       if (!cached) {
         setItems([]);
         setBlockedPhones([]);
+        setLoadError(true);
       }
     } finally {
       setLoading(false);
@@ -357,12 +465,8 @@ export default function RepliesPage() {
       setItems((prev) => {
         const next = prev.filter((item) => item.id !== itemId);
         if (profileRef.current) {
-          const cached = repliesCache.get(profileRef.current.uid);
-          repliesCache.set(profileRef.current.uid, {
-            items: next,
-            blocked: cached?.blocked || blockedPhones,
-            ts: Date.now(),
-          });
+          const cached = getCache(profileRef.current.uid);
+          setCache(profileRef.current.uid, next, cached?.blocked || blockedPhones);
         }
         return next;
       });
@@ -433,12 +537,12 @@ export default function RepliesPage() {
       setItems((prev) => {
         const next = prev.filter((row) => row.id !== item.id);
         if (profileRef.current) {
-          const cached = repliesCache.get(profileRef.current.uid);
-          repliesCache.set(profileRef.current.uid, {
-            items: next,
-            blocked: [...(cached?.blocked || blockedPhones), item.phone],
-            ts: Date.now(),
-          });
+          const cached = getCache(profileRef.current.uid);
+          setCache(
+            profileRef.current.uid,
+            next,
+            [...(cached?.blocked || blockedPhones), item.phone]
+          );
         }
         return next;
       });
@@ -473,12 +577,8 @@ export default function RepliesPage() {
           row.id === item.id ? { ...row, pinned: nextPinned } : row
         );
         if (profileRef.current) {
-          const cached = repliesCache.get(profileRef.current.uid);
-          repliesCache.set(profileRef.current.uid, {
-            items: next,
-            blocked: cached?.blocked || blockedPhones,
-            ts: Date.now(),
-          });
+          const cached = getCache(profileRef.current.uid);
+          setCache(profileRef.current.uid, next, cached?.blocked || blockedPhones);
         }
         return next;
       });
@@ -501,7 +601,11 @@ export default function RepliesPage() {
       }
 
       try {
-        const userSnap = await getDoc(doc(db, "users", user.uid));
+        const userSnap = await withTimeout(
+          getDoc(doc(db, "users", user.uid)),
+          NETWORK_TIMEOUT_MS,
+          "Account check"
+        );
 
         if (!userSnap.exists() || userSnap.data().isActive !== true) {
           await signOut(auth).catch(() => {});
@@ -526,21 +630,49 @@ export default function RepliesPage() {
         profileRef.current = safeProfile;
         setProfile(safeProfile);
         setChecking(false);
+        setAuthTimedOut(false);
 
         // Paint from cache immediately if we have it (instant, no loading
         // state at all), then always kick off a background refresh so
-        // data never goes stale.
-        const cached = repliesCache.get(safeProfile.uid);
+        // data never goes stale. If the cache belongs to a different
+        // account than the one that just signed in, drop it instead of
+        // flashing someone else's data.
+        const cached = getCache(safeProfile.uid);
         if (cached) {
           setItems(cached.items);
           setBlockedPhones(cached.blocked);
           setLoading(false);
           loadItems(safeProfile, { background: true });
         } else {
+          setItems([]);
+          setBlockedPhones([]);
           await loadItems(safeProfile);
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error("Failed to validate user access", error);
+
+        const timedOut = String(error?.message || "").includes("timed out");
+        const cachedFallback = getCache(user.uid);
+
+        if (timedOut && cachedFallback) {
+          // Slow network, but we already have something to show for this
+          // exact account - trust the cache and stop blocking the UI on
+          // it instead of kicking the person back to the login screen.
+          setItems(cachedFallback.items);
+          setBlockedPhones(cachedFallback.blocked);
+          setChecking(false);
+          setLoading(false);
+          return;
+        }
+
+        if (timedOut) {
+          // Slow/dead network and nothing to fall back on - let the
+          // person retry instead of hanging on a spinner forever.
+          setAuthTimedOut(true);
+          setChecking(false);
+          return;
+        }
+
         await signOut(auth).catch(() => {});
         router.push("/login");
       }
@@ -643,6 +775,31 @@ export default function RepliesPage() {
           <section style={panelStyle}>
             <div style={emptyStateStyle}>
               <div style={emptyTitleStyle}>Checking account access...</div>
+            </div>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
+  if (authTimedOut) {
+    return (
+      <main style={pageStyle}>
+        <div style={pageWrapStyle}>
+          <section style={panelStyle}>
+            <div style={emptyStateStyle}>
+              <div style={emptyTitleStyle}>Connection is slower than usual.</div>
+              <div style={emptyTextStyle}>
+                We couldn&apos;t verify your account in time. Check your
+                connection and try again.
+              </div>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                style={refreshButtonStyle}
+              >
+                Retry
+              </button>
             </div>
           </section>
         </div>
@@ -852,89 +1009,25 @@ export default function RepliesPage() {
             ) : null}
 
             {loading ? (
-              <div style={listLoadingWrapStyle}>
-                <div style={listLoadingHeaderStyle}>
-                  <div style={listLoadingDotStyle} />
-                  <span>Loading SMS activity...</span>
+              <div style={simpleLoadingStyle}>
+                <span style={listLoadingDotStyle} />
+                <span>Loading SMS activity...</span>
+              </div>
+            ) : loadError ? (
+              <div style={emptyStateStyle}>
+                <div style={emptyDotStyle} />
+                <div style={emptyTitleStyle}>Couldn&apos;t load SMS activity.</div>
+                <div style={emptyTextStyle}>
+                  That took too long or failed. Check your connection and try
+                  again.
                 </div>
-
-                <div style={listSkeletonGridStyle}>
-                  {[0, 1, 2].map((i) => (
-                    <div key={i} style={listSkeletonCardStyle}>
-                      <div style={listSkeletonTopRowStyle}>
-                        <div>
-                          <div
-                            style={{
-                              ...listSkeletonLineStyle,
-                              width: 170,
-                              height: 18,
-                            }}
-                          />
-                          <div
-                            style={{
-                              ...listSkeletonLineStyle,
-                              width: 110,
-                              marginTop: 12,
-                              height: 12,
-                            }}
-                          />
-                        </div>
-
-                        <div style={listSkeletonRightStyle}>
-                          <div
-                            style={{
-                              ...listSkeletonLineStyle,
-                              width: 150,
-                              height: 12,
-                            }}
-                          />
-                          <div
-                            style={{
-                              ...listSkeletonPillStyle,
-                              width: 132,
-                              marginTop: 12,
-                            }}
-                          />
-                        </div>
-                      </div>
-
-                      <div
-                        style={{
-                          ...listSkeletonLineStyle,
-                          width: "88%",
-                          marginTop: 18,
-                          height: 14,
-                        }}
-                      />
-                      <div
-                        style={{
-                          ...listSkeletonLineStyle,
-                          width: "64%",
-                          marginTop: 12,
-                          height: 14,
-                        }}
-                      />
-
-                      <div style={listSkeletonFooterStyle}>
-                        <div
-                          style={{
-                            ...listSkeletonLineStyle,
-                            width: 132,
-                            height: 14,
-                          }}
-                        />
-                        <div
-                          style={{
-                            ...listSkeletonLineStyle,
-                            width: 18,
-                            height: 18,
-                            borderRadius: 999,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => loadItems(undefined, { background: true })}
+                  style={refreshButtonStyle}
+                >
+                  Retry
+                </button>
               </div>
             ) : filteredItems.length === 0 ? (
               <div style={emptyStateStyle}>
@@ -1599,26 +1692,22 @@ const emptyTextStyle: CSSProperties = {
   maxWidth: 460,
 };
 
-// Static, non-animated loading state. No shimmer, no spinner — flat
-// placeholder blocks that match the final layout. Combined with the
-// cache above, this is rarely seen after the first load.
-const listLoadingWrapStyle: CSSProperties = {
+// Minimal, static, one-line loading indicator — no shimmering skeleton
+// cards. Thanks to the persisted cache above, this is only ever seen on
+// a person's very first visit from a given browser; every return visit
+// paints instantly instead.
+const simpleLoadingStyle: CSSProperties = {
   marginTop: 18,
-  borderRadius: 24,
-  padding: 22,
-  background: "linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)",
-  border: "1px solid #e2e8f0",
-  display: "grid",
-  gap: 18,
-};
-
-const listLoadingHeaderStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 10,
+  padding: "16px 18px",
+  borderRadius: 16,
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
   color: "#475569",
-  fontSize: 15,
-  fontWeight: 800,
+  fontSize: 14,
+  fontWeight: 700,
 };
 
 const listLoadingDotStyle: CSSProperties = {
@@ -1626,47 +1715,5 @@ const listLoadingDotStyle: CSSProperties = {
   height: 10,
   borderRadius: "50%",
   background: "#14b8a6",
-};
-
-const listSkeletonGridStyle: CSSProperties = {
-  display: "grid",
-  gap: 14,
-};
-
-const listSkeletonCardStyle: CSSProperties = {
-  borderRadius: 22,
-  padding: 20,
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
-  boxShadow: "0 8px 20px rgba(15,23,42,0.04)",
-};
-
-const listSkeletonTopRowStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 16,
-  flexWrap: "wrap",
-};
-
-const listSkeletonRightStyle: CSSProperties = {
-  display: "grid",
-  justifyItems: "end",
-};
-
-const listSkeletonFooterStyle: CSSProperties = {
-  marginTop: 18,
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-};
-
-const listSkeletonLineStyle: CSSProperties = {
-  borderRadius: 999,
-  background: "#e2e8f0",
-};
-
-const listSkeletonPillStyle: CSSProperties = {
-  height: 30,
-  borderRadius: 999,
-  background: "rgba(20,184,166,0.12)",
+  flexShrink: 0,
 };

@@ -92,6 +92,111 @@ const threadCache = new Map<
   { meta: ConversationMeta; messages: MessageItem[]; ts: number }
 >();
 
+// --- Persisted (localStorage) cache -----------------------------------
+// The module-level Map only survives client-side navigation - a hard
+// refresh of the tab wiped it, which is exactly when the old shimmering
+// skeleton bubbles used to reappear every time. Mirroring it into
+// localStorage (keyed by phone, since we don't know the uid until auth
+// resolves) lets a returning visit paint the real thread instantly, with
+// the account ownership re-verified in the background before anything
+// is trusted.
+const THREAD_CACHE_PREFIX = "sms_thread_cache_v1_";
+const NETWORK_TIMEOUT_MS = 12000;
+
+type PersistedThreadCache = {
+  ownerUid: string;
+  meta: ConversationMeta;
+  messages: MessageItem[];
+  ts: number;
+};
+
+function threadCacheStorageKey(phone: string) {
+  return `${THREAD_CACHE_PREFIX}${normalizePhone(phone)}`;
+}
+
+function readPersistedThreadCache(phone: string): PersistedThreadCache | null {
+  if (typeof window === "undefined" || !phone) return null;
+  try {
+    const raw = window.localStorage.getItem(threadCacheStorageKey(phone));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.ownerUid !== "string" || !parsed.meta) {
+      return null;
+    }
+    return parsed as PersistedThreadCache;
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedThreadCache(phone: string, data: PersistedThreadCache) {
+  if (typeof window === "undefined" || !phone) return;
+  try {
+    window.localStorage.setItem(
+      threadCacheStorageKey(phone),
+      JSON.stringify(data)
+    );
+  } catch {
+    // Private browsing / storage quota can throw here. Safe to ignore -
+    // the in-memory cache still keeps same-session navigation instant.
+  }
+}
+
+function setThreadCache(
+  ownerUid: string,
+  phone: string,
+  meta: ConversationMeta,
+  messages: MessageItem[]
+) {
+  const moduleKey = `${ownerUid}_${normalizePhone(phone)}`;
+  const ts = Date.now();
+  threadCache.set(moduleKey, { meta, messages, ts });
+  writePersistedThreadCache(phone, { ownerUid, meta, messages, ts });
+}
+
+function getThreadCache(ownerUid: string, phone: string) {
+  const moduleKey = `${ownerUid}_${normalizePhone(phone)}`;
+  const inMemory = threadCache.get(moduleKey);
+  if (inMemory) return inMemory;
+
+  const persisted = readPersistedThreadCache(phone);
+  if (persisted && persisted.ownerUid === ownerUid) {
+    const hydrated = {
+      meta: persisted.meta,
+      messages: persisted.messages,
+      ts: persisted.ts,
+    };
+    threadCache.set(moduleKey, hydrated);
+    return hydrated;
+  }
+
+  return undefined;
+}
+
+// Wraps a promise with a hard ceiling so a dead network connection can
+// never leave the thread stuck on a loading state forever. Firestore
+// calls that never resolve (rather than erroring) are the usual cause of
+// a "stuck loading" screen - this guarantees we always fall through to
+// an error/retry state instead of spinning indefinitely.
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
 function normalizePhone(value: string) {
   return String(value || "").replace(/[^\d+]/g, "").trim();
 }
@@ -168,19 +273,38 @@ export default function ReplyThreadPage({
   const threadEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [checking, setChecking] = useState(true);
-  const [loading, setLoading] = useState(true);
-  const [initialLoaded, setInitialLoaded] = useState(false);
+  const [checking, setChecking] = useState(
+    () => !readPersistedThreadCache(routePhone)
+  );
+  const [authTimedOut, setAuthTimedOut] = useState(false);
+  const [loading, setLoading] = useState(
+    () => !readPersistedThreadCache(routePhone)
+  );
+  const [threadLoadError, setThreadLoadError] = useState(false);
+  const [initialLoaded, setInitialLoaded] = useState(() =>
+    Boolean(readPersistedThreadCache(routePhone))
+  );
   const [sending, setSending] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
-  const [threadTitle, setThreadTitle] = useState(routePhone || "Conversation");
-  const [messages, setMessages] = useState<MessageItem[]>([]);
+  const [threadTitle, setThreadTitle] = useState(() => {
+    const cached = readPersistedThreadCache(routePhone);
+    if (cached?.meta) {
+      return cached.meta.name
+        ? `${cached.meta.name} · ${cached.meta.phone}`
+        : cached.meta.phone || routePhone || "Conversation";
+    }
+    return routePhone || "Conversation";
+  });
+  const [messages, setMessages] = useState<MessageItem[]>(
+    () => readPersistedThreadCache(routePhone)?.messages || []
+  );
   const [replyBody, setReplyBody] = useState("");
   const [uploadedMedia, setUploadedMedia] = useState<UploadedMediaItem[]>([]);
   const [status, setStatus] = useState("");
   const [profile, setProfile] = useState<AppUser | null>(null);
-  const [conversationMeta, setConversationMeta] =
-    useState<ConversationMeta | null>(null);
+  const [conversationMeta, setConversationMeta] = useState<ConversationMeta | null>(
+    () => readPersistedThreadCache(routePhone)?.meta || null
+  );
 
   function scrollToBottom(smooth = true) {
     requestAnimationFrame(() => {
@@ -404,7 +528,8 @@ export default function ReplyThreadPage({
       // Every query is built up front, then fired together with
       // Promise.all instead of awaited one-by-one — ~9 sequential
       // round-trips collapse into roughly 1 round-trip's worth of
-      // latency (whichever query is slowest).
+      // latency (whichever query is slowest). Wrapped in withTimeout so
+      // a single stalled query can't hold the whole thread hostage.
       const subMessagesQuery = query(
         collection(db, "conversations", currentMeta.id, "messages"),
         where("ownerUid", "==", currentProfile.uid),
@@ -449,11 +574,15 @@ export default function ReplyThreadPage({
         ),
       ];
 
-      const [subMessagesDocs, ...restResults] = await Promise.all([
-        safeGetDocs(subMessagesQuery),
-        ...rootMessageQueries.map((q) => safeGetDocs(q)),
-        ...rootReplyQueries.map((q) => safeGetDocs(q)),
-      ]);
+      const [subMessagesDocs, ...restResults] = await withTimeout(
+        Promise.all([
+          safeGetDocs(subMessagesQuery),
+          ...rootMessageQueries.map((q) => safeGetDocs(q)),
+          ...rootReplyQueries.map((q) => safeGetDocs(q)),
+        ]),
+        NETWORK_TIMEOUT_MS,
+        "Message thread fetch"
+      );
 
       const messageResults = restResults.slice(0, rootMessageQueries.length);
       const replyResults = restResults.slice(rootMessageQueries.length);
@@ -483,17 +612,21 @@ export default function ReplyThreadPage({
       }
 
       setMessages(merged);
-      threadCache.set(cacheKeyFor(currentProfile, currentMeta.phone), {
-        meta: currentMeta,
-        messages: merged,
-        ts: Date.now(),
-      });
+      setThreadLoadError(false);
+      setThreadCache(currentProfile.uid, currentMeta.phone, currentMeta, merged);
 
       await markConversationRead(currentMeta, currentProfile);
     } catch (error: any) {
       console.error(error);
       setStatus(error?.message || "Failed to refresh conversation.");
-      setMessages([]);
+
+      // Don't wipe a thread that's already on screen just because a
+      // background refresh timed out - keep showing the last known
+      // messages instead of yanking them away.
+      if (messages.length === 0) {
+        setMessages([]);
+        setThreadLoadError(true);
+      }
     } finally {
       setLoading(false);
       setInitialLoaded(true);
@@ -504,7 +637,16 @@ export default function ReplyThreadPage({
   }
 
   async function handleManualRefresh() {
-    const meta = await loadConversationMeta();
+    const meta = await withTimeout(
+      loadConversationMeta(),
+      NETWORK_TIMEOUT_MS,
+      "Conversation lookup"
+    ).catch((error: any) => {
+      console.error(error);
+      setStatus(error?.message || "Failed to refresh conversation.");
+      return null;
+    });
+
     if (!meta) return;
     await loadThreadOnce(meta, undefined, { silent: true });
   }
@@ -523,7 +665,11 @@ export default function ReplyThreadPage({
       }
 
       try {
-        const userSnap = await getDoc(doc(db, "users", user.uid));
+        const userSnap = await withTimeout(
+          getDoc(doc(db, "users", user.uid)),
+          NETWORK_TIMEOUT_MS,
+          "Account check"
+        );
 
         if (!userSnap.exists() || userSnap.data().isActive !== true) {
           await signOut(auth).catch(() => {});
@@ -546,12 +692,14 @@ export default function ReplyThreadPage({
 
         setProfile(safeProfile);
         setChecking(false);
+        setAuthTimedOut(false);
 
-        // Instant paint from cache (no loading state at all) if this
-        // thread was already opened this session, then always refresh
-        // underneath so it never goes stale.
-        const cacheKey = cacheKeyFor(safeProfile, routePhone);
-        const cached = threadCache.get(cacheKey);
+        // Paint from cache immediately if we have it for this exact
+        // account (no loading state at all), then always kick off a
+        // fresh fetch underneath so it never goes stale. If the
+        // pre-auth optimistic cache turns out to belong to a different
+        // account, drop it instead of flashing someone else's thread.
+        const cached = getThreadCache(safeProfile.uid, routePhone);
 
         if (cached) {
           setConversationMeta(cached.meta);
@@ -563,14 +711,27 @@ export default function ReplyThreadPage({
           setMessages(cached.messages);
           setLoading(false);
           setInitialLoaded(true);
+          setThreadLoadError(false);
           setTimeout(() => scrollToBottom(false), 60);
+        } else {
+          setConversationMeta(null);
+          setMessages([]);
+          setThreadTitle(routePhone || "Conversation");
+          setLoading(true);
+          setInitialLoaded(false);
         }
 
-        const meta = await loadConversationMeta(safeProfile);
+        const meta = await withTimeout(
+          loadConversationMeta(safeProfile),
+          NETWORK_TIMEOUT_MS,
+          "Conversation lookup"
+        );
+
         if (!meta) {
           if (!cached) {
             setLoading(false);
             setMessages([]);
+            setThreadLoadError(true);
           }
           return;
         }
@@ -578,7 +739,14 @@ export default function ReplyThreadPage({
         await loadThreadOnce(meta, safeProfile, { silent: Boolean(cached) });
 
         const refreshFromThreadChange = async () => {
-          const latestMeta = await loadConversationMeta(safeProfile);
+          const latestMeta = await withTimeout(
+            loadConversationMeta(safeProfile),
+            NETWORK_TIMEOUT_MS,
+            "Conversation lookup"
+          ).catch((error: any) => {
+            console.error(error);
+            return null;
+          });
           if (!latestMeta) return;
           await loadThreadOnce(latestMeta, safeProfile, { silent: true });
         };
@@ -597,8 +765,41 @@ export default function ReplyThreadPage({
         );
       } catch (error: any) {
         console.error(error);
+
+        const timedOut = String(error?.message || "").includes("timed out");
+        const cachedFallback = readPersistedThreadCache(routePhone);
+        const ownedFallback =
+          cachedFallback && cachedFallback.ownerUid === user.uid
+            ? cachedFallback
+            : null;
+
+        if (timedOut && ownedFallback) {
+          // Slow network, but we already have this exact thread cached -
+          // trust it and stop blocking on the network instead of
+          // stranding the person on an error screen.
+          setConversationMeta(ownedFallback.meta);
+          setThreadTitle(
+            ownedFallback.meta.name
+              ? `${ownedFallback.meta.name} · ${ownedFallback.meta.phone}`
+              : ownedFallback.meta.phone || routePhone || "Conversation"
+          );
+          setMessages(ownedFallback.messages);
+          setChecking(false);
+          setLoading(false);
+          setInitialLoaded(true);
+          setThreadLoadError(false);
+          return;
+        }
+
+        if (timedOut) {
+          setAuthTimedOut(true);
+          setChecking(false);
+          return;
+        }
+
         setStatus(error?.message || "Failed to load conversation.");
         setMessages([]);
+        setThreadLoadError(true);
         setLoading(false);
       }
     });
@@ -735,6 +936,31 @@ export default function ReplyThreadPage({
     );
   }
 
+  if (authTimedOut) {
+    return (
+      <main style={pageStyle}>
+        <div style={pageWrapStyle}>
+          <section style={threadPanelStyle}>
+            <div style={emptyStateStyle}>
+              <div style={emptyTitleStyle}>Connection is slower than usual.</div>
+              <div style={emptyTextStyle}>
+                We couldn&apos;t verify your account in time. Check your
+                connection and try again.
+              </div>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                style={refreshButtonStyle}
+              >
+                Retry
+              </button>
+            </div>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <>
       <style jsx global>{`
@@ -792,120 +1018,25 @@ export default function ReplyThreadPage({
               </div>
 
               {loading ? (
-                <div style={threadLoadingWrapStyle}>
-                  <div style={threadLoadingHeaderStyle}>
-                    <div style={threadLoadingDotStyle} />
-                    <span>Loading conversation...</span>
+                <div style={simpleThreadLoadingStyle}>
+                  <span style={threadLoadingDotStyle} />
+                  <span>Loading conversation...</span>
+                </div>
+              ) : threadLoadError ? (
+                <div style={emptyStateStyle}>
+                  <div style={emptyDotStyle} />
+                  <div style={emptyTitleStyle}>Couldn&apos;t load this conversation.</div>
+                  <div style={emptyTextStyle}>
+                    {status ||
+                      "That took too long or failed. Check your connection and try again."}
                   </div>
-
-                  <div style={threadSkeletonListStyle}>
-                    <div
-                      style={{
-                        ...threadSkeletonRowStyle,
-                        justifyContent: "flex-start",
-                      }}
-                    >
-                      <div style={{ ...threadSkeletonBubbleStyle, width: "56%" }}>
-                        <div style={{ ...threadSkeletonLineStyle, width: "32%" }} />
-                        <div
-                          style={{
-                            ...threadSkeletonLineStyle,
-                            width: "88%",
-                            marginTop: 14,
-                          }}
-                        />
-                        <div
-                          style={{
-                            ...threadSkeletonLineStyle,
-                            width: "72%",
-                            marginTop: 10,
-                          }}
-                        />
-                        <div
-                          style={{
-                            ...threadSkeletonTimeStyle,
-                            width: "26%",
-                            marginTop: 14,
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        ...threadSkeletonRowStyle,
-                        justifyContent: "flex-end",
-                      }}
-                    >
-                      <div
-                        style={{
-                          ...threadSkeletonBubbleStyle,
-                          ...threadSkeletonBubbleOutgoingStyle,
-                          width: "48%",
-                        }}
-                      >
-                        <div
-                          style={{
-                            ...threadSkeletonLineLightStyle,
-                            width: "28%",
-                          }}
-                        />
-                        <div
-                          style={{
-                            ...threadSkeletonLineLightStyle,
-                            width: "84%",
-                            marginTop: 14,
-                          }}
-                        />
-                        <div
-                          style={{
-                            ...threadSkeletonLineLightStyle,
-                            width: "62%",
-                            marginTop: 10,
-                          }}
-                        />
-                        <div
-                          style={{
-                            ...threadSkeletonTimeLightStyle,
-                            width: "24%",
-                            marginTop: 14,
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        ...threadSkeletonRowStyle,
-                        justifyContent: "flex-start",
-                      }}
-                    >
-                      <div style={{ ...threadSkeletonBubbleStyle, width: "64%" }}>
-                        <div style={{ ...threadSkeletonLineStyle, width: "30%" }} />
-                        <div
-                          style={{
-                            ...threadSkeletonLineStyle,
-                            width: "92%",
-                            marginTop: 14,
-                          }}
-                        />
-                        <div
-                          style={{
-                            ...threadSkeletonLineStyle,
-                            width: "68%",
-                            marginTop: 10,
-                          }}
-                        />
-                        <div
-                          style={{
-                            ...threadSkeletonTimeStyle,
-                            width: "22%",
-                            marginTop: 14,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleManualRefresh()}
+                    style={refreshButtonStyle}
+                  >
+                    Retry
+                  </button>
                 </div>
               ) : messages.length === 0 ? (
                 <div style={emptyStateStyle}>
@@ -1703,26 +1834,22 @@ const emptyTextStyle: CSSProperties = {
   maxWidth: 460,
 };
 
-// Static, non-animated skeleton — flat placeholder blocks matching the
-// final bubble layout, no shimmer/spin. Rarely seen after first load
-// thanks to the cache above.
-const threadLoadingWrapStyle: CSSProperties = {
+// Minimal, static, one-line loading indicator — no shimmering skeleton
+// bubbles. Thanks to the persisted cache above, this is only ever seen
+// the first time a given thread is opened on a browser; every return
+// visit paints instantly instead.
+const simpleThreadLoadingStyle: CSSProperties = {
   marginTop: 18,
-  borderRadius: 24,
-  padding: 22,
-  background: "linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)",
-  border: "1px solid #e2e8f0",
-  display: "grid",
-  gap: 18,
-};
-
-const threadLoadingHeaderStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 10,
+  padding: "16px 18px",
+  borderRadius: 16,
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
   color: "#475569",
-  fontSize: 15,
-  fontWeight: 800,
+  fontSize: 14,
+  fontWeight: 700,
 };
 
 const threadLoadingDotStyle: CSSProperties = {
@@ -1730,50 +1857,5 @@ const threadLoadingDotStyle: CSSProperties = {
   height: 10,
   borderRadius: "50%",
   background: "#14b8a6",
-};
-
-const threadSkeletonListStyle: CSSProperties = {
-  display: "grid",
-  gap: 14,
-};
-
-const threadSkeletonRowStyle: CSSProperties = {
-  display: "flex",
-};
-
-const threadSkeletonBubbleStyle: CSSProperties = {
-  borderRadius: 24,
-  padding: 16,
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
-  boxShadow: "0 8px 20px rgba(15,23,42,0.04)",
-};
-
-const threadSkeletonBubbleOutgoingStyle: CSSProperties = {
-  background: "linear-gradient(135deg, #0f766e 0%, #0d9488 100%)",
-  border: "1px solid rgba(13,148,136,0.18)",
-};
-
-const threadSkeletonLineStyle: CSSProperties = {
-  height: 10,
-  borderRadius: 999,
-  background: "#e2e8f0",
-};
-
-const threadSkeletonTimeStyle: CSSProperties = {
-  height: 8,
-  borderRadius: 999,
-  background: "#cbd5e1",
-};
-
-const threadSkeletonLineLightStyle: CSSProperties = {
-  height: 10,
-  borderRadius: 999,
-  background: "rgba(255,255,255,0.28)",
-};
-
-const threadSkeletonTimeLightStyle: CSSProperties = {
-  height: 8,
-  borderRadius: 999,
-  background: "rgba(236,254,255,0.28)",
+  flexShrink: 0,
 };
