@@ -170,6 +170,16 @@ function truncateMiddle(value: string, start = 8, end = 6) {
   return `${value.slice(0, start)}...${value.slice(-end)}`;
 }
 
+function formatUSPhoneDisplay(raw: string) {
+  const digits = String(raw || "").replace(/\D/g, "");
+  const tenDigits =
+    digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+
+  if (tenDigits.length !== 10) return raw || "-";
+
+  return `(${tenDigits.slice(0, 3)}) ${tenDigits.slice(3, 6)}-${tenDigits.slice(6)}`;
+}
+
 function statusChipTone(status?: string) {
   const value = String(status || "").toLowerCase();
 
@@ -236,6 +246,7 @@ export default function DashboardPage() {
   const [checking, setChecking] = useState(true);
   const [userName, setUserName] = useState("User");
   const [profileUid, setProfileUid] = useState("");
+  const [twilioNumber, setTwilioNumber] = useState("");
 
   const [uploading, setUploading] = useState(false);
   const [sendingSms, setSendingSms] = useState(false);
@@ -311,14 +322,19 @@ export default function DashboardPage() {
           return;
         }
 
+        const data = snap.data();
+
         const safeName =
-          String(snap.data().name || "").trim() ||
+          String(data.name || "").trim() ||
           String(user.displayName || "").trim() ||
           String(user.email || "").split("@")[0] ||
           "User";
 
         setUserName(safeName);
         setProfileUid(user.uid);
+        setTwilioNumber(
+          String(data.twilioNumber || data.assignedTwilioNumber || "").trim()
+        );
         setChecking(false);
         await loadUploads(user.uid);
         await loadTemplates(user.uid);
@@ -488,6 +504,18 @@ export default function DashboardPage() {
 
   const handleBlacklistedNumbers = () => {
     router.push("/blacklisted");
+  };
+
+  const handleCopyTwilioNumber = async () => {
+    if (!twilioNumber) return;
+
+    try {
+      await navigator.clipboard.writeText(twilioNumber);
+      showToast("Twilio number copied to clipboard.", "success");
+    } catch (error) {
+      console.error("Failed to copy Twilio number", error);
+      showToast("Could not copy the number automatically.", "error");
+    }
   };
 
   const handlePickFile = () => {
@@ -1044,6 +1072,38 @@ export default function DashboardPage() {
                 <div>
                   <div style={sidebarSmallLabelStyle}>Signed in as</div>
                   <div style={sidebarAdminNameStyle}>{userName}</div>
+                </div>
+              </div>
+
+              <div style={sidebarRepliesWrapStyle}>
+                <div style={twilioNumberCardStyle}>
+                  <div style={twilioNumberTopRowStyle}>
+                    <div style={twilioNumberIconStyle}>☎</div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={sidebarRepliesTitleStyle}>
+                        My Twilio Number
+                      </div>
+                      <div style={twilioNumberValueStyle}>
+                        {twilioNumber
+                          ? formatUSPhoneDisplay(twilioNumber)
+                          : "Not assigned yet"}
+                      </div>
+                    </div>
+                  </div>
+
+                  {twilioNumber ? (
+                    <button
+                      type="button"
+                      onClick={handleCopyTwilioNumber}
+                      style={twilioNumberCopyButtonStyle}
+                    >
+                      Copy number
+                    </button>
+                  ) : (
+                    <div style={twilioNumberHintStyle}>
+                      Contact support to get a number assigned.
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1924,6 +1984,63 @@ const sidebarAdminNameStyle: CSSProperties = {
 
 const sidebarRepliesWrapStyle: CSSProperties = {
   marginTop: 18,
+};
+
+const twilioNumberCardStyle: CSSProperties = {
+  width: "100%",
+  borderRadius: 26,
+  padding: "18px 18px",
+  background: "rgba(255,255,255,0.10)",
+  border: "1px solid rgba(255,255,255,0.16)",
+  boxShadow: "0 18px 40px rgba(0,0,0,0.08)",
+  backdropFilter: "blur(10px)",
+  display: "grid",
+  gap: 14,
+};
+
+const twilioNumberTopRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 14,
+};
+
+const twilioNumberIconStyle: CSSProperties = {
+  width: 54,
+  height: 54,
+  borderRadius: "50%",
+  display: "grid",
+  placeItems: "center",
+  background: "#ccfbf1",
+  color: "#115e59",
+  fontSize: 22,
+  fontWeight: 900,
+  flexShrink: 0,
+};
+
+const twilioNumberValueStyle: CSSProperties = {
+  marginTop: 6,
+  color: "#ffffff",
+  fontSize: 16,
+  fontWeight: 900,
+  wordBreak: "break-word",
+};
+
+const twilioNumberCopyButtonStyle: CSSProperties = {
+  width: "100%",
+  border: "1px solid rgba(255,255,255,0.18)",
+  borderRadius: 14,
+  padding: "10px 14px",
+  background: "rgba(255,255,255,0.08)",
+  color: "#ffffff",
+  fontWeight: 800,
+  fontSize: 13,
+  cursor: "pointer",
+};
+
+const twilioNumberHintStyle: CSSProperties = {
+  color: "rgba(236, 254, 255, 0.7)",
+  fontSize: 12.5,
+  lineHeight: 1.5,
 };
 
 const sidebarRepliesCardStyle: CSSProperties = {
