@@ -13,72 +13,40 @@ import {
   orderBy,
   query,
   where,
-  type Query,
-  type DocumentData,
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
 import { formatFirestoreDateNY } from "../../lib/date";
 
-type CampaignLogItem = {
-  id: string;
-  name: string;
-  fileName: string;
-  status: string;
-  totalRecipients: number;
-  successCount: number;
-  failedCount: number;
-  createdByName: string;
-  createdAtLabel: string;
-  sortMs: number;
-};
+// This page is intentionally simple: every account only ever sees its own
+// messages (scoped by ownerUid, matching Firestore's security rules exactly
+// — no admin bypass, no cross-account merging), and every message is
+// reduced to one of two outcomes so anyone can glance at it and understand
+// what happened. Anything still in flight (queued/sending) is left out of
+// the list rather than shown as a third, confusing state.
+
+type Outcome = "success" | "failed";
 
 type MessageLogItem = {
   id: string;
   to: string;
-  from: string;
-  name: string;
   body: string;
-  status: string;
-  twilioSid: string;
+  outcome: Outcome;
   error: string;
-  sourceFileName: string;
   createdAtLabel: string;
   sortMs: number;
 };
 
 type AppUser = {
   uid: string;
-  role: string;
   isActive: boolean;
   email?: string;
   name?: string;
-  twilioNumber?: string;
-  assignedTwilioNumber?: string;
 };
 
 function truncateText(value: string, max = 120) {
   if (!value) return "-";
   if (value.length <= max) return value;
   return `${value.slice(0, max)}...`;
-}
-
-function truncateMiddle(value: string, start = 10, end = 8) {
-  if (!value) return "-";
-  if (value.length <= start + end + 3) return value;
-  return `${value.slice(0, start)}...${value.slice(-end)}`;
-}
-
-function normalizeRole(value: unknown) {
-  return String(value || "").trim().toLowerCase();
-}
-
-function isAdmin(role?: string) {
-  const normalized = normalizeRole(role);
-  return (
-    normalized === "admin" ||
-    normalized === "superadmin" ||
-    normalized === "super_admin"
-  );
 }
 
 function toSortMs(value: any) {
@@ -91,10 +59,6 @@ function toSortMs(value: any) {
   return 0;
 }
 
-function normalizePhone(value: string) {
-  return String(value || "").replace(/[^\d+]/g, "").trim();
-}
-
 function normalizeStatus(status?: string) {
   return String(status || "").trim().toLowerCase();
 }
@@ -104,86 +68,15 @@ function isSuccessfulStatus(status?: string) {
   return value === "delivered" || value === "sent";
 }
 
-function isProcessingStatus(status?: string) {
-  const value = normalizeStatus(status);
-  return (
-    value === "queued" ||
-    value === "accepted" ||
-    value === "scheduled" ||
-    value === "sending" ||
-    value === "processing"
-  );
-}
-
 function isFailedStatus(status?: string) {
   const value = normalizeStatus(status);
   return value === "failed" || value === "undelivered" || value === "error";
 }
 
-function statusLabel(status?: string) {
-  const value = normalizeStatus(status);
-  if (!value) return "-";
-  if (isProcessingStatus(value)) return "Processing";
-  if (value === "delivered") return "Delivered";
-  if (value === "sent") return "Sent";
-  if (value === "undelivered") return "Undelivered";
-  if (value === "failed") return "Failed";
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-function statusChipTone(status?: string) {
-  const value = normalizeStatus(status);
-
-  if (value === "delivered" || value === "sent" || value.includes("completed")) {
-    return {
-      bg: "rgba(16, 185, 129, 0.12)",
-      text: "#059669",
-      border: "rgba(16, 185, 129, 0.25)",
-    };
-  }
-
-  if (value === "failed" || value === "undelivered" || value.includes("error")) {
-    return {
-      bg: "rgba(239, 68, 68, 0.12)",
-      text: "#dc2626",
-      border: "rgba(239, 68, 68, 0.25)",
-    };
-  }
-
-  if (isProcessingStatus(value)) {
-    return {
-      bg: "rgba(245, 158, 11, 0.12)",
-      text: "#b45309",
-      border: "rgba(245, 158, 11, 0.25)",
-    };
-  }
-
-  return {
-    bg: "rgba(59, 130, 246, 0.12)",
-    text: "#2563eb",
-    border: "rgba(59, 130, 246, 0.25)",
-  };
-}
-
-function dedupeById<T extends { id: string }>(items: T[]) {
-  const map = new Map<string, T>();
-  for (const item of items) {
-    map.set(item.id, item);
-  }
-  return Array.from(map.values());
-}
-
-async function safeRunQuery(q: Query<DocumentData>) {
-  try {
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({
-      id: d.id,
-      data: d.data() as Record<string, any>,
-    }));
-  } catch (error) {
-    console.error("Query failed", error);
-    return [];
-  }
+function outcomeOf(status?: string): Outcome | null {
+  if (isSuccessfulStatus(status)) return "success";
+  if (isFailedStatus(status)) return "failed";
+  return null; // still processing (queued/sending/etc) — deliberately hidden
 }
 
 export default function LogsPage() {
@@ -194,7 +87,6 @@ export default function LogsPage() {
   const [userName, setUserName] = useState("User");
   const [profile, setProfile] = useState<AppUser | null>(null);
 
-  const [campaigns, setCampaigns] = useState<CampaignLogItem[]>([]);
   const [messages, setMessages] = useState<MessageLogItem[]>([]);
   const [search, setSearch] = useState("");
   const [errorText, setErrorText] = useState("");
@@ -219,12 +111,9 @@ export default function LogsPage() {
 
         const safeProfile: AppUser = {
           uid: user.uid,
-          role: String(userData.role || "user"),
           isActive: userData.isActive === true,
           email: String(userData.email || user.email || ""),
           name: String(userData.name || ""),
-          twilioNumber: String(userData.twilioNumber || ""),
-          assignedTwilioNumber: String(userData.assignedTwilioNumber || ""),
         };
 
         const safeName =
@@ -254,210 +143,43 @@ export default function LogsPage() {
 
       const currentProfile = profileArg || profile;
       if (!currentProfile) {
-        setCampaigns([]);
         setMessages([]);
         return;
       }
 
-      const currentUserPhone = normalizePhone(
-        currentProfile.twilioNumber || currentProfile.assignedTwilioNumber || ""
+      // Single, owner-scoped query — matches the security rules exactly,
+      // so it can never fail with permission-denied and can never show
+      // one account's messages to another.
+      const snap = await getDocs(
+        query(
+          collection(db, "messages"),
+          where("ownerUid", "==", currentProfile.uid),
+          orderBy("createdAt", "desc"),
+          limit(200)
+        )
       );
-      const currentAssignedPhone = normalizePhone(
-        currentProfile.assignedTwilioNumber || currentProfile.twilioNumber || ""
-      );
-      const currentEmail = String(currentProfile.email || "").trim().toLowerCase();
-      const currentName = String(currentProfile.name || "").trim().toLowerCase();
 
-      let campaignRows: CampaignLogItem[] = [];
-      let messageRows: MessageLogItem[] = [];
+      const rows: MessageLogItem[] = snap.docs
+        .map((d) => {
+          const data = d.data() as Record<string, any>;
+          const outcome = outcomeOf(data.status);
 
-      if (isAdmin(currentProfile.role)) {
-        const [campaignDocs, messageDocs] = await Promise.all([
-          safeRunQuery(
-            query(collection(db, "campaigns"), orderBy("createdAt", "desc"), limit(50))
-          ),
-          safeRunQuery(
-            query(collection(db, "messages"), orderBy("createdAt", "desc"), limit(100))
-          ),
-        ]);
+          if (!outcome) return null;
 
-        campaignRows = campaignDocs
-          .map(({ id, data }) => ({
-            id,
-            name: data.name || "-",
-            fileName: data.fileName || "-",
-            status: data.status || "-",
-            totalRecipients: Number(data.totalRecipients || 0),
-            successCount: Number(data.successCount || 0),
-            failedCount: Number(data.failedCount || 0),
-            createdByName: data.createdByName || "-",
-            createdAtLabel: formatFirestoreDateNY(data.createdAt),
-            sortMs: toSortMs(data.createdAt),
-          }))
-          .sort((a, b) => b.sortMs - a.sortMs);
-
-        messageRows = messageDocs
-          .map(({ id, data }) => ({
-            id,
+          return {
+            id: d.id,
             to: data.to || "-",
-            from: data.from || "",
-            name: data.name || "",
             body: data.body || "",
-            status: data.status || "-",
-            twilioSid: data.twilioSid || data.sid || "",
+            outcome,
             error: data.error || "",
-            sourceFileName: data.sourceFileName || "-",
             createdAtLabel: formatFirestoreDateNY(data.createdAt),
             sortMs: toSortMs(data.createdAt),
-          }))
-          .sort((a, b) => b.sortMs - a.sortMs);
-      } else {
-        const [
-          campaignByOwnerUid,
-          campaignByOwnerEmail,
-          allRecentCampaigns,
-          messageByOwnerUid,
-          messageByOwnerEmail,
-          messageByTwilioNumber,
-          messageByAssignedTwilioNumber,
-          allRecentMessages,
-        ] = await Promise.all([
-          safeRunQuery(
-            query(collection(db, "campaigns"), where("ownerUid", "==", currentProfile.uid))
-          ),
-          currentEmail
-            ? safeRunQuery(
-                query(collection(db, "campaigns"), where("ownerEmail", "==", currentEmail))
-              )
-            : Promise.resolve([]),
-          safeRunQuery(
-            query(collection(db, "campaigns"), orderBy("createdAt", "desc"), limit(300))
-          ),
-          safeRunQuery(
-            query(
-              collection(db, "messages"),
-              where("ownerUid", "==", currentProfile.uid),
-              orderBy("createdAt", "desc"),
-              limit(100)
-            )
-          ),
-          currentEmail
-            ? safeRunQuery(
-                query(
-                  collection(db, "messages"),
-                  where("ownerEmail", "==", currentEmail),
-                  orderBy("createdAt", "desc"),
-                  limit(100)
-                )
-              )
-            : Promise.resolve([]),
-          currentUserPhone
-            ? safeRunQuery(
-                query(
-                  collection(db, "messages"),
-                  where("twilioNumber", "==", currentUserPhone),
-                  orderBy("createdAt", "desc"),
-                  limit(150)
-                )
-              )
-            : Promise.resolve([]),
-          currentAssignedPhone
-            ? safeRunQuery(
-                query(
-                  collection(db, "messages"),
-                  where("assignedTwilioNumber", "==", currentAssignedPhone),
-                  orderBy("createdAt", "desc"),
-                  limit(150)
-                )
-              )
-            : Promise.resolve([]),
-          safeRunQuery(
-            query(collection(db, "messages"), orderBy("createdAt", "desc"), limit(400))
-          ),
-        ]);
+          };
+        })
+        .filter((row): row is MessageLogItem => row !== null)
+        .sort((a, b) => b.sortMs - a.sortMs);
 
-        const mergedCampaignDocs = dedupeById([
-          ...campaignByOwnerUid,
-          ...campaignByOwnerEmail,
-          ...allRecentCampaigns.filter(({ data }) => {
-            const createdBy = String(data.createdBy || "");
-            const ownerUid = String(data.ownerUid || "");
-            const ownerEmail = String(data.ownerEmail || "").trim().toLowerCase();
-            const createdByName = String(data.createdByName || "")
-              .trim()
-              .toLowerCase();
-            return (
-              ownerUid === currentProfile.uid ||
-              createdBy === currentProfile.uid ||
-              (currentEmail && ownerEmail === currentEmail) ||
-              (currentName && createdByName === currentName)
-            );
-          }),
-        ]);
-
-        const mergedMessageDocs = dedupeById([
-          ...messageByOwnerUid,
-          ...messageByOwnerEmail,
-          ...messageByTwilioNumber,
-          ...messageByAssignedTwilioNumber,
-          ...allRecentMessages.filter(({ data }) => {
-            const ownerUid = String(data.ownerUid || "");
-            const ownerEmail = String(data.ownerEmail || "").trim().toLowerCase();
-            const from = normalizePhone(String(data.from || ""));
-            const twilioNumber = normalizePhone(String(data.twilioNumber || ""));
-            const assignedTwilioNumber = normalizePhone(
-              String(data.assignedTwilioNumber || "")
-            );
-
-            return (
-              ownerUid === currentProfile.uid ||
-              (currentEmail && ownerEmail === currentEmail) ||
-              (!!currentUserPhone &&
-                (from === currentUserPhone ||
-                  twilioNumber === currentUserPhone ||
-                  assignedTwilioNumber === currentUserPhone)) ||
-              (!!currentAssignedPhone &&
-                (from === currentAssignedPhone ||
-                  twilioNumber === currentAssignedPhone ||
-                  assignedTwilioNumber === currentAssignedPhone))
-            );
-          }),
-        ]);
-
-        campaignRows = mergedCampaignDocs
-          .map(({ id, data }) => ({
-            id,
-            name: data.name || "-",
-            fileName: data.fileName || "-",
-            status: data.status || "-",
-            totalRecipients: Number(data.totalRecipients || 0),
-            successCount: Number(data.successCount || 0),
-            failedCount: Number(data.failedCount || 0),
-            createdByName: data.createdByName || "-",
-            createdAtLabel: formatFirestoreDateNY(data.createdAt),
-            sortMs: toSortMs(data.createdAt),
-          }))
-          .sort((a, b) => b.sortMs - a.sortMs);
-
-        messageRows = mergedMessageDocs
-          .map(({ id, data }) => ({
-            id,
-            to: data.to || "-",
-            from: data.from || "",
-            name: data.name || "",
-            body: data.body || "",
-            status: data.status || "-",
-            twilioSid: data.twilioSid || data.sid || "",
-            error: data.error || "",
-            sourceFileName: data.sourceFileName || "-",
-            createdAtLabel: formatFirestoreDateNY(data.createdAt),
-            sortMs: toSortMs(data.createdAt),
-          }))
-          .sort((a, b) => b.sortMs - a.sortMs);
-      }
-
-      setCampaigns(campaignRows);
-      setMessages(messageRows);
+      setMessages(rows);
     } catch (error: any) {
       console.error("Failed to load logs", error);
       setErrorText(error?.message || "Failed to load logs.");
@@ -471,21 +193,6 @@ export default function LogsPage() {
     router.push("/login");
   };
 
-  const filteredCampaigns = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) return campaigns;
-
-    return campaigns.filter((item) => {
-      return (
-        item.name.toLowerCase().includes(term) ||
-        item.fileName.toLowerCase().includes(term) ||
-        item.status.toLowerCase().includes(term) ||
-        item.createdByName.toLowerCase().includes(term) ||
-        item.id.toLowerCase().includes(term)
-      );
-    });
-  }, [campaigns, search]);
-
   const filteredMessages = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return messages;
@@ -493,21 +200,15 @@ export default function LogsPage() {
     return messages.filter((item) => {
       return (
         item.to.toLowerCase().includes(term) ||
-        item.name.toLowerCase().includes(term) ||
-        item.status.toLowerCase().includes(term) ||
-        item.sourceFileName.toLowerCase().includes(term) ||
         item.body.toLowerCase().includes(term) ||
-        item.id.toLowerCase().includes(term) ||
-        item.twilioSid.toLowerCase().includes(term)
+        item.outcome.includes(term)
       );
     });
   }, [messages, search]);
 
-  const totalCampaigns = campaigns.length;
   const totalMessages = messages.length;
-  const totalSent = messages.filter((m) => isSuccessfulStatus(m.status)).length;
-  const totalProcessing = messages.filter((m) => isProcessingStatus(m.status)).length;
-  const totalFailed = messages.filter((m) => isFailedStatus(m.status)).length;
+  const totalSuccess = messages.filter((m) => m.outcome === "success").length;
+  const totalFailed = messages.filter((m) => m.outcome === "failed").length;
 
   if (checking || loading) {
     return (
@@ -597,7 +298,8 @@ export default function LogsPage() {
                 <div style={heroBadgeStyle}>Activity Center</div>
                 <h1 style={heroTitleStyle}>Logs</h1>
                 <p style={heroTextStyle}>
-                  Review recent campaigns and outbound message activity in New York time.
+                  Your own message history — every send, marked simply as
+                  Success or Failed.
                 </p>
               </div>
 
@@ -607,7 +309,7 @@ export default function LogsPage() {
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search campaign, file, phone, message, sid, status"
+                    placeholder="Search phone or message"
                     style={searchInputStyle}
                   />
                 </div>
@@ -618,10 +320,9 @@ export default function LogsPage() {
               </div>
 
               <div style={statsGridStyle}>
-                <StatCard label="Campaign Logs" value={String(totalCampaigns)} />
-                <StatCard label="Message Logs" value={String(totalMessages)} />
-                <StatCard label="Delivered / Sent" value={String(totalSent)} />
-                <StatCard label="Processing / Failed" value={`${totalProcessing} / ${totalFailed}`} />
+                <StatCard label="Total Messages" value={String(totalMessages)} />
+                <StatCard label="Success" value={String(totalSuccess)} accentGood />
+                <StatCard label="Failed" value={String(totalFailed)} accentBad />
               </div>
             </div>
           </div>
@@ -631,66 +332,9 @@ export default function LogsPage() {
           <section style={panelStyle}>
             <div style={panelHeaderStyle}>
               <div>
-                <h2 style={panelTitleStyle}>Campaign Logs</h2>
-                <p style={panelDescStyle}>
-                  Most recent campaign documents from Firestore.
-                </p>
-              </div>
-            </div>
-
-            {filteredCampaigns.length === 0 ? (
-              <EmptyState text="No campaign logs found." />
-            ) : (
-              <div style={cardGridStyle}>
-                {filteredCampaigns.map((item) => {
-                  const tone = statusChipTone(item.status);
-
-                  return (
-                    <div key={item.id} style={logCardStyle}>
-                      <div style={logCardTopStyle}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={logTitleStyle}>{item.name}</div>
-                          <div style={logSubStyle}>File: {item.fileName}</div>
-                        </div>
-
-                        <span
-                          style={{
-                            background: tone.bg,
-                            color: tone.text,
-                            border: `1px solid ${tone.border}`,
-                            borderRadius: 999,
-                            padding: "8px 12px",
-                            fontSize: 12,
-                            fontWeight: 800,
-                            textTransform: "capitalize",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {statusLabel(item.status)}
-                        </span>
-                      </div>
-
-                      <div style={infoGridStyle}>
-                        <MiniInfo label="Campaign ID" value={truncateMiddle(item.id)} />
-                        <MiniInfo label="Recipients" value={String(item.totalRecipients)} />
-                        <MiniInfo label="Success" value={String(item.successCount)} />
-                        <MiniInfo label="Failed" value={String(item.failedCount)} />
-                        <MiniInfo label="Created By" value={item.createdByName} />
-                        <MiniInfo label="Created At" value={item.createdAtLabel} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
-          <section style={panelStyle}>
-            <div style={panelHeaderStyle}>
-              <div>
                 <h2 style={panelTitleStyle}>Message Logs</h2>
                 <p style={panelDescStyle}>
-                  Most recent outbound message records from Firestore.
+                  Only finished messages are shown — nothing still sending.
                 </p>
               </div>
             </div>
@@ -698,57 +342,41 @@ export default function LogsPage() {
             {filteredMessages.length === 0 ? (
               <EmptyState text="No message logs found." />
             ) : (
-              <div style={tableWrapStyle}>
-                <table style={tableStyle}>
-                  <thead>
-                    <tr>
-                      <th style={thStyle}>To</th>
-                      <th style={thStyle}>Name</th>
-                      <th style={thStyle}>Message</th>
-                      <th style={thStyle}>Status</th>
-                      <th style={thStyle}>SID</th>
-                      <th style={thStyle}>Source File</th>
-                      <th style={thStyle}>Created</th>
-                      <th style={thStyle}>Error</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredMessages.map((item) => {
-                      const tone = statusChipTone(item.status);
+              <div style={cardGridStyle}>
+                {filteredMessages.map((item) => {
+                  const isSuccess = item.outcome === "success";
 
-                      return (
-                        <tr key={item.id}>
-                          <td style={tdStyle}>{item.to || "-"}</td>
-                          <td style={tdStyle}>{item.name || "-"}</td>
-                          <td style={tdStyle}>{truncateText(item.body || "-", 90)}</td>
-                          <td style={tdStyle}>
-                            <span
-                              style={{
-                                background: tone.bg,
-                                color: tone.text,
-                                border: `1px solid ${tone.border}`,
-                                borderRadius: 999,
-                                padding: "6px 10px",
-                                fontSize: 12,
-                                fontWeight: 800,
-                                textTransform: "capitalize",
-                                display: "inline-block",
-                              }}
-                            >
-                              {statusLabel(item.status)}
-                            </span>
-                          </td>
-                          <td style={tdStyle}>
-                            {truncateMiddle(item.twilioSid || "-", 8, 6)}
-                          </td>
-                          <td style={tdStyle}>{item.sourceFileName || "-"}</td>
-                          <td style={tdStyle}>{item.createdAtLabel}</td>
-                          <td style={tdStyle}>{truncateText(item.error || "-", 60)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                  return (
+                    <div key={item.id} style={logCardStyle}>
+                      <div style={logCardTopStyle}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={logTitleStyle}>{item.to}</div>
+                          <div style={logBodyStyle}>
+                            {truncateText(item.body || "-", 140)}
+                          </div>
+                        </div>
+
+                        <span
+                          style={{
+                            ...outcomeChipStyle,
+                            ...(isSuccess ? successChipStyle : failedChipStyle),
+                          }}
+                        >
+                          {isSuccess ? "Success" : "Failed"}
+                        </span>
+                      </div>
+
+                      <div style={logMetaRowStyle}>
+                        <span>{item.createdAtLabel}</span>
+                        {!isSuccess && item.error ? (
+                          <span style={logErrorTextStyle}>
+                            {truncateText(item.error, 100)}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </section>
@@ -758,20 +386,26 @@ export default function LogsPage() {
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function StatCard({
+  label,
+  value,
+  accentGood,
+  accentBad,
+}: {
+  label: string;
+  value: string;
+  accentGood?: boolean;
+  accentBad?: boolean;
+}) {
   return (
-    <div style={statCardStyle}>
+    <div
+      style={{
+        ...statCardStyle,
+        ...(accentGood ? statCardGoodStyle : accentBad ? statCardBadStyle : null),
+      }}
+    >
       <div style={statLabelStyle}>{label}</div>
       <div style={statValueStyle}>{value}</div>
-    </div>
-  );
-}
-
-function MiniInfo({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={miniInfoCardStyle}>
-      <div style={miniInfoLabelStyle}>{label}</div>
-      <div style={miniInfoValueStyle}>{value}</div>
     </div>
   );
 }
@@ -1055,7 +689,7 @@ const heroPrimaryButtonStyle: CSSProperties = {
 
 const statsGridStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
   gap: 14,
 };
 
@@ -1065,6 +699,16 @@ const statCardStyle: CSSProperties = {
   borderRadius: 20,
   padding: "18px 18px",
   backdropFilter: "blur(10px)",
+};
+
+const statCardGoodStyle: CSSProperties = {
+  background: "rgba(16, 185, 129, 0.22)",
+  border: "1px solid rgba(16, 185, 129, 0.3)",
+};
+
+const statCardBadStyle: CSSProperties = {
+  background: "rgba(239, 68, 68, 0.22)",
+  border: "1px solid rgba(239, 68, 68, 0.3)",
 };
 
 const statLabelStyle: CSSProperties = {
@@ -1125,14 +769,14 @@ const errorBoxStyle: CSSProperties = {
 const cardGridStyle: CSSProperties = {
   marginTop: 18,
   display: "grid",
-  gap: 16,
+  gap: 14,
 };
 
 const logCardStyle: CSSProperties = {
-  borderRadius: 24,
+  borderRadius: 22,
   background: "linear-gradient(180deg, #ffffff 0%, #fcfffe 100%)",
   border: "1px solid rgba(15,23,42,0.06)",
-  padding: 18,
+  padding: 16,
   boxShadow: "0 10px 24px rgba(15,23,42,0.05)",
 };
 
@@ -1145,76 +789,53 @@ const logCardTopStyle: CSSProperties = {
 };
 
 const logTitleStyle: CSSProperties = {
-  fontSize: 20,
+  fontSize: 17,
   fontWeight: 900,
   color: "#0f172a",
   wordBreak: "break-word",
 };
 
-const logSubStyle: CSSProperties = {
+const logBodyStyle: CSSProperties = {
   marginTop: 6,
-  fontSize: 13,
-  color: "#64748b",
-};
-
-const infoGridStyle: CSSProperties = {
-  marginTop: 16,
-  display: "grid",
-  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-  gap: 12,
-};
-
-const miniInfoCardStyle: CSSProperties = {
-  borderRadius: 16,
-  background: "#f8fafc",
-  padding: 12,
-  border: "1px solid #eef2f7",
-};
-
-const miniInfoLabelStyle: CSSProperties = {
-  fontSize: 12,
-  color: "#64748b",
-  fontWeight: 700,
-};
-
-const miniInfoValueStyle: CSSProperties = {
-  marginTop: 8,
   fontSize: 14,
-  color: "#0f172a",
-  fontWeight: 800,
+  color: "#475569",
+  lineHeight: 1.5,
   wordBreak: "break-word",
 };
 
-const tableWrapStyle: CSSProperties = {
-  marginTop: 18,
-  overflowX: "auto",
-  borderRadius: 20,
-  border: "1px solid #eef2f7",
+const logMetaRowStyle: CSSProperties = {
+  marginTop: 12,
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  flexWrap: "wrap",
+  fontSize: 12,
+  color: "#94a3b8",
+  fontWeight: 600,
 };
 
-const tableStyle: CSSProperties = {
-  width: "100%",
-  borderCollapse: "collapse",
-  background: "#ffffff",
+const logErrorTextStyle: CSSProperties = {
+  color: "#dc2626",
 };
 
-const thStyle: CSSProperties = {
-  textAlign: "left",
-  padding: "14px 16px",
-  background: "#f8fafc",
-  color: "#475569",
-  borderBottom: "1px solid #e2e8f0",
-  fontSize: 13,
+const outcomeChipStyle: CSSProperties = {
+  borderRadius: 999,
+  padding: "8px 14px",
+  fontSize: 12,
   fontWeight: 800,
   whiteSpace: "nowrap",
 };
 
-const tdStyle: CSSProperties = {
-  padding: "14px 16px",
-  color: "#0f172a",
-  borderBottom: "1px solid #f1f5f9",
-  fontSize: 14,
-  verticalAlign: "middle",
+const successChipStyle: CSSProperties = {
+  background: "rgba(16, 185, 129, 0.12)",
+  color: "#059669",
+  border: "1px solid rgba(16, 185, 129, 0.25)",
+};
+
+const failedChipStyle: CSSProperties = {
+  background: "rgba(239, 68, 68, 0.12)",
+  color: "#dc2626",
+  border: "1px solid rgba(239, 68, 68, 0.25)",
 };
 
 const emptyStateStyle: CSSProperties = {
