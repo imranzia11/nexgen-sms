@@ -1108,7 +1108,13 @@ export default function DashboardPage() {
               </div>
 
               <div style={sidebarRepliesWrapStyle}>
-                <Link href="/replies" style={sidebarRepliesCardStyle}>
+                <Link
+                  href="/replies"
+                  style={{
+                    ...sidebarRepliesCardStyle,
+                    animation: "repliesShine 3s ease-in-out infinite",
+                  }}
+                >
                   <div style={sidebarRepliesIconStyle}>↩</div>
                   <div>
                     <div style={sidebarRepliesTitleStyle}>Replies</div>
@@ -1791,6 +1797,18 @@ function GlobalStyles() {
         100% {
           opacity: 1;
           transform: translateY(0);
+        }
+      }
+
+      @keyframes repliesShine {
+        0%,
+        100% {
+          box-shadow: 0 18px 40px rgba(0, 0, 0, 0.08);
+          background: rgba(255, 255, 255, 0.1);
+        }
+        50% {
+          box-shadow: 0 0 0 4px rgba(45, 212, 191, 0.35), 0 18px 40px rgba(20, 184, 166, 0.35);
+          background: rgba(45, 212, 191, 0.22);
         }
       }
 
