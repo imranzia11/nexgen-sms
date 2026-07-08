@@ -8,6 +8,7 @@ import {
   collection,
   getDoc,
   getDocs,
+  onSnapshot,
   query,
   doc,
   where,
@@ -638,20 +639,21 @@ export default function RepliesPage() {
         setAuthTimedOut(false);
 
         // Paint from cache immediately if we have it (instant, no loading
-        // state at all), then always kick off a background refresh so
-        // data never goes stale. If the cache belongs to a different
-        // account than the one that just signed in, drop it instead of
-        // flashing someone else's data.
+        // state at all). The live-listener effect below (keyed on
+        // `profile`) takes over from here — it fetches fresh data and,
+        // unlike the old one-shot fetch, keeps listening so new inbound
+        // replies and sends show up automatically without needing the
+        // Refresh button. If the cache belongs to a different account
+        // than the one that just signed in, drop it instead of flashing
+        // someone else's data.
         const cached = getCache(safeProfile.uid);
         if (cached) {
           setItems(cached.items);
           setBlockedPhones(cached.blocked);
           setLoading(false);
-          loadItems(safeProfile, { background: true });
         } else {
           setItems([]);
           setBlockedPhones([]);
-          await loadItems(safeProfile);
         }
       } catch (error: any) {
         console.error("Failed to validate user access", error);
@@ -685,6 +687,77 @@ export default function RepliesPage() {
 
     return () => unsub();
   }, [router]);
+
+  // Live sync: without this, the list only ever reflected whatever was
+  // true at the moment of the last manual fetch, so sending a message or
+  // getting a customer reply never showed up until someone clicked
+  // Refresh. Firestore's onSnapshot keeps both the conversations and
+  // blacklist data current in real time — same pattern already used on
+  // the individual thread page and the blacklisted-numbers page — so
+  // this page now updates itself the instant the underlying documents
+  // change, including from actions that happen outside this browser tab
+  // entirely (the inbound webhook writing a customer's reply).
+  useEffect(() => {
+    if (!profile) return;
+    const ownerUid = profile.uid;
+
+    let latestDocs: Array<{ id: string; data: Record<string, any> }> = [];
+    let latestBlocked: string[] = [];
+    let gotConversations = false;
+    let gotBlacklist = false;
+
+    function recompute() {
+      if (!gotConversations || !gotBlacklist) return;
+
+      const rows = buildRows(latestDocs, latestBlocked);
+      setItems(rows);
+      setBlockedPhones(latestBlocked);
+      setCache(ownerUid, rows, latestBlocked);
+      setLoading(false);
+      setLoadError(false);
+    }
+
+    const unsubConversations = onSnapshot(
+      query(collection(db, "conversations"), where("ownerUid", "==", ownerUid)),
+      (snap) => {
+        latestDocs = snap.docs.map((d) => ({
+          id: d.id,
+          data: d.data() as Record<string, any>,
+        }));
+        gotConversations = true;
+        recompute();
+      },
+      (error) => {
+        console.error("Live conversations listener failed", error);
+        setLoading(false);
+        if (!getCache(profile.uid)) setLoadError(true);
+      }
+    );
+
+    const unsubBlacklist = onSnapshot(
+      query(collection(db, "blacklisted_numbers"), where("ownerUid", "==", profile.uid)),
+      (snap) => {
+        latestBlocked = snap.docs
+          .map((d) => {
+            const data = d.data();
+            return String(data.status || "").toLowerCase() === "blocked"
+              ? String(data.phone || "").trim()
+              : "";
+          })
+          .filter(Boolean);
+        gotBlacklist = true;
+        recompute();
+      },
+      (error) => {
+        console.error("Live blacklist listener failed", error);
+      }
+    );
+
+    return () => {
+      unsubConversations();
+      unsubBlacklist();
+    };
+  }, [profile]);
 
   useEffect(() => {
     function handleGlobalClick() {
