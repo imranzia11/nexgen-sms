@@ -81,6 +81,7 @@ export default function BlacklistedPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [items, setItems] = useState<BlacklistedItem[]>([]);
   const [replies, setReplies] = useState<ReplyItem[]>([]);
+  const [page, setPage] = useState(1);
 
   const [toastOpen, setToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
@@ -228,6 +229,22 @@ export default function BlacklistedPage() {
       );
     });
   }, [items, searchTerm]);
+
+  // With thousands of blocked numbers, rendering every card at once made
+  // this page enormous to scroll through. Paginate instead — one page of
+  // cards in the DOM at a time.
+  const PAGE_SIZE = 25;
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
+
+  const pagedItems = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return filteredItems.slice(start, start + PAGE_SIZE);
+  }, [filteredItems, page]);
 
   const repliesByPhone = useMemo(() => {
     const map = new Map<string, ReplyItem[]>();
@@ -469,7 +486,7 @@ export default function BlacklistedPage() {
                 <EmptyState text="No black listed numbers found." />
               ) : (
                 <div style={blacklistCardsWrapStyle}>
-                  {filteredItems.map((item) => {
+                  {pagedItems.map((item) => {
                     const tone = statusChipTone(item.status);
                     const phoneReplies = (repliesByPhone.get(item.phone) || []).filter((reply) => {
                       const event = String(reply.eventType || "").toUpperCase();
@@ -548,6 +565,39 @@ export default function BlacklistedPage() {
                   })}
                 </div>
               )}
+
+              {filteredItems.length > 0 ? (
+                <div style={paginationRowStyle}>
+                  <span style={paginationLabelStyle}>
+                    Page {page} of {totalPages} &middot; {filteredItems.length} total
+                  </span>
+
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      disabled={page <= 1}
+                      style={{
+                        ...paginationButtonStyle,
+                        ...(page <= 1 ? paginationButtonDisabledStyle : null),
+                      }}
+                      type="button"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={page >= totalPages}
+                      style={{
+                        ...paginationButtonStyle,
+                        ...(page >= totalPages ? paginationButtonDisabledStyle : null),
+                      }}
+                      type="button"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </section>
           </section>
         </div>
@@ -989,6 +1039,37 @@ const secondaryButtonStyle: CSSProperties = {
   color: "#0f172a",
   fontWeight: 800,
   cursor: "pointer",
+};
+
+const paginationRowStyle: CSSProperties = {
+  marginTop: 20,
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 14,
+  flexWrap: "wrap",
+};
+
+const paginationLabelStyle: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 700,
+  color: "#64748b",
+};
+
+const paginationButtonStyle: CSSProperties = {
+  border: "1px solid rgba(15,23,42,0.08)",
+  borderRadius: 14,
+  padding: "10px 18px",
+  background: "#ffffff",
+  color: "#0f172a",
+  fontWeight: 800,
+  fontSize: 14,
+  cursor: "pointer",
+};
+
+const paginationButtonDisabledStyle: CSSProperties = {
+  opacity: 0.4,
+  cursor: "not-allowed",
 };
 
 const blacklistCardsWrapStyle: CSSProperties = {
