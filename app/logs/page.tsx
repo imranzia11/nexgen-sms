@@ -15,7 +15,11 @@ import {
   where,
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
-import { formatFirestoreDateNY } from "../../lib/date";
+import {
+  formatFirestoreDateNY,
+  getNYDayRangeUtc,
+  todayNYDateString,
+} from "../../lib/date";
 
 // This page is intentionally simple: every account only ever sees its own
 // messages (scoped by ownerUid, matching Firestore's security rules exactly
@@ -90,6 +94,7 @@ export default function LogsPage() {
   const [messages, setMessages] = useState<MessageLogItem[]>([]);
   const [search, setSearch] = useState("");
   const [errorText, setErrorText] = useState("");
+  const [selectedDate, setSelectedDate] = useState(() => todayNYDateString());
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -125,7 +130,7 @@ export default function LogsPage() {
         setUserName(safeName);
         setProfile(safeProfile);
         setChecking(false);
-        await loadLogs(safeProfile);
+        await loadLogs(safeProfile, selectedDate);
       } catch (error) {
         console.error("Failed to validate user access", error);
         await signOut(auth).catch(() => {});
@@ -134,9 +139,18 @@ export default function LogsPage() {
     });
 
     return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
-  const loadLogs = async (profileArg?: AppUser) => {
+  // Reload whenever the selected day changes (after the initial profile
+  // load above has already fired once for the default "today").
+  useEffect(() => {
+    if (!profile) return;
+    loadLogs(profile, selectedDate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate]);
+
+  const loadLogs = async (profileArg?: AppUser, dateStr?: string) => {
     try {
       setLoading(true);
       setErrorText("");
@@ -147,15 +161,20 @@ export default function LogsPage() {
         return;
       }
 
+      const { start, end } = getNYDayRangeUtc(dateStr || selectedDate);
+
       // Single, owner-scoped query — matches the security rules exactly,
       // so it can never fail with permission-denied and can never show
-      // one account's messages to another.
+      // one account's messages to another. Range-filtered to just the
+      // selected day (NY calendar day, midnight to midnight).
       const snap = await getDocs(
         query(
           collection(db, "messages"),
           where("ownerUid", "==", currentProfile.uid),
+          where("createdAt", ">=", start),
+          where("createdAt", "<", end),
           orderBy("createdAt", "desc"),
-          limit(200)
+          limit(300)
         )
       );
 
@@ -314,7 +333,18 @@ export default function LogsPage() {
                   />
                 </div>
 
-                <button onClick={() => loadLogs()} style={heroPrimaryButtonStyle}>
+                <input
+                  type="date"
+                  value={selectedDate}
+                  max={todayNYDateString()}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  style={dateInputStyle}
+                />
+
+                <button
+                  onClick={() => loadLogs(undefined, selectedDate)}
+                  style={heroPrimaryButtonStyle}
+                >
                   Refresh Logs
                 </button>
               </div>
@@ -334,6 +364,7 @@ export default function LogsPage() {
               <div>
                 <h2 style={panelTitleStyle}>Message Logs</h2>
                 <p style={panelDescStyle}>
+                  Showing {selectedDate === todayNYDateString() ? "today" : selectedDate}.
                   Only finished messages are shown — nothing still sending.
                 </p>
               </div>
@@ -674,6 +705,17 @@ const searchInputStyle: CSSProperties = {
   background: "transparent",
   color: "#ffffff",
   fontSize: 15,
+};
+
+const dateInputStyle: CSSProperties = {
+  border: "1px solid rgba(255,255,255,0.16)",
+  borderRadius: 18,
+  padding: "14px 16px",
+  background: "rgba(255,255,255,0.12)",
+  color: "#ffffff",
+  fontSize: 15,
+  fontWeight: 600,
+  colorScheme: "dark",
 };
 
 const heroPrimaryButtonStyle: CSSProperties = {
