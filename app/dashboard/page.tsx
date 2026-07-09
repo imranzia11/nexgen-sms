@@ -64,6 +64,79 @@ type TemplateItem = {
   followUpMessage: string;
 };
 
+// --- Instant-paint cache for uploads/templates -------------------------
+// The dashboard used to have no cache at all: every visit re-ran a fully
+// sequential chain of Firestore round trips (user doc -> uploads ->
+// templates -> leads for the auto-selected file), showing all-zero stat
+// cards and "Loading files..." the entire time. This mirrors the same
+// localStorage instant-paint pattern already used on /replies — uploads
+// and templates are cached independently (each written as soon as its own
+// fetch resolves) so a repeat visit paints instantly while a fresh fetch
+// quietly runs underneath.
+const DASHBOARD_CACHE_KEY = "sms_dashboard_cache_v1";
+
+type DashboardCache = {
+  uid: string;
+  uploads: UploadItem[];
+  templates: TemplateItem[];
+  ts: number;
+};
+
+function readDashboardCache(): DashboardCache | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(DASHBOARD_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      !parsed ||
+      typeof parsed.uid !== "string" ||
+      !Array.isArray(parsed.uploads) ||
+      !Array.isArray(parsed.templates)
+    ) {
+      return null;
+    }
+    return parsed as DashboardCache;
+  } catch {
+    return null;
+  }
+}
+
+function updateDashboardCache(
+  uid: string,
+  patch: Partial<Pick<DashboardCache, "uploads" | "templates">>
+) {
+  if (typeof window === "undefined") return;
+  try {
+    const current = readDashboardCache();
+    const base: DashboardCache =
+      current && current.uid === uid
+        ? current
+        : { uid, uploads: [], templates: [], ts: Date.now() };
+
+    const next: DashboardCache = { ...base, ...patch, uid, ts: Date.now() };
+    window.localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(next));
+  } catch {
+    // Private browsing / storage quota can throw here — safe to ignore,
+    // the page just falls back to always fetching fresh.
+  }
+}
+
+// Only trust the cache for the very first synchronous render if it
+// demonstrably belongs to whoever is actually signed in right now (same
+// safeguard used on /replies) — localStorage is shared by the whole
+// browser, not scoped per account, so an already-logged-in user's
+// synchronously-available auth.currentUser must match before we paint it.
+function getInitialDashboardCache(): DashboardCache | null {
+  const currentUid = auth.currentUser?.uid;
+  if (!currentUid) return null;
+
+  const cached = readDashboardCache();
+  if (cached && cached.uid === currentUid) return cached;
+
+  return null;
+}
+
 const DEFAULT_SMS_MESSAGE =
   "Quick question - does your business need extra capital right now? We can approve $10K-$500K within hours. Reply STOP to opt out, Reply YES to get Funds.";
 
@@ -254,7 +327,9 @@ export default function DashboardPage() {
   const [sendingSms, setSendingSms] = useState(false);
   const [sendingSingleSms, setSendingSingleSms] = useState(false);
 
-  const [uploads, setUploads] = useState<UploadItem[]>([]);
+  const [uploads, setUploads] = useState<UploadItem[]>(
+    () => getInitialDashboardCache()?.uploads || []
+  );
   const [loadingUploads, setLoadingUploads] = useState(false);
   const [deletingUploadId, setDeletingUploadId] = useState("");
 
@@ -273,7 +348,9 @@ export default function DashboardPage() {
   );
   const [followUpHours, setFollowUpHours] = useState<number>(4);
 
-  const [templates, setTemplates] = useState<TemplateItem[]>([]);
+  const [templates, setTemplates] = useState<TemplateItem[]>(
+    () => getInitialDashboardCache()?.templates || []
+  );
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
 
@@ -316,7 +393,19 @@ export default function DashboardPage() {
       }
 
       try {
-        const snap = await getDoc(doc(db, "users", user.uid));
+        // Kick off uploads/templates fetches immediately, in parallel with
+        // the user-doc access check below, instead of sequentially after
+        // it — they only need the uid (already available here), not the
+        // result of the check. Access is still gated on the user-doc check
+        // alone (isActive must be verified before showing anything), but
+        // uploads/templates no longer sit behind two extra round trips of
+        // waiting: they stream in as soon as they're ready, and paint
+        // instantly from cache in the meantime.
+        const userDocPromise = getDoc(doc(db, "users", user.uid));
+        loadUploads(user.uid);
+        loadTemplates(user.uid);
+
+        const snap = await userDocPromise;
 
         if (!snap.exists() || snap.data().isActive !== true) {
           await signOut(auth).catch(() => {});
@@ -338,8 +427,6 @@ export default function DashboardPage() {
           String(data.twilioNumber || data.assignedTwilioNumber || "").trim()
         );
         setChecking(false);
-        await loadUploads(user.uid);
-        await loadTemplates(user.uid);
       } catch (error) {
         console.error("Failed to validate user access", error);
         await signOut(auth).catch(() => {});
@@ -397,6 +484,7 @@ export default function DashboardPage() {
         .map(({ createdAtMs, ...rest }) => rest);
 
       setUploads(items);
+      updateDashboardCache(currentUid, { uploads: items });
 
       if (!selectedUploadId && items.length > 0) {
         setSelectedUploadId(items[0].id);
@@ -488,6 +576,7 @@ export default function DashboardPage() {
         .sort((a, b) => a.slot - b.slot);
 
       setTemplates(items);
+      updateDashboardCache(currentUid, { templates: items });
     } catch (error) {
       console.error("Failed to load templates", error);
     } finally {
