@@ -21,6 +21,7 @@ import {
   todayNYDateString,
 } from "../../lib/date";
 import LoadingScreen from "../../components/LoadingScreen";
+import RepliesNavBadge from "../../components/RepliesNavBadge";
 
 // This page is intentionally simple: every account only ever sees its own
 // messages (scoped by ownerUid, matching Firestore's security rules exactly
@@ -268,7 +269,11 @@ export default function LogsPage() {
             </div>
 
             <div style={sidebarRepliesWrapStyle}>
-              <Link href="/replies" style={sidebarRepliesCardStyle}>
+              <Link
+                href="/replies"
+                style={{ ...sidebarRepliesCardStyle, position: "relative" }}
+              >
+                <RepliesNavBadge />
                 <div style={sidebarRepliesIconStyle}>↩</div>
                 <div>
                   <div style={sidebarRepliesTitleStyle}>Replies</div>

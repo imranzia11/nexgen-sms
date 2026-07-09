@@ -31,6 +31,7 @@ type SmsRow = {
   hasReply: boolean;
   lastDirection: string;
   pinned: boolean;
+  lastOutboundStatus: string;
 };
 
 type AppUser = {
@@ -45,7 +46,19 @@ type AppUser = {
   messagingServiceSid?: string;
 };
 
-type FilterMode = "all" | "replied" | "awaiting" | "never_replied" | "pinned";
+type FilterMode =
+  | "all"
+  | "replied"
+  | "awaiting"
+  | "never_replied"
+  | "pinned"
+  | "failed";
+
+// Matches the same failed/undelivered statuses used to render the red
+// error bubble on the /replies/[phone] thread view.
+function isFailedOutboundStatus(status: string) {
+  return status === "failed" || status === "undelivered";
+}
 
 // Module-level cache: survives across client-side navigations within the
 // same session (not across full page reloads). Lets us paint the list
@@ -217,6 +230,9 @@ function makeRow(id: string, data: Record<string, any>): SmsRow {
     hasReply: data.hasReply === true,
     lastDirection,
     pinned: data.pinned === true,
+    lastOutboundStatus: String(data.lastOutboundStatus || "")
+      .trim()
+      .toLowerCase(),
   };
 }
 
@@ -816,6 +832,12 @@ export default function RepliesPage() {
       return nonPinned.filter((item) => !item.hasReply);
     }
 
+    if (filterMode === "failed") {
+      return nonPinned.filter((item) =>
+        isFailedOutboundStatus(item.lastOutboundStatus)
+      );
+    }
+
     return nonPinned;
   }, [searchedItems, filterMode]);
 
@@ -845,6 +867,10 @@ export default function RepliesPage() {
   ).length;
 
   const pinnedCount = items.filter((item) => item.pinned).length;
+
+  const failedCount = items.filter(
+    (item) => !item.pinned && isFailedOutboundStatus(item.lastOutboundStatus)
+  ).length;
 
   if (checking) {
     return (
@@ -975,6 +1001,16 @@ export default function RepliesPage() {
                 >
                   📌 Pinned Messages
                 </button>
+
+                <button
+                  onClick={() => setFilterMode("failed")}
+                  style={{
+                    ...filterTabStyle,
+                    ...(filterMode === "failed" ? activeFilterTabStyle : {}),
+                  }}
+                >
+                  ⚠ Failed / Undelivered
+                </button>
               </div>
 
               <div style={statsGridStyle}>
@@ -992,6 +1028,7 @@ export default function RepliesPage() {
                   value={String(neverRepliedCount)}
                 />
                 <StatCard label="Pinned" value={String(pinnedCount)} />
+                <StatCard label="Failed / Undelivered" value={String(failedCount)} />
               </div>
             </div>
           </div>
@@ -1002,11 +1039,15 @@ export default function RepliesPage() {
                 <h2 style={panelTitleStyle}>
                   {filterMode === "pinned"
                     ? "Pinned Messages"
+                    : filterMode === "failed"
+                    ? "Failed / Undelivered Messages"
                     : "Outbound SMS Activity"}
                 </h2>
                 <p style={panelDescStyle}>
                   {filterMode === "pinned"
                     ? "Conversations you've pinned for quick access. Unpin to send them back to their normal tab."
+                    : filterMode === "failed"
+                    ? "Conversations whose most recent outbound message failed to deliver or was reported undelivered by the carrier."
                     : "Only new conversations with `ownerUid` matching the logged-in user are shown for non-admin accounts."}
                 </p>
               </div>
@@ -1113,11 +1154,15 @@ export default function RepliesPage() {
                 <div style={emptyTitleStyle}>
                   {filterMode === "pinned"
                     ? "No pinned messages yet."
+                    : filterMode === "failed"
+                    ? "No failed or undelivered messages."
                     : "No SMS found for this filter."}
                 </div>
                 <div style={emptyTextStyle}>
                   {filterMode === "pinned"
                     ? "Pin a conversation from the ⋯ menu to see it here."
+                    : filterMode === "failed"
+                    ? "Conversations will show up here if a message fails to send or the carrier reports it undelivered."
                     : "New messages and replies will appear here once they are saved with the correct ownerUid."}
                 </div>
               </div>
@@ -1160,12 +1205,21 @@ export default function RepliesPage() {
                           <div style={timeStyle}>{item.createdAtLabel}</div>
                           <div
                             style={
-                              item.hasReply && item.lastDirection === "inbound"
+                              // Only flag as a delivery issue if the customer
+                              // hasn't replied since — a reply always wins,
+                              // since it proves the conversation is alive.
+                              isFailedOutboundStatus(item.lastOutboundStatus) &&
+                              item.lastDirection !== "inbound"
+                                ? failedBadgeStyle
+                                : item.hasReply && item.lastDirection === "inbound"
                                 ? repliedBadgeStyle
                                 : awaitingReplyBadgeStyle
                             }
                           >
-                            {item.hasReply && item.lastDirection === "inbound"
+                            {isFailedOutboundStatus(item.lastOutboundStatus) &&
+                            item.lastDirection !== "inbound"
+                              ? "Delivery Issue"
+                              : item.hasReply && item.lastDirection === "inbound"
                               ? "Customer Replied"
                               : item.hasReply && item.lastDirection === "outbound"
                                 ? "Waiting for Customer"
@@ -1706,6 +1760,18 @@ const repliedBadgeStyle: CSSProperties = {
   background: "rgba(16, 185, 129, 0.12)",
   color: "#059669",
   border: "1px solid rgba(16, 185, 129, 0.25)",
+  borderRadius: 999,
+  padding: "7px 11px",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const failedBadgeStyle: CSSProperties = {
+  marginTop: 8,
+  display: "inline-block",
+  background: "rgba(239, 68, 68, 0.14)",
+  color: "#b91c1c",
+  border: "1px solid rgba(239, 68, 68, 0.3)",
   borderRadius: 999,
   padding: "7px 11px",
   fontSize: 12,

@@ -16,6 +16,7 @@ import {
 import { auth, db } from "../../lib/firebase";
 import { formatFirestoreDateNY } from "../../lib/date";
 import LoadingScreen from "../../components/LoadingScreen";
+import RepliesNavBadge from "../../components/RepliesNavBadge";
 
 type ToastType = "success" | "error" | "info";
 
@@ -346,7 +347,11 @@ export default function BlacklistedPage() {
               </div>
 
               <div style={sidebarRepliesWrapStyle}>
-                <Link href="/replies" style={sidebarRepliesCardStyle}>
+                <Link
+                  href="/replies"
+                  style={{ ...sidebarRepliesCardStyle, position: "relative" }}
+                >
+                  <RepliesNavBadge />
                   <div style={sidebarRepliesIconStyle}>↩</div>
                   <div>
                     <div style={sidebarRepliesTitleStyle}>Replies</div>

@@ -26,6 +26,7 @@ import Papa from "papaparse";
 import { auth, db } from "../../lib/firebase";
 import { formatFirestoreDateNY } from "../../lib/date";
 import LoadingScreen from "../../components/LoadingScreen";
+import RepliesNavBadge from "../../components/RepliesNavBadge";
 
 type RowData = Record<string, string>;
 
@@ -1097,8 +1098,10 @@ export default function DashboardPage() {
                   style={{
                     ...sidebarRepliesCardStyle,
                     animation: "repliesShine 3s ease-in-out infinite",
+                    position: "relative",
                   }}
                 >
+                  <RepliesNavBadge />
                   <div style={sidebarRepliesIconStyle}>↩</div>
                   <div>
                     <div style={sidebarRepliesTitleStyle}>Replies</div>

@@ -17,6 +17,7 @@ import {
 import { auth, db } from "../../lib/firebase";
 import { getNYDayRangeUtc, todayNYDateString } from "../../lib/date";
 import LoadingScreen from "../../components/LoadingScreen";
+import RepliesNavBadge from "../../components/RepliesNavBadge";
 
 // Every account only ever sees its own count here — same owner-scoped
 // query pattern as /logs, so it can never fail under the security rules
@@ -197,7 +198,11 @@ export default function StatsPage() {
             </div>
 
             <div style={sidebarRepliesWrapStyle}>
-              <Link href="/replies" style={sidebarRepliesCardStyle}>
+              <Link
+                href="/replies"
+                style={{ ...sidebarRepliesCardStyle, position: "relative" }}
+              >
+                <RepliesNavBadge />
                 <div style={sidebarRepliesIconStyle}>↩</div>
                 <div>
                   <div style={sidebarRepliesTitleStyle}>Replies</div>
