@@ -29,6 +29,7 @@ import {
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { auth, db, storage } from "../../../lib/firebase";
 import { formatFirestoreDateNY } from "../../../lib/date";
+import { describeTwilioError } from "../../../lib/twilioErrorCodes";
 
 type MediaMetaItem = {
   url: string;
@@ -1121,10 +1122,9 @@ export default function ReplyThreadPage({
                             </div>
                           ) : null}
 
-                          {failed && msg.error ? (
+                          {failed ? (
                             <div style={bubbleErrorStyle}>
-                              {msg.errorCode ? `${msg.errorCode}: ` : ""}
-                              {msg.error}
+                              {describeTwilioError(msg.errorCode, msg.error)}
                             </div>
                           ) : null}
 
