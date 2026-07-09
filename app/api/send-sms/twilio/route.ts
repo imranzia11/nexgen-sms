@@ -46,6 +46,22 @@ async function getUserFromRequest(req: NextRequest) {
   return decoded;
 }
 
+async function isBlockedNumber(ownerUid: string, phone: string) {
+  const snap = await adminDb
+    .collection("blacklisted_numbers")
+    .where("ownerUid", "==", ownerUid)
+    .where("phone", "==", phone)
+    .limit(1)
+    .get();
+
+  if (snap.empty) return false;
+
+  return snap.docs.some((doc) => {
+    const data = doc.data() || {};
+    return String(data.status || "").toLowerCase() === "blocked";
+  });
+}
+
 async function hasPreviouslySentSuccessfulSms(ownerUid: string, phone: string) {
   const snap = await adminDb
     .collection("messages")
@@ -193,6 +209,21 @@ export async function POST(req: NextRequest) {
           phone: lead.phone || "",
           ok: false,
           error: "Invalid phone number",
+          code: null,
+        });
+        continue;
+      }
+
+      // Per-owner blacklist check — this route previously relied only on
+      // the platform-wide global blocklist inside sendSmsForUser, missing
+      // the same per-owner check its sibling send routes already have.
+      const blocked = await isBlockedNumber(uid, formattedPhone);
+      if (blocked) {
+        results.push({
+          name: lead.name,
+          phone: formattedPhone,
+          ok: false,
+          error: "Number is blocked or opted out.",
           code: null,
         });
         continue;

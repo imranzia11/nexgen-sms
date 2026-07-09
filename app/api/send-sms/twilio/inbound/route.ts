@@ -397,7 +397,23 @@ export async function POST(req: NextRequest) {
       ? `${appBaseUrl}/api/send-sms/twilio/inbound`
       : req.url;
 
-    if (authToken && signature) {
+    // Require a valid signature whenever we're configured to check one.
+    // Previously this only validated IF a signature header happened to be
+    // present — a request with no header at all skipped validation
+    // entirely, letting anyone who found this URL forge inbound messages
+    // or fake STOP/START events. Real Twilio traffic always includes this
+    // header, so this only blocks non-Twilio requests, not legitimate ones.
+    if (authToken) {
+      if (!signature) {
+        console.error("Missing Twilio signature header", {
+          requestUrl,
+          from: params.From,
+          to: params.To,
+          sid: params.MessageSid,
+        });
+        return new Response("Missing signature", { status: 403 });
+      }
+
       const isValid = twilio.validateRequest(
         authToken,
         signature,

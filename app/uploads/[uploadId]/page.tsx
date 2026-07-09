@@ -135,11 +135,15 @@ export default function UploadDetailsPage() {
         createdAtLabel: formatFirestoreDateNY(uploadData.createdAt),
       });
 
-      // Query only by uploadedBy to stay compatible with your rules/data,
-      // then filter uploadId in JS.
+      // Query by ownerUid — this is the field the actual Firestore security
+      // rule for `leads` checks (resource.data.ownerUid). Querying by
+      // uploadedBy instead (a different field) caused Firestore to reject
+      // this query outright as unprovable against the rule. Every lead doc
+      // has both fields set to the same value, so this is a safe swap.
+      // Then filter uploadId in JS.
       const leadQuery = query(
         collection(db, "leads"),
-        where("uploadedBy", "==", currentUid)
+        where("ownerUid", "==", currentUid)
       );
 
       const leadSnap = await getDocs(leadQuery);

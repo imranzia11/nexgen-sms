@@ -55,7 +55,15 @@ export async function POST(req: NextRequest) {
       ? `${appBaseUrl.replace(/\/$/, "")}/api/send-sms/twilio/status`
       : req.url;
 
-    if (authToken && signature) {
+    // Same fix as the inbound webhook: require the signature header
+    // whenever we're configured to check one, instead of silently skipping
+    // validation when it's simply absent.
+    if (authToken) {
+      if (!signature) {
+        console.error("Missing Twilio status callback signature");
+        return xmlResponse();
+      }
+
       const valid = twilio.validateRequest(
         authToken,
         signature,
