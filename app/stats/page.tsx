@@ -16,6 +16,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
 import { getNYDayRangeUtc, todayNYDateString } from "../../lib/date";
+import LoadingScreen from "../../components/LoadingScreen";
 
 // Every account only ever sees its own count here — same owner-scoped
 // query pattern as /logs, so it can never fail under the security rules
@@ -157,16 +158,7 @@ export default function StatsPage() {
   };
 
   if (checking) {
-    return (
-      <main style={loadingPageStyle}>
-        <div style={loadingCardStyle}>
-          <div style={spinnerStyle} />
-          <div style={{ color: "#ffffff", fontWeight: 800, fontSize: 18 }}>
-            Checking account access...
-          </div>
-        </div>
-      </main>
-    );
+    return <LoadingScreen />;
   }
 
   const dashOffset = revealed ? 0 : CIRCUMFERENCE;
@@ -638,24 +630,6 @@ const errorBoxStyle: CSSProperties = {
   color: "#ffffff",
   fontSize: 14,
   lineHeight: 1.5,
-};
-
-const loadingPageStyle: CSSProperties = {
-  minHeight: "100vh",
-  display: "grid",
-  placeItems: "center",
-  background: "linear-gradient(135deg, #0f766e 0%, #0d9488 50%, #14b8a6 100%)",
-};
-
-const loadingCardStyle: CSSProperties = {
-  borderRadius: 28,
-  padding: "28px 32px",
-  background: "rgba(255,255,255,0.1)",
-  border: "1px solid rgba(255,255,255,0.15)",
-  display: "flex",
-  alignItems: "center",
-  gap: 14,
-  backdropFilter: "blur(10px)",
 };
 
 const spinnerStyle: CSSProperties = {

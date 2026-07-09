@@ -20,6 +20,7 @@ import {
   getNYDayRangeUtc,
   todayNYDateString,
 } from "../../lib/date";
+import LoadingScreen from "../../components/LoadingScreen";
 
 // This page is intentionally simple: every account only ever sees its own
 // messages (scoped by ownerUid, matching Firestore's security rules exactly
@@ -230,16 +231,7 @@ export default function LogsPage() {
   const totalFailed = messages.filter((m) => m.outcome === "failed").length;
 
   if (checking || loading) {
-    return (
-      <main style={loadingPageStyle}>
-        <div style={loadingCardStyle}>
-          <div style={spinnerStyle} />
-          <div style={{ color: "#ffffff", fontWeight: 800, fontSize: 18 }}>
-            Loading logs...
-          </div>
-        </div>
-      </main>
-    );
+    return <LoadingScreen text="Loading logs..." />;
   }
 
   return (
@@ -907,29 +899,3 @@ const emptyStateIconStyle: CSSProperties = {
   fontWeight: 900,
 };
 
-const loadingPageStyle: CSSProperties = {
-  minHeight: "100vh",
-  display: "grid",
-  placeItems: "center",
-  background: "linear-gradient(135deg, #0f766e 0%, #0d9488 50%, #14b8a6 100%)",
-};
-
-const loadingCardStyle: CSSProperties = {
-  borderRadius: 28,
-  padding: "28px 32px",
-  background: "rgba(255,255,255,0.1)",
-  border: "1px solid rgba(255,255,255,0.15)",
-  display: "flex",
-  alignItems: "center",
-  gap: 14,
-  backdropFilter: "blur(10px)",
-};
-
-const spinnerStyle: CSSProperties = {
-  width: 22,
-  height: 22,
-  borderRadius: "50%",
-  border: "3px solid rgba(255,255,255,0.25)",
-  borderTop: "3px solid #ffffff",
-  animation: "spin 1s linear infinite",
-};

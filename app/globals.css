@@ -13,3 +13,18 @@ body {
 * {
   box-sizing: border-box;
 }
+
+/* Shared loading-spinner animation used by every authenticated page's
+   loading screen. Previously several pages (logs, stats, replies,
+   replies/[phone], uploads/[uploadId]) referenced "spin" without ever
+   defining it locally, so their spinner sat frozen instead of spinning.
+   Defining it once, globally, fixes that and removes the need for every
+   page to redeclare it. */
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
