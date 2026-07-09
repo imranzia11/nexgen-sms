@@ -53,6 +53,8 @@ type MessageItem = {
   mediaUrls?: string[];
   mediaMeta?: MediaMetaItem[];
   numMedia?: number;
+  error?: string;
+  errorCode?: string;
   createdAtLabel: string;
   createdAtMs: number;
 };
@@ -131,6 +133,11 @@ function toMillis(value: any) {
 
 function safeString(value: any) {
   return String(value || "").trim();
+}
+
+function isFailedMessageStatus(status?: string) {
+  const value = safeString(status).toLowerCase();
+  return value === "failed" || value === "undelivered";
 }
 
 function normalizeMediaUrls(value: any) {
@@ -256,6 +263,8 @@ export default function ReplyThreadPage({
       mediaUrls,
       mediaMeta,
       numMedia: Number(data.numMedia || mediaUrls.length || 0),
+      error: safeString(data.error),
+      errorCode: safeString(data.errorCode),
       createdAtLabel: formatFirestoreDateNY(timeValue),
       createdAtMs: toMillis(timeValue),
     };
@@ -968,6 +977,7 @@ export default function ReplyThreadPage({
                 <div style={threadWrapStyle}>
                   {messages.map((msg) => {
                     const inbound = msg.direction === "inbound";
+                    const failed = !inbound && isFailedMessageStatus(msg.status);
                     const displayMedia = buildDisplayMedia(msg);
 
                     return (
@@ -981,7 +991,11 @@ export default function ReplyThreadPage({
                         <div
                           style={{
                             ...messageBubbleStyle,
-                            ...(inbound ? inboundBubbleStyle : outboundBubbleStyle),
+                            ...(inbound
+                              ? inboundBubbleStyle
+                              : failed
+                              ? failedBubbleStyle
+                              : outboundBubbleStyle),
                             color: inbound ? "#0f172a" : "#ffffff",
                           }}
                         >
@@ -1104,6 +1118,13 @@ export default function ReplyThreadPage({
                                   </div>
                                 );
                               })}
+                            </div>
+                          ) : null}
+
+                          {failed && msg.error ? (
+                            <div style={bubbleErrorStyle}>
+                              {msg.errorCode ? `${msg.errorCode}: ` : ""}
+                              {msg.error}
                             </div>
                           ) : null}
 
@@ -1487,6 +1508,11 @@ const outboundBubbleStyle: CSSProperties = {
   border: "1px solid rgba(13,148,136,0.18)",
 };
 
+const failedBubbleStyle: CSSProperties = {
+  background: "linear-gradient(135deg, #b91c1c 0%, #991b1b 100%)",
+  border: "1px solid rgba(153,27,27,0.35)",
+};
+
 const bubbleTopStyle: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
@@ -1533,6 +1559,17 @@ const bubbleTimeStyle: CSSProperties = {
   marginTop: 12,
   fontSize: 12,
   opacity: 0.82,
+};
+
+const bubbleErrorStyle: CSSProperties = {
+  marginTop: 10,
+  padding: "8px 10px",
+  borderRadius: 10,
+  background: "rgba(0,0,0,0.16)",
+  border: "1px solid rgba(255,255,255,0.25)",
+  fontSize: 12.5,
+  lineHeight: 1.5,
+  color: "#fff5f5",
 };
 
 const mediaGridStyle: CSSProperties = {
