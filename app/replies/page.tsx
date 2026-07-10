@@ -13,6 +13,8 @@ import {
   query,
   doc,
   where,
+  orderBy,
+  limit,
   deleteDoc,
   setDoc,
   serverTimestamp,
@@ -279,6 +281,94 @@ function blacklistDocId(ownerUid: string, phone: string) {
   return `${ownerUid}_${phoneKey(phone)}`;
 }
 
+// Default browsing view (no search term typed) - fetch only the most
+// recent DEFAULT_LIST_LIMIT conversations matching whatever tab is active,
+// instead of every conversation the account has ever had. "Load more"
+// bumps the limit by LIST_LIMIT_STEP, which simply re-subscribes with a
+// bigger number - simpler than cursor pagination and still avoids ever
+// downloading more than what's actually been asked for.
+const DEFAULT_LIST_LIMIT = 50;
+const LIST_LIMIT_STEP = 50;
+
+// URGENT ROLLBACK (see the live-listener effect for the full story): the
+// scoped, tab-limited query orders by `lastMessageAt`, and any
+// conversation missing that field gets silently dropped from the results
+// - not an error, just excluded. That hid a genuine "Customer Replied"
+// conversation from its own tab in production. Kept off until
+// `lastMessageAt` is confirmed present on every conversation (or
+// backfilled where it's missing).
+const SCOPED_LIST_ENABLED = false;
+
+// Deliberately does NOT filter `pinned != true` on the non-pinned tabs -
+// Firestore excludes any document missing a filtered field entirely, and
+// most conversations never have `pinned` set at all (same class of bug as
+// the earlier `blocked` field incident). Pinned items are instead stripped
+// out client-side (see the `nonPinned` step in filteredItems below), same
+// as before this change - just now operating on a small scoped batch
+// instead of the full account.
+function buildScopedConversationsQuery(
+  ownerUid: string,
+  mode: FilterMode,
+  limitN: number
+) {
+  const col = collection(db, "conversations");
+  const base = [where("ownerUid", "==", ownerUid), where("blocked", "==", false)];
+
+  if (mode === "pinned") {
+    return query(
+      col,
+      ...base,
+      where("pinned", "==", true),
+      orderBy("lastMessageAt", "desc"),
+      limit(limitN)
+    );
+  }
+
+  if (mode === "replied") {
+    return query(
+      col,
+      ...base,
+      where("hasReply", "==", true),
+      where("lastDirection", "==", "inbound"),
+      orderBy("lastMessageAt", "desc"),
+      limit(limitN)
+    );
+  }
+
+  if (mode === "awaiting") {
+    return query(
+      col,
+      ...base,
+      where("hasReply", "==", true),
+      where("lastDirection", "==", "outbound"),
+      orderBy("lastMessageAt", "desc"),
+      limit(limitN)
+    );
+  }
+
+  if (mode === "never_replied") {
+    return query(
+      col,
+      ...base,
+      where("hasReply", "==", false),
+      orderBy("lastMessageAt", "desc"),
+      limit(limitN)
+    );
+  }
+
+  if (mode === "failed") {
+    return query(
+      col,
+      ...base,
+      where("lastOutboundStatus", "in", ["failed", "undelivered"]),
+      orderBy("lastMessageAt", "desc"),
+      limit(limitN)
+    );
+  }
+
+  return query(col, ...base, orderBy("lastMessageAt", "desc"), limit(limitN));
+}
+
 // Defensive re-filter applied to anything painted from the persisted
 // (localStorage) cache - the cache stores its own `blocked` snapshot
 // alongside the items, but if that cache was ever written before a number
@@ -333,12 +423,17 @@ export default function RepliesPage() {
   const [authTimedOut, setAuthTimedOut] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [search, setSearch] = useState("");
+  // Anything non-empty in the search box switches the list from the fast,
+  // tab-scoped live query back to a one-time full-history fetch - see the
+  // live-listener effect further down for exactly how that's used.
+  const isSearching = search.trim().length > 0;
   const [blockedPhones, setBlockedPhones] = useState<string[]>(
     () => getInitialCache()?.blocked || []
   );
   const [profile, setProfile] = useState<AppUser | null>(null);
   const [counts, setCounts] = useState<StatCounts>(() => getInitialCounts());
   const [filterMode, setFilterMode] = useState<FilterMode>("replied");
+  const [listLimit, setListLimit] = useState(DEFAULT_LIST_LIMIT);
   const [deletingId, setDeletingId] = useState("");
   const [blockingId, setBlockingId] = useState("");
   const [openMenuId, setOpenMenuId] = useState("");
@@ -636,7 +731,14 @@ export default function RepliesPage() {
       alert(`Follow-up sent to ${successCount} customer(s).`);
       setSelectedPhones([]);
       setFollowUpMessage("");
-      await loadItems(undefined, { background: true });
+      // The scoped live listener already picks up the change automatically
+      // once the send finishes writing to each conversation doc - a full
+      // fetch here would undo the whole point of scoping it. Only actually
+      // needed while searching, since that path isn't live.
+      if (isSearching) {
+        await loadItems(undefined, { background: true });
+      }
+      if (profile) void loadCounts(profile.uid);
     } catch (error: any) {
       console.error("Failed to send follow-up", error);
       alert(error?.message || "Failed to send follow-up messages.");
@@ -890,6 +992,17 @@ export default function RepliesPage() {
   // this page now updates itself the instant the underlying documents
   // change, including from actions that happen outside this browser tab
   // entirely (the inbound webhook writing a customer's reply).
+  //
+  // What changed: this used to always listen to EVERY conversation the
+  // account has ever had, no matter which tab was open — meaning a single
+  // account with tens of thousands of conversations had to have all of
+  // them downloaded and kept live-synced just to show a couple of rows.
+  // Now, as long as nobody's actively searching, it only listens to a
+  // small, tab-scoped batch (most recent first, capped at `listLimit`) —
+  // the exact same shape of fix already applied to the header counts and
+  // the dashboard/blacklisted lists. Typing into the search box falls
+  // back to the old "watch everything" query so full-history search still
+  // works exactly as it did before.
   useEffect(() => {
     if (!profile) return;
     const ownerUid = profile.uid;
@@ -910,8 +1023,13 @@ export default function RepliesPage() {
       setLoadError(false);
     }
 
+    const conversationsQuery =
+      isSearching || !SCOPED_LIST_ENABLED
+        ? query(collection(db, "conversations"), where("ownerUid", "==", ownerUid))
+        : buildScopedConversationsQuery(ownerUid, filterMode, listLimit);
+
     const unsubConversations = onSnapshot(
-      query(collection(db, "conversations"), where("ownerUid", "==", ownerUid)),
+      conversationsQuery,
       (snap) => {
         latestDocs = snap.docs.map((d) => ({
           id: d.id,
@@ -950,7 +1068,7 @@ export default function RepliesPage() {
       unsubConversations();
       unsubBlacklist();
     };
-  }, [profile]);
+  }, [profile, filterMode, listLimit, isSearching]);
 
   useEffect(() => {
     function handleGlobalClick() {
@@ -965,6 +1083,10 @@ export default function RepliesPage() {
       window.removeEventListener("click", handleGlobalClick);
     };
   }, [openMenuId]);
+
+  useEffect(() => {
+    setListLimit(DEFAULT_LIST_LIMIT);
+  }, [filterMode]);
 
   useEffect(() => {
     if (filterMode !== "never_replied") {
@@ -1213,7 +1335,13 @@ export default function RepliesPage() {
 
               <button
                 onClick={() => {
-                  loadItems(undefined, { background: true });
+                  // While searching, the list comes from a one-time full
+                  // fetch (not a live listener), so Refresh needs to
+                  // re-run it. Otherwise the scoped query above is already
+                  // live - nothing to re-fetch, just nudge the counts.
+                  if (isSearching) {
+                    loadItems(undefined, { background: true });
+                  }
                   if (profile) void loadCounts(profile.uid);
                 }}
                 style={refreshButtonStyle}
@@ -1489,6 +1617,22 @@ export default function RepliesPage() {
                 ))}
               </div>
             )}
+
+            {SCOPED_LIST_ENABLED &&
+            !isSearching &&
+            !loading &&
+            !loadError &&
+            items.length >= listLimit ? (
+              <div style={loadMoreRowStyle}>
+                <button
+                  type="button"
+                  onClick={() => setListLimit((prev) => prev + LIST_LIMIT_STEP)}
+                  style={refreshButtonStyle}
+                >
+                  Load more
+                </button>
+              </div>
+            ) : null}
           </section>
         </div>
       </main>
@@ -1788,6 +1932,12 @@ const conversationGridStyle: CSSProperties = {
   marginTop: 20,
   display: "grid",
   gap: 14,
+};
+
+const loadMoreRowStyle: CSSProperties = {
+  marginTop: 20,
+  display: "flex",
+  justifyContent: "center",
 };
 
 const conversationShellStyle: CSSProperties = {
