@@ -356,6 +356,7 @@ export default function DashboardPage() {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [leadSearch, setLeadSearch] = useState("");
+  const [leadPage, setLeadPage] = useState(1);
 
   const [toastOpen, setToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
@@ -448,6 +449,10 @@ export default function DashboardPage() {
     setSelectedUpload(upload);
     void loadLeadsForUpload(selectedUploadId);
   }, [selectedUploadId, uploads]);
+
+  useEffect(() => {
+    setLeadPage(1);
+  }, [leadSearch, selectedUploadId]);
 
   const loadUploads = async (uid?: string) => {
     try {
@@ -1042,6 +1047,20 @@ export default function DashboardPage() {
     });
   }, [selectedLeads, leadSearch]);
 
+  // Large uploads (thousands of leads) rendered every row at once, which
+  // made this list very slow. Paginate instead, same pattern as /blacklisted.
+  const LEADS_PAGE_SIZE = 50;
+
+  const leadTotalPages = Math.max(
+    1,
+    Math.ceil(filteredLeads.length / LEADS_PAGE_SIZE)
+  );
+
+  const pagedLeads = useMemo(() => {
+    const start = (leadPage - 1) * LEADS_PAGE_SIZE;
+    return filteredLeads.slice(start, start + LEADS_PAGE_SIZE);
+  }, [filteredLeads, leadPage]);
+
   const totalRecipients = selectedLeads.filter(
     (lead) => String(lead.status || "").toLowerCase() === "verified"
   ).length;
@@ -1504,7 +1523,7 @@ export default function DashboardPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {filteredLeads.map((lead) => {
+                          {pagedLeads.map((lead) => {
                             const tone = statusChipTone(lead.status);
                             return (
                               <tr key={lead.id}>
@@ -1539,6 +1558,46 @@ export default function DashboardPage() {
                       </table>
                     </div>
                   )}
+
+                  {filteredLeads.length > 0 ? (
+                    <div style={leadsPaginationRowStyle}>
+                      <span style={leadsPaginationLabelStyle}>
+                        Page {leadPage} of {leadTotalPages} &middot;{" "}
+                        {filteredLeads.length} total
+                      </span>
+
+                      <div style={{ display: "flex", gap: 10 }}>
+                        <button
+                          onClick={() => setLeadPage((p) => Math.max(1, p - 1))}
+                          disabled={leadPage <= 1}
+                          style={{
+                            ...leadsPaginationButtonStyle,
+                            ...(leadPage <= 1
+                              ? leadsPaginationButtonDisabledStyle
+                              : null),
+                          }}
+                          type="button"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          onClick={() =>
+                            setLeadPage((p) => Math.min(leadTotalPages, p + 1))
+                          }
+                          disabled={leadPage >= leadTotalPages}
+                          style={{
+                            ...leadsPaginationButtonStyle,
+                            ...(leadPage >= leadTotalPages
+                              ? leadsPaginationButtonDisabledStyle
+                              : null),
+                          }}
+                          type="button"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                 </section>
               </div>
 
@@ -2520,6 +2579,37 @@ const tdStyle: CSSProperties = {
   borderBottom: "1px solid #f1f5f9",
   fontSize: 14,
   verticalAlign: "middle",
+};
+
+const leadsPaginationRowStyle: CSSProperties = {
+  marginTop: 20,
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 14,
+  flexWrap: "wrap",
+};
+
+const leadsPaginationLabelStyle: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 700,
+  color: "#64748b",
+};
+
+const leadsPaginationButtonStyle: CSSProperties = {
+  border: "1px solid rgba(15,23,42,0.08)",
+  borderRadius: 14,
+  padding: "10px 18px",
+  background: "#ffffff",
+  color: "#0f172a",
+  fontWeight: 800,
+  fontSize: 14,
+  cursor: "pointer",
+};
+
+const leadsPaginationButtonDisabledStyle: CSSProperties = {
+  opacity: 0.4,
+  cursor: "not-allowed",
 };
 
 const composeTopGridStyle: CSSProperties = {
