@@ -88,6 +88,11 @@ type ConversationMeta = {
   lastMessageAt?: any;
   updatedAt?: any;
   pinned?: boolean;
+  // True for both a manual Block and a customer's own STOP opt-out - this
+  // is the same field the send-reply/send-sms API routes check server-side
+  // before allowing a send, so the button here just mirrors what would
+  // happen anyway instead of letting someone try and hit an error.
+  blocked?: boolean;
 };
 
 // Module-level cache: instant repaint of a thread already opened this
@@ -386,6 +391,7 @@ export default function ReplyThreadPage({
         lastMessageAt: data.lastMessageAt || null,
         updatedAt: data.updatedAt || null,
         pinned: data.pinned === true,
+        blocked: data.blocked === true,
       };
 
       setConversationMeta(meta);
@@ -795,6 +801,11 @@ export default function ReplyThreadPage({
       return;
     }
 
+    if (conversationMeta.blocked) {
+      setStatus("This number is blocked. Unblock it before sending a message.");
+      return;
+    }
+
     const mediaUrls = uploadedMedia.map((item) => item.url).filter(Boolean);
 
     if (!replyBody.trim() && mediaUrls.length === 0) {
@@ -851,6 +862,8 @@ export default function ReplyThreadPage({
       setSending(false);
     }
   }
+
+  const isBlocked = conversationMeta?.blocked === true;
 
   if (checking) {
     return (
@@ -1166,12 +1179,27 @@ export default function ReplyThreadPage({
                 <MiniInfoCard label="Messages" value={String(messages.length)} />
               </div>
 
+              {isBlocked ? (
+                <div style={blockedBannerStyle}>
+                  This number is blocked. You can&apos;t send messages until
+                  it&apos;s unblocked (from the ⋯ menu on the Replies list).
+                </div>
+              ) : null}
+
               <textarea
                 value={replyBody}
                 onChange={(e) => setReplyBody(e.target.value)}
                 rows={8}
-                placeholder="Write your SMS / MMS reply..."
-                style={textareaStyle}
+                placeholder={
+                  isBlocked
+                    ? "This number is blocked - unblock it first."
+                    : "Write your SMS / MMS reply..."
+                }
+                disabled={isBlocked}
+                style={{
+                  ...textareaStyle,
+                  ...(isBlocked ? disabledFieldStyle : null),
+                }}
               />
 
               <input
@@ -1186,11 +1214,11 @@ export default function ReplyThreadPage({
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadingMedia}
+                  disabled={uploadingMedia || isBlocked}
                   style={{
                     ...uploadButtonStyle,
-                    opacity: uploadingMedia ? 0.6 : 1,
-                    cursor: uploadingMedia ? "not-allowed" : "pointer",
+                    opacity: uploadingMedia || isBlocked ? 0.6 : 1,
+                    cursor: uploadingMedia || isBlocked ? "not-allowed" : "pointer",
                   }}
                 >
                   {uploadingMedia ? "Uploading..." : "Upload Picture / File"}
@@ -1239,21 +1267,30 @@ export default function ReplyThreadPage({
                 <button
                   onClick={handleSendReply}
                   disabled={
-                    sending || uploadingMedia || (!replyBody.trim() && uploadedMedia.length === 0)
+                    isBlocked ||
+                    sending ||
+                    uploadingMedia ||
+                    (!replyBody.trim() && uploadedMedia.length === 0)
                   }
                   style={{
                     ...sendButtonStyle,
                     opacity:
-                      sending || uploadingMedia || (!replyBody.trim() && uploadedMedia.length === 0)
+                      isBlocked ||
+                      sending ||
+                      uploadingMedia ||
+                      (!replyBody.trim() && uploadedMedia.length === 0)
                         ? 0.6
                         : 1,
                     cursor:
-                      sending || uploadingMedia || (!replyBody.trim() && uploadedMedia.length === 0)
+                      isBlocked ||
+                      sending ||
+                      uploadingMedia ||
+                      (!replyBody.trim() && uploadedMedia.length === 0)
                         ? "not-allowed"
                         : "pointer",
                   }}
                 >
-                  {sending ? "Sending..." : "Send Reply"}
+                  {isBlocked ? "Blocked" : sending ? "Sending..." : "Send Reply"}
                 </button>
 
                 <button
@@ -1666,6 +1703,24 @@ const textareaStyle: CSSProperties = {
   resize: "vertical",
   outline: "none",
   minHeight: 180,
+};
+
+const disabledFieldStyle: CSSProperties = {
+  background: "#f8fafc",
+  color: "#94a3b8",
+  cursor: "not-allowed",
+};
+
+const blockedBannerStyle: CSSProperties = {
+  marginTop: 16,
+  borderRadius: 16,
+  padding: "14px 16px",
+  background: "#fef2f2",
+  border: "1px solid rgba(220,38,38,0.25)",
+  color: "#b91c1c",
+  fontSize: 13.5,
+  fontWeight: 700,
+  lineHeight: 1.5,
 };
 
 const uploadActionRowStyle: CSSProperties = {
