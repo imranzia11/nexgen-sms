@@ -633,9 +633,18 @@ export async function POST(req: NextRequest) {
     await batch.commit();
 
     if (isStop) {
-      return xmlResponse(
-        "You have successfully opted out. You will not receive further messages."
-      );
+      // Do NOT send our own confirmation text here. Twilio's own opt-out
+      // compliance filter blocks all further outbound messages to this
+      // number the instant it processes the STOP - including this exact
+      // reply - so this always failed with error 21610 and never once
+      // reached the customer. Twilio already sends its own automatic
+      // opt-out confirmation separately (that's the "reply START/UNSTOP to
+      // resubscribe" text customers actually receive - not this one).
+      // The actual compliance action (blocking future sends) already
+      // happened above via batch.commit(), so removing this reply changes
+      // nothing about opt-out enforcement - it just stops guaranteed-to-
+      // fail sends from cluttering the Twilio error log.
+      return xmlResponse();
     }
 
     if (isStart) {
