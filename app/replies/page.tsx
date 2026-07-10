@@ -1598,6 +1598,11 @@ export default function RepliesPage() {
                       <div style={conversationTopStyle}>
                         <div>
                           <div style={phoneStyle}>
+                            {item.manuallyBlocked ? (
+                              <span style={attentionMarkStyle} title="Blocked - needs attention">
+                                ⚠️
+                              </span>
+                            ) : null}
                             {item.pinned ? "📌 " : ""}
                             {item.phone}
                           </div>
@@ -2171,6 +2176,12 @@ const phoneStyle: CSSProperties = {
   fontWeight: 900,
   color: "#0f172a",
   wordBreak: "break-word",
+};
+
+const attentionMarkStyle: CSSProperties = {
+  display: "inline-block",
+  marginRight: 6,
+  fontSize: 18,
 };
 
 const nameStyle: CSSProperties = {
