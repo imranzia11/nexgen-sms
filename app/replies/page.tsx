@@ -912,6 +912,11 @@ export default function RepliesPage() {
         prev.filter((value) => value !== phoneKey(item.phone))
       );
       setOpenMenuId("");
+      // The stat cards up top are a one-time fetch, not a live listener -
+      // without this, blocking/unblocking correctly updates the row you're
+      // looking at instantly (that part IS live), but the header numbers
+      // stay stale until a manual Refresh click or a full page reload.
+      void loadCounts(profile.uid);
     } catch (error) {
       console.error("Failed to block conversation", error);
       alert("Failed to block number.");
@@ -963,6 +968,7 @@ export default function RepliesPage() {
         return next;
       });
       setOpenMenuId("");
+      void loadCounts(profile.uid);
     } catch (error) {
       console.error("Failed to unblock conversation", error);
       alert("Failed to unblock number.");

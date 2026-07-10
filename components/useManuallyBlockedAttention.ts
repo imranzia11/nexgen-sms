@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
-import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
+import { collection, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
 import { auth, db } from "../lib/firebase";
 import { phoneDocId } from "../lib/phone";
 
@@ -47,60 +47,79 @@ export function useManuallyBlockedAttention() {
 
   useEffect(() => {
     let cancelled = false;
+    let unsubSnapshot: (() => void) | undefined;
 
-    const unsubAuth = onAuthStateChanged(auth, async (user) => {
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      if (unsubSnapshot) {
+        unsubSnapshot();
+        unsubSnapshot = undefined;
+      }
+
       if (!user) {
         setHasAttention(false);
         return;
       }
 
-      try {
-        // Only filter server-side on the fields that are always reliably
-        // set (ownerUid, status) - "manual vs. STOP" is then decided
-        // client-side with the same OR logic the list uses, instead of a
-        // single-field Firestore filter that could disagree with it.
-        const blacklistSnap = await getDocs(
-          query(
-            collection(db, "blacklisted_numbers"),
-            where("ownerUid", "==", user.uid),
-            where("status", "==", "blocked")
-          )
-        );
+      // Live listener, not a one-time fetch - a getDocs() snapshot only ran
+      // once per page load / sign-in, so blocking or unblocking a number
+      // while already sitting on a page (dashboard, replies, etc.) never
+      // moved the mark until a manual refresh. This mirrors the same fix
+      // just made to the stat-count cards on /replies: anything the user
+      // can change with a click needs to update live, not on next reload.
+      //
+      // Only filter server-side on the fields that are always reliably
+      // set (ownerUid, status) - "manual vs. STOP" is then decided
+      // client-side with the same OR logic the list uses, instead of a
+      // single-field Firestore filter that could disagree with it.
+      unsubSnapshot = onSnapshot(
+        query(
+          collection(db, "blacklisted_numbers"),
+          where("ownerUid", "==", user.uid),
+          where("status", "==", "blocked")
+        ),
+        async (blacklistSnap) => {
+          try {
+            if (blacklistSnap.empty) {
+              if (!cancelled) setHasAttention(false);
+              return;
+            }
 
-        if (blacklistSnap.empty) {
+            const phones = blacklistSnap.docs
+              .filter((d) => isManualBlockRecord(d.data() || {}))
+              .map((d) => String(d.data()?.phone || "").trim())
+              .filter(Boolean);
+
+            if (phones.length === 0) {
+              if (!cancelled) setHasAttention(false);
+              return;
+            }
+
+            const existenceChecks = await Promise.all(
+              phones.map(async (phone) => {
+                const conversationId = `${user.uid}_${phoneDocId(phone)}`;
+                const snap = await getDoc(doc(db, "conversations", conversationId));
+                return snap.exists();
+              })
+            );
+
+            if (!cancelled) {
+              setHasAttention(existenceChecks.some(Boolean));
+            }
+          } catch (error) {
+            console.error("Failed to load manually-blocked attention state", error);
+            if (!cancelled) setHasAttention(false);
+          }
+        },
+        (error) => {
+          console.error("Manually-blocked attention listener error", error);
           if (!cancelled) setHasAttention(false);
-          return;
         }
-
-        const phones = blacklistSnap.docs
-          .filter((d) => isManualBlockRecord(d.data() || {}))
-          .map((d) => String(d.data()?.phone || "").trim())
-          .filter(Boolean);
-
-        if (phones.length === 0) {
-          if (!cancelled) setHasAttention(false);
-          return;
-        }
-
-        const existenceChecks = await Promise.all(
-          phones.map(async (phone) => {
-            const conversationId = `${user.uid}_${phoneDocId(phone)}`;
-            const snap = await getDoc(doc(db, "conversations", conversationId));
-            return snap.exists();
-          })
-        );
-
-        if (!cancelled) {
-          setHasAttention(existenceChecks.some(Boolean));
-        }
-      } catch (error) {
-        console.error("Failed to load manually-blocked attention state", error);
-        if (!cancelled) setHasAttention(false);
-      }
+      );
     });
 
     return () => {
       cancelled = true;
+      if (unsubSnapshot) unsubSnapshot();
       unsubAuth();
     };
   }, []);
