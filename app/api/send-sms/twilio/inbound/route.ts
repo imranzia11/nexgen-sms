@@ -4,6 +4,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { getDownloadURL } from "firebase-admin/storage";
 import { adminDb, adminStorage } from "../../../../../lib/firebaseAdmin";
 import { upsertGlobalBlocklist } from "../../../../../lib/globalBlocklist";
+import { toE164, phoneDocId } from "../../../../../lib/phone";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,17 +32,6 @@ function escapeXml(value: string) {
     .replace(/'/g, "&apos;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
-}
-
-function toE164(raw: string) {
-  const cleaned = String(raw || "").replace(/[^\d+]/g, "");
-  if (!cleaned) return "";
-  if (cleaned.startsWith("+")) return cleaned;
-  return `+${cleaned}`;
-}
-
-function phoneDocId(phone: string) {
-  return String(phone || "").replace(/[^\d+]/g, "");
 }
 
 function normalizeKeyword(value: string) {

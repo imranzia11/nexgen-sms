@@ -3,22 +3,12 @@ import { getAuth } from "firebase-admin/auth";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../../../../lib/firebaseAdmin";
 import { sendSmsForUser } from "../../../../lib/twilioSend";
+import { toE164, phoneDocId } from "../../../../lib/phone";
 
 type LeadInput = {
   name?: string;
   phone?: string;
 };
-
-function toE164(raw: string) {
-  const cleaned = String(raw || "").replace(/[^\d+]/g, "");
-  if (!cleaned) return "";
-  if (cleaned.startsWith("+")) return cleaned;
-  return `+${cleaned}`;
-}
-
-function phoneDocId(phone: string) {
-  return String(phone || "").replace(/[^\d+]/g, "");
-}
 
 function formatLeadName(name?: string) {
   const value = String(name || "").trim();

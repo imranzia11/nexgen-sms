@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
   collection,
+  getCountFromServer,
   getDoc,
   getDocs,
   onSnapshot,
@@ -161,6 +162,74 @@ function getInitialCache(): PersistedCache | null {
   return null;
 }
 
+// --- Stat-card counts ----------------------------------------------------
+// The 6 header numbers (All/Replied/Waiting/Never Replied/Pinned/Failed)
+// used to be derived from the exact same full-collection download that
+// powers the conversation list below - meaning every visit had to wait for
+// every one of your conversations to be downloaded just to show 6 numbers.
+// This computes them instead with Firestore's server-side count() queries,
+// which return just an integer without downloading any documents, so this
+// stays fast no matter how large the conversations collection grows.
+// Cached the same way as the list (instant paint from last-known values,
+// refreshed quietly underneath) since count queries, while fast, still
+// take a moment over the network.
+type StatCounts = {
+  all: number;
+  replied: number;
+  awaiting: number;
+  neverReplied: number;
+  pinned: number;
+  failed: number;
+};
+
+const ZERO_COUNTS: StatCounts = {
+  all: 0,
+  replied: 0,
+  awaiting: 0,
+  neverReplied: 0,
+  pinned: 0,
+  failed: 0,
+};
+
+const COUNTS_CACHE_KEY = "sms_replies_counts_cache_v1";
+
+type PersistedCounts = { uid: string; counts: StatCounts; ts: number };
+
+function readPersistedCounts(): PersistedCounts | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(COUNTS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.uid !== "string" || !parsed.counts) return null;
+    return parsed as PersistedCounts;
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedCounts(uid: string, counts: StatCounts) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      COUNTS_CACHE_KEY,
+      JSON.stringify({ uid, counts, ts: Date.now() })
+    );
+  } catch {
+    // Private browsing / storage quota - safe to ignore.
+  }
+}
+
+function getInitialCounts(): StatCounts {
+  const currentUid = auth.currentUser?.uid;
+  if (!currentUid) return ZERO_COUNTS;
+
+  const persisted = readPersistedCounts();
+  if (persisted && persisted.uid === currentUid) return persisted.counts;
+
+  return ZERO_COUNTS;
+}
+
 // Wraps a promise with a hard ceiling so a dead network connection can
 // never leave the page stuck on a loading state forever. Firestore calls
 // that never resolve (rather than erroring) are the usual cause of a
@@ -251,6 +320,7 @@ export default function RepliesPage() {
     () => getInitialCache()?.blocked || []
   );
   const [profile, setProfile] = useState<AppUser | null>(null);
+  const [counts, setCounts] = useState<StatCounts>(() => getInitialCounts());
   const [filterMode, setFilterMode] = useState<FilterMode>("replied");
   const [deletingId, setDeletingId] = useState("");
   const [blockingId, setBlockingId] = useState("");
@@ -321,6 +391,91 @@ export default function RepliesPage() {
         return true;
       })
       .sort((a, b) => b.sortSeconds - a.sortSeconds);
+  }
+
+  // Fast path for the 6 header stat numbers - uses Firestore's server-side
+  // count() aggregation instead of downloading every conversation. Every
+  // sub-query below is a pure equality filter (ownerUid/blocked/pinned/
+  // hasReply/lastDirection/lastOutboundStatus), which Firestore can serve
+  // from its automatic per-field indexes without needing a new composite
+  // index - deliberately avoided any range/orderBy/"in" filter that would
+  // require one, so this doesn't have any Firestore index setup step.
+  //
+  // "Not pinned" is computed by subtraction (raw count minus the
+  // pinned-only count) rather than filtering `pinned == false` directly,
+  // because most conversations have never had `pinned` set at all (it's
+  // only ever written when someone manually pins/unpins) - Firestore
+  // excludes documents missing a field from ANY filter on that field, so a
+  // direct `pinned == false` filter would incorrectly skip every
+  // never-pinned conversation. Filtering `pinned == true` doesn't have
+  // this problem, since that only ever needs to match documents that do
+  // have the field.
+  async function loadCounts(ownerUid: string) {
+    try {
+      const col = collection(db, "conversations");
+      const base = [where("ownerUid", "==", ownerUid), where("blocked", "==", false)];
+
+      const count = async (...extra: ReturnType<typeof where>[]) => {
+        const snap = await getCountFromServer(query(col, ...base, ...extra));
+        return snap.data().count;
+      };
+
+      const [
+        all,
+        pinned,
+        rawReplied,
+        pinnedReplied,
+        rawAwaiting,
+        pinnedAwaiting,
+        rawNeverReplied,
+        pinnedNeverReplied,
+        rawFailedA,
+        rawFailedB,
+        pinnedFailedA,
+        pinnedFailedB,
+      ] = await Promise.all([
+        count(),
+        count(where("pinned", "==", true)),
+        count(where("hasReply", "==", true), where("lastDirection", "==", "inbound")),
+        count(
+          where("pinned", "==", true),
+          where("hasReply", "==", true),
+          where("lastDirection", "==", "inbound")
+        ),
+        count(where("hasReply", "==", true), where("lastDirection", "==", "outbound")),
+        count(
+          where("pinned", "==", true),
+          where("hasReply", "==", true),
+          where("lastDirection", "==", "outbound")
+        ),
+        count(where("hasReply", "==", false)),
+        count(where("pinned", "==", true), where("hasReply", "==", false)),
+        count(where("lastOutboundStatus", "==", "failed")),
+        count(where("lastOutboundStatus", "==", "undelivered")),
+        count(where("pinned", "==", true), where("lastOutboundStatus", "==", "failed")),
+        count(where("pinned", "==", true), where("lastOutboundStatus", "==", "undelivered")),
+      ]);
+
+      const next: StatCounts = {
+        all,
+        pinned,
+        replied: Math.max(0, rawReplied - pinnedReplied),
+        awaiting: Math.max(0, rawAwaiting - pinnedAwaiting),
+        neverReplied: Math.max(0, rawNeverReplied - pinnedNeverReplied),
+        failed: Math.max(
+          0,
+          rawFailedA + rawFailedB - (pinnedFailedA + pinnedFailedB)
+        ),
+      };
+
+      setCounts(next);
+      writePersistedCounts(ownerUid, next);
+    } catch (error) {
+      // Leave whatever counts are already on screen (cached or previous)
+      // rather than zeroing them out - a failed refresh shouldn't make the
+      // numbers disappear.
+      console.error("Failed to load stat counts", error);
+    }
   }
 
   async function loadItems(profileArg?: AppUser, opts?: { background?: boolean }) {
@@ -654,6 +809,11 @@ export default function RepliesPage() {
         setChecking(false);
         setAuthTimedOut(false);
 
+        // Fire-and-forget: fast count queries for the header stats, kicked
+        // off in parallel with everything else below rather than awaited,
+        // so a slow count never delays the rest of the page.
+        void loadCounts(safeProfile.uid);
+
         // Paint from cache immediately if we have it (instant, no loading
         // state at all). The live-listener effect below (keyed on
         // `profile`) takes over from here — it fetches fresh data and,
@@ -854,24 +1014,6 @@ export default function RepliesPage() {
     selectedPhones.includes(phone)
   ).length;
 
-  const repliedCount = items.filter(
-    (item) => !item.pinned && item.hasReply && item.lastDirection === "inbound"
-  ).length;
-
-  const awaitingCount = items.filter(
-    (item) => !item.pinned && item.hasReply && item.lastDirection === "outbound"
-  ).length;
-
-  const neverRepliedCount = items.filter(
-    (item) => !item.pinned && !item.hasReply
-  ).length;
-
-  const pinnedCount = items.filter((item) => item.pinned).length;
-
-  const failedCount = items.filter(
-    (item) => !item.pinned && isFailedOutboundStatus(item.lastOutboundStatus)
-  ).length;
-
   if (checking) {
     return (
       <main style={pageStyle}>
@@ -1014,21 +1156,21 @@ export default function RepliesPage() {
               </div>
 
               <div style={statsGridStyle}>
-                <StatCard label="All Sent SMS" value={String(items.length)} />
+                <StatCard label="All Sent SMS" value={String(counts.all)} />
                 <StatCard
                   label="Customer Replied"
-                  value={String(repliedCount)}
+                  value={String(counts.replied)}
                 />
                 <StatCard
                   label="Waiting for Customer"
-                  value={String(awaitingCount)}
+                  value={String(counts.awaiting)}
                 />
                 <StatCard
                   label="Never Replied"
-                  value={String(neverRepliedCount)}
+                  value={String(counts.neverReplied)}
                 />
-                <StatCard label="Pinned" value={String(pinnedCount)} />
-                <StatCard label="Failed / Undelivered" value={String(failedCount)} />
+                <StatCard label="Pinned" value={String(counts.pinned)} />
+                <StatCard label="Failed / Undelivered" value={String(counts.failed)} />
               </div>
             </div>
           </div>
@@ -1053,7 +1195,10 @@ export default function RepliesPage() {
               </div>
 
               <button
-                onClick={() => loadItems(undefined, { background: true })}
+                onClick={() => {
+                  loadItems(undefined, { background: true });
+                  if (profile) void loadCounts(profile.uid);
+                }}
                 style={refreshButtonStyle}
               >
                 Refresh
@@ -1142,7 +1287,10 @@ export default function RepliesPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => loadItems(undefined, { background: true })}
+                  onClick={() => {
+                    loadItems(undefined, { background: true });
+                    if (profile) void loadCounts(profile.uid);
+                  }}
                   style={refreshButtonStyle}
                 >
                   Retry

@@ -3,22 +3,12 @@ import { getAuth } from "firebase-admin/auth";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../../../lib/firebaseAdmin";
 import { sendSmsForUser } from "../../../lib/twilioSend";
+import { toE164, phoneDocId } from "../../../lib/phone";
 
 type LeadInput = {
   name?: string;
   phone?: string;
 };
-
-function toE164(raw: string) {
-  const cleaned = String(raw || "").replace(/[^\d+]/g, "");
-  if (!cleaned) return "";
-  if (cleaned.startsWith("+")) return cleaned;
-  return `+${cleaned}`;
-}
-
-function phoneDocId(phone: string) {
-  return String(phone || "").replace(/[^\d+]/g, "");
-}
 
 function formatLeadName(name?: string) {
   const value = String(name || "").trim();
@@ -454,6 +444,9 @@ export async function POST(req: NextRequest) {
           mediaUrls: safeMediaUrls,
         });
       } catch (err: any) {
+        const errorMessage = err?.message || "Failed to send";
+        const errorCode = err?.code ? String(err.code) : "";
+
         await adminDb.collection("messages").add({
           ownerUid: uid,
           ownerEmail: String(userData.email || ""),
@@ -477,16 +470,77 @@ export async function POST(req: NextRequest) {
           assignedTwilioNumber: twilioNumber,
           messagingServiceSid: "",
           sourceFileName: fileName || "",
-          error: err?.message || "Failed to send",
+          error: errorMessage,
+          errorCode,
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
         });
+
+        // Previously an immediate send failure (invalid number, instant
+        // Twilio rejection, etc.) only ever showed up here in /logs - never
+        // in the conversation thread itself, and never counted toward the
+        // Failed/Undelivered tab on /replies (that tab only ever saw
+        // failures reported later by the status webhook, e.g. a carrier
+        // rejecting an already-accepted message). Writing the same failure
+        // into the conversation's own thread + summary fields closes that
+        // gap, using a best-effort try/catch so a logging problem here
+        // can't turn into a 500 for the whole per-lead loop.
+        try {
+          const convoId = `${uid}_${phoneDocId(formattedPhone)}`;
+          const convoRef = adminDb.collection("conversations").doc(convoId);
+          const convoSnap = await convoRef.get();
+          const convoData = convoSnap.exists ? convoSnap.data() || {} : {};
+
+          await convoRef.collection("messages").doc().set({
+            sid: "",
+            ownerUid: uid,
+            ownerEmail: String(userData.email || ""),
+            ownerName: String(userData.name || ""),
+            ownerRole: String(userData.role || "user"),
+            conversationId: convoId,
+            from: twilioNumber,
+            to: formattedPhone,
+            phone: formattedPhone,
+            body: message?.trim() || "",
+            mediaUrls: safeMediaUrls,
+            direction: "outbound",
+            status: "failed",
+            error: errorMessage,
+            errorCode,
+            read: true,
+            twilioNumber,
+            assignedTwilioNumber: twilioNumber,
+            createdAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+
+          await convoRef.set(
+            {
+              ownerUid: uid,
+              phone: formattedPhone,
+              name: formatLeadName(lead.name || ""),
+              twilioNumber,
+              assignedTwilioNumber: twilioNumber,
+              lastMessage: message?.trim() || "",
+              lastDirection: "outbound",
+              lastMessageAt: FieldValue.serverTimestamp(),
+              updatedAt: FieldValue.serverTimestamp(),
+              status: "delivery_issue",
+              lastOutboundAt: FieldValue.serverTimestamp(),
+              lastOutboundStatus: "failed",
+              blocked: convoData.blocked === true,
+            },
+            { merge: true }
+          );
+        } catch (logError) {
+          console.error("send-sms: failed to log failure to conversation", logError);
+        }
 
         results.push({
           name: lead.name,
           phone: formattedPhone,
           ok: false,
-          error: err?.message || "Failed to send",
+          error: errorMessage,
           code: err?.code || null,
           mediaUrls: safeMediaUrls,
         });

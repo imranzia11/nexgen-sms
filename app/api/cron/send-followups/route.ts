@@ -119,10 +119,61 @@ export async function GET(req: NextRequest) {
 
       sent++;
     } catch (err: any) {
+      const errorMessage = err?.message || "send failed";
+      const errorCode = err?.code ? String(err.code) : "";
+
       await doc.ref.update({
         status: "failed",
-        error: err?.message || "send failed",
+        error: errorMessage,
       });
+
+      // Previously a failed follow-up only updated its own followUps doc -
+      // invisible in the conversation thread and never counted toward the
+      // Failed/Undelivered tab, unlike a normal send failure. Best-effort:
+      // a logging problem here shouldn't stop the rest of the batch from
+      // processing.
+      try {
+        const convoRef = adminDb.collection("conversations").doc(data.conversationId);
+        const convoSnap = await convoRef.get();
+        const convoData = convoSnap.exists ? convoSnap.data() || {} : {};
+
+        await convoRef.collection("messages").doc().set({
+          sid: "",
+          ownerUid: data.ownerUid,
+          conversationId: data.conversationId,
+          from: data.twilioNumber,
+          to: data.phone,
+          phone: data.phone,
+          body: data.followUpMessage,
+          direction: "outbound",
+          status: "failed",
+          error: errorMessage,
+          errorCode,
+          read: true,
+          isFollowUp: true,
+          twilioNumber: data.twilioNumber,
+          messagingServiceSid: data.messagingServiceSid,
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+
+        await convoRef.set(
+          {
+            lastMessage: data.followUpMessage,
+            lastDirection: "outbound",
+            lastMessageAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+            status: "delivery_issue",
+            lastOutboundAt: FieldValue.serverTimestamp(),
+            lastOutboundStatus: "failed",
+            blocked: convoData.blocked === true,
+          },
+          { merge: true }
+        );
+      } catch (logError) {
+        console.error("send-followups: failed to log failure to conversation", logError);
+      }
+
       failed++;
     }
   }
