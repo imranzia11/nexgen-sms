@@ -279,6 +279,21 @@ function blacklistDocId(ownerUid: string, phone: string) {
   return `${ownerUid}_${phoneKey(phone)}`;
 }
 
+// Defensive re-filter applied to anything painted from the persisted
+// (localStorage) cache - the cache stores its own `blocked` snapshot
+// alongside the items, but if that cache was ever written before a number
+// was blacklisted (or from a build that had a filtering bug), the
+// instant-paint step would otherwise flash an opted-out conversation for a
+// moment before the live listener corrects it a beat later. Re-applying
+// the exact same exclusion buildRows() already does - using whatever
+// blocked list is cached right alongside those items - makes the very
+// first paint self-consistent instead of trusting it blindly.
+function filterOutBlockedRows(items: SmsRow[], blocked: string[]): SmsRow[] {
+  if (!blocked || blocked.length === 0) return items;
+  const blockedSet = new Set(blocked.map((phone) => phoneKey(phone)));
+  return items.filter((item) => !blockedSet.has(phoneKey(item.phone)));
+}
+
 function makeRow(id: string, data: Record<string, any>): SmsRow {
   const phone = String(
     data.phone || data.customerPhone || data.to || data.contactPhone || ""
@@ -308,9 +323,11 @@ function makeRow(id: string, data: Record<string, any>): SmsRow {
 export default function RepliesPage() {
   const router = useRouter();
 
-  const [items, setItems] = useState<SmsRow[]>(
-    () => getInitialCache()?.items || []
-  );
+  const [items, setItems] = useState<SmsRow[]>(() => {
+    const initial = getInitialCache();
+    if (!initial) return [];
+    return filterOutBlockedRows(initial.items, initial.blocked);
+  });
   const [loading, setLoading] = useState<boolean>(() => !getInitialCache());
   const [checking, setChecking] = useState<boolean>(() => !getInitialCache());
   const [authTimedOut, setAuthTimedOut] = useState(false);
@@ -495,7 +512,7 @@ export default function RepliesPage() {
     // no skeleton, no flicker for anything already seen this session (or
     // a previous one, now that the cache is also persisted to disk).
     if (cached && !isBackground) {
-      setItems(cached.items);
+      setItems(filterOutBlockedRows(cached.items, cached.blocked));
       setBlockedPhones(cached.blocked);
       setLoading(false);
     } else if (!isBackground) {
@@ -824,7 +841,7 @@ export default function RepliesPage() {
         // someone else's data.
         const cached = getCache(safeProfile.uid);
         if (cached) {
-          setItems(cached.items);
+          setItems(filterOutBlockedRows(cached.items, cached.blocked));
           setBlockedPhones(cached.blocked);
           setLoading(false);
         } else {
@@ -841,7 +858,7 @@ export default function RepliesPage() {
           // Slow network, but we already have something to show for this
           // exact account - trust the cache and stop blocking the UI on
           // it instead of kicking the person back to the login screen.
-          setItems(cachedFallback.items);
+          setItems(filterOutBlockedRows(cachedFallback.items, cachedFallback.blocked));
           setBlockedPhones(cachedFallback.blocked);
           setChecking(false);
           setLoading(false);
