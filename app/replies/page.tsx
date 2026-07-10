@@ -309,6 +309,12 @@ function isManualBlockRecord(data: Record<string, any>) {
 const DEFAULT_LIST_LIMIT = 50;
 const LIST_LIMIT_STEP = 50;
 
+// Render-side page size for the conversation cards themselves - see the
+// `page` state above for why this is separate from DEFAULT_LIST_LIMIT
+// (which governs how much is fetched, currently disabled - see
+// SCOPED_LIST_ENABLED below).
+const REPLIES_PAGE_SIZE = 20;
+
 // URGENT ROLLBACK (see the live-listener effect for the full story): the
 // scoped, tab-limited query orders by `lastMessageAt`, and any
 // conversation missing that field gets silently dropped from the results
@@ -454,6 +460,14 @@ export default function RepliesPage() {
   const [counts, setCounts] = useState<StatCounts>(() => getInitialCounts());
   const [filterMode, setFilterMode] = useState<FilterMode>("replied");
   const [listLimit, setListLimit] = useState(DEFAULT_LIST_LIMIT);
+  // Purely a render-side page (client-side slice of whatever's already
+  // been fetched/filtered) - doesn't change what's downloaded from
+  // Firestore, just how many rows get turned into DOM nodes at once. A
+  // tab like "Never Replied" can have tens of thousands of matches; with
+  // no pagination every single one became a card in the page, which is
+  // what made scrolling/rendering heavy even after the data itself
+  // arrived quickly.
+  const [page, setPage] = useState(1);
   const [deletingId, setDeletingId] = useState("");
   const [blockingId, setBlockingId] = useState("");
   const [openMenuId, setOpenMenuId] = useState("");
@@ -688,7 +702,11 @@ export default function RepliesPage() {
   }
 
   function handleSelectAllVisible() {
-    const visiblePhones = filteredItems
+    // "Visible" means the current page, not every match across every page
+    // - matches what visibleSelectablePhones/allVisibleSelected already
+    // use, and what's actually on screen to select from.
+    const visiblePhones = pagedItems
+      .filter((item) => !item.manuallyBlocked)
       .map((item) => phoneKey(item.phone))
       .filter(Boolean);
 
@@ -1198,6 +1216,10 @@ export default function RepliesPage() {
   }, [filterMode]);
 
   useEffect(() => {
+    setPage(1);
+  }, [filterMode, search]);
+
+  useEffect(() => {
     if (filterMode !== "never_replied") {
       setSelectedPhones([]);
       setFollowUpMessage("");
@@ -1249,13 +1271,30 @@ export default function RepliesPage() {
     return nonPinned;
   }, [searchedItems, filterMode]);
 
+  const repliesTotalPages = Math.max(
+    1,
+    Math.ceil(filteredItems.length / REPLIES_PAGE_SIZE)
+  );
+
+  // Clamps back down if the list shrinks (unblocking/deleting a
+  // conversation, etc.) and the current page number would otherwise point
+  // past the end.
+  useEffect(() => {
+    setPage((prev) => (prev > repliesTotalPages ? repliesTotalPages : prev));
+  }, [repliesTotalPages]);
+
+  const pagedItems = useMemo(() => {
+    const start = (page - 1) * REPLIES_PAGE_SIZE;
+    return filteredItems.slice(start, start + REPLIES_PAGE_SIZE);
+  }, [filteredItems, page]);
+
   const visibleSelectablePhones = useMemo(() => {
     if (filterMode !== "never_replied") return [];
-    return filteredItems
+    return pagedItems
       .filter((item) => !item.manuallyBlocked)
       .map((item) => phoneKey(item.phone))
       .filter(Boolean);
-  }, [filteredItems, filterMode]);
+  }, [pagedItems, filterMode]);
 
   const allVisibleSelected =
     visibleSelectablePhones.length > 0 &&
@@ -1573,7 +1612,7 @@ export default function RepliesPage() {
               </div>
             ) : (
               <div style={conversationGridStyle}>
-                {filteredItems.map((item) => (
+                {pagedItems.map((item) => (
                   <div key={item.id} style={conversationShellStyle}>
                     {filterMode === "never_replied" && !item.manuallyBlocked ? (
                       <div style={rowCheckboxWrapStyle}>
@@ -1755,6 +1794,44 @@ export default function RepliesPage() {
                 ))}
               </div>
             )}
+
+            {filteredItems.length > REPLIES_PAGE_SIZE ? (
+              <div style={repliesPaginationRowStyle}>
+                <span style={repliesPaginationLabelStyle}>
+                  Page {page} of {repliesTotalPages} &middot;{" "}
+                  {filteredItems.length} total
+                </span>
+
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page <= 1}
+                    style={{
+                      ...repliesPaginationButtonStyle,
+                      ...(page <= 1 ? repliesPaginationButtonDisabledStyle : null),
+                    }}
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPage((p) => Math.min(repliesTotalPages, p + 1))
+                    }
+                    disabled={page >= repliesTotalPages}
+                    style={{
+                      ...repliesPaginationButtonStyle,
+                      ...(page >= repliesTotalPages
+                        ? repliesPaginationButtonDisabledStyle
+                        : null),
+                    }}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
             {SCOPED_LIST_ENABLED &&
             !isSearching &&
@@ -2078,6 +2155,37 @@ const loadMoreRowStyle: CSSProperties = {
   justifyContent: "center",
 };
 
+const repliesPaginationRowStyle: CSSProperties = {
+  marginTop: 20,
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 14,
+  flexWrap: "wrap",
+};
+
+const repliesPaginationLabelStyle: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 700,
+  color: "#64748b",
+};
+
+const repliesPaginationButtonStyle: CSSProperties = {
+  border: "1px solid rgba(15,23,42,0.08)",
+  borderRadius: 14,
+  padding: "10px 18px",
+  background: "#ffffff",
+  color: "#0f172a",
+  fontWeight: 800,
+  fontSize: 14,
+  cursor: "pointer",
+};
+
+const repliesPaginationButtonDisabledStyle: CSSProperties = {
+  opacity: 0.4,
+  cursor: "not-allowed",
+};
+
 const conversationShellStyle: CSSProperties = {
   position: "relative",
 };
@@ -2181,7 +2289,7 @@ const phoneStyle: CSSProperties = {
 const attentionMarkStyle: CSSProperties = {
   display: "inline-block",
   marginRight: 6,
-  fontSize: 18,
+  fontSize: 21,
 };
 
 const nameStyle: CSSProperties = {

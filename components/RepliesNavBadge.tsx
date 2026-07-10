@@ -56,9 +56,9 @@ const badgeStyle: CSSProperties = {
 // never overlap when both are showing at once.
 const attentionBadgeStyle: CSSProperties = {
   position: "absolute",
-  top: -6,
-  left: -6,
-  fontSize: 14,
+  top: -7,
+  left: -7,
+  fontSize: 17,
   lineHeight: 1,
   zIndex: 2,
   filter: "drop-shadow(0 0 1px rgba(0,0,0,0.35))",
