@@ -35,6 +35,12 @@ type SmsRow = {
   lastDirection: string;
   pinned: boolean;
   lastOutboundStatus: string;
+  // True only for numbers someone on the team deliberately blocked via the
+  // Block button - NOT for customers who texted STOP. Those stay fully
+  // hidden from this list, same as always. A manually-blocked conversation
+  // stays visible (in whatever tab it'd normally sort into) but renders
+  // red with an Unblock action instead of Block.
+  manuallyBlocked: boolean;
 };
 
 type AppUser = {
@@ -281,6 +287,19 @@ function blacklistDocId(ownerUid: string, phone: string) {
   return `${ownerUid}_${phoneKey(phone)}`;
 }
 
+// Distinguishes a staff-initiated manual block from a customer's own STOP
+// (or auto-detected abuse) opt-out. The inbound webhook writes
+// reason: "opt_out" / "abusive_language" / "resubscribe"; the manual Block
+// button on this page writes reason: "manual_block". Only manual blocks
+// should stay visible-but-flagged here - STOP is a legal opt-out and stays
+// fully hidden, unchanged from today.
+function isManualBlockRecord(data: Record<string, any>) {
+  return (
+    String(data.reason || "").toLowerCase() === "manual_block" ||
+    String(data.source || "").toLowerCase() === "manual_block_from_replies"
+  );
+}
+
 // Default browsing view (no search term typed) - fetch only the most
 // recent DEFAULT_LIST_LIMIT conversations matching whatever tab is active,
 // instead of every conversation the account has ever had. "Load more"
@@ -407,6 +426,7 @@ function makeRow(id: string, data: Record<string, any>): SmsRow {
     lastOutboundStatus: String(data.lastOutboundStatus || "")
       .trim()
       .toLowerCase(),
+    manuallyBlocked: false,
   };
 }
 
@@ -467,14 +487,22 @@ export default function RepliesPage() {
       )
     );
 
-    return blacklistSnap.docs
-      .map((d) => {
-        const data = d.data();
-        return String(data.status || "").toLowerCase() === "blocked"
-          ? String(data.phone || "").trim()
-          : "";
-      })
-      .filter(Boolean);
+    const blocked: string[] = [];
+    const manuallyBlocked: string[] = [];
+
+    blacklistSnap.docs.forEach((d) => {
+      const data = d.data();
+      if (String(data.status || "").toLowerCase() !== "blocked") return;
+      const phone = String(data.phone || "").trim();
+      if (!phone) return;
+      if (isManualBlockRecord(data)) {
+        manuallyBlocked.push(phone);
+      } else {
+        blocked.push(phone);
+      }
+    });
+
+    return { blocked, manuallyBlocked };
   }
 
   async function fetchConversations(currentProfile: AppUser) {
@@ -490,17 +518,27 @@ export default function RepliesPage() {
 
   function buildRows(
     docs: Array<{ id: string; data: Record<string, any> }>,
-    blocked: string[]
+    blocked: string[],
+    manuallyBlocked: string[] = []
   ) {
     const blockedSet = new Set(blocked.map((phone) => phoneKey(phone)));
+    const manuallyBlockedSet = new Set(
+      manuallyBlocked.map((phone) => phoneKey(phone))
+    );
 
     return docs
       .map((row) => makeRow(row.id, row.data))
       .filter((item) => {
         const p = phoneKey(item.phone);
         if (!p) return false;
+        // STOP/abuse opt-outs stay fully hidden. Manual blocks are NOT
+        // filtered out here - they stay in the list, just flagged below.
         if (blockedSet.has(p)) return false;
         return true;
+      })
+      .map((item) => {
+        const p = phoneKey(item.phone);
+        return manuallyBlockedSet.has(p) ? { ...item, manuallyBlocked: true } : item;
       })
       .sort((a, b) => b.sortSeconds - a.sortSeconds);
   }
@@ -615,12 +653,13 @@ export default function RepliesPage() {
     }
 
     try {
-      const [blocked, docs] = await Promise.all([
+      const [blacklistResult, docs] = await Promise.all([
         withTimeout(fetchBlacklist(currentProfile), NETWORK_TIMEOUT_MS, "Blacklist fetch"),
         withTimeout(fetchConversations(currentProfile), NETWORK_TIMEOUT_MS, "Conversations fetch"),
       ]);
 
-      const rows = buildRows(docs, blocked);
+      const { blocked, manuallyBlocked } = blacklistResult;
+      const rows = buildRows(docs, blocked, manuallyBlocked);
 
       setCache(cacheKey, rows, blocked);
 
@@ -788,7 +827,7 @@ export default function RepliesPage() {
     if (!profile) return;
 
     const ok = window.confirm(
-      `Block ${item.phone}? This will behave like STOP and hide the number from replies.`
+      `Block ${item.phone}? They won't be able to receive messages until you unblock them. This conversation will stay visible here, marked as blocked.`
     );
     if (!ok) return;
 
@@ -824,21 +863,30 @@ export default function RepliesPage() {
         doc(db, "conversations", item.id),
         {
           status: "blocked",
+          // FIX: this never set `blocked` on the conversation doc itself -
+          // only `status`. The header stat counts filter on `blocked`
+          // directly, so a manually-blocked number kept counting as
+          // "Customer Replied" (or whichever tab it was in) forever, even
+          // though the list correctly hid it via the live blacklist
+          // cross-check. That's exactly the count/list mismatch found on
+          // Abe's account (+17012700190).
+          blocked: true,
           updatedAt: serverTimestamp(),
         },
         { merge: true }
       );
 
-      setBlockedPhones((prev) => [...prev, item.phone]);
+      // Manual blocks stay IN the list (marked, not removed) - only a real
+      // STOP/opt-out gets fully hidden. So this updates the row in place
+      // instead of filtering it out, and doesn't touch `blockedPhones`
+      // (that list is reserved for numbers that should disappear entirely).
       setItems((prev) => {
-        const next = prev.filter((row) => row.id !== item.id);
+        const next = prev.map((row) =>
+          row.id === item.id ? { ...row, manuallyBlocked: true } : row
+        );
         if (profileRef.current) {
           const cached = getCache(profileRef.current.uid);
-          setCache(
-            profileRef.current.uid,
-            next,
-            [...(cached?.blocked || blockedPhones), item.phone]
-          );
+          setCache(profileRef.current.uid, next, cached?.blocked || blockedPhones);
         }
         return next;
       });
@@ -849,6 +897,57 @@ export default function RepliesPage() {
     } catch (error) {
       console.error("Failed to block conversation", error);
       alert("Failed to block number.");
+    } finally {
+      setBlockingId("");
+    }
+  }
+
+  async function handleUnblockConversation(item: SmsRow) {
+    if (!profile) return;
+
+    const ok = window.confirm(
+      `Unblock ${item.phone}? You'll be able to message them again.`
+    );
+    if (!ok) return;
+
+    try {
+      setBlockingId(item.id);
+
+      await setDoc(
+        doc(db, "blacklisted_numbers", blacklistDocId(profile.uid, item.phone)),
+        {
+          status: "active",
+          reason: "manual_unblock",
+          unblockedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      await setDoc(
+        doc(db, "conversations", item.id),
+        {
+          status: "active",
+          blocked: false,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      setItems((prev) => {
+        const next = prev.map((row) =>
+          row.id === item.id ? { ...row, manuallyBlocked: false } : row
+        );
+        if (profileRef.current) {
+          const cached = getCache(profileRef.current.uid);
+          setCache(profileRef.current.uid, next, cached?.blocked || blockedPhones);
+        }
+        return next;
+      });
+      setOpenMenuId("");
+    } catch (error) {
+      console.error("Failed to unblock conversation", error);
+      alert("Failed to unblock number.");
     } finally {
       setBlockingId("");
     }
@@ -1009,13 +1108,14 @@ export default function RepliesPage() {
 
     let latestDocs: Array<{ id: string; data: Record<string, any> }> = [];
     let latestBlocked: string[] = [];
+    let latestManuallyBlocked: string[] = [];
     let gotConversations = false;
     let gotBlacklist = false;
 
     function recompute() {
       if (!gotConversations || !gotBlacklist) return;
 
-      const rows = buildRows(latestDocs, latestBlocked);
+      const rows = buildRows(latestDocs, latestBlocked, latestManuallyBlocked);
       setItems(rows);
       setBlockedPhones(latestBlocked);
       setCache(ownerUid, rows, latestBlocked);
@@ -1048,14 +1148,23 @@ export default function RepliesPage() {
     const unsubBlacklist = onSnapshot(
       query(collection(db, "blacklisted_numbers"), where("ownerUid", "==", profile.uid)),
       (snap) => {
-        latestBlocked = snap.docs
-          .map((d) => {
-            const data = d.data();
-            return String(data.status || "").toLowerCase() === "blocked"
-              ? String(data.phone || "").trim()
-              : "";
-          })
-          .filter(Boolean);
+        const blocked: string[] = [];
+        const manuallyBlocked: string[] = [];
+
+        snap.docs.forEach((d) => {
+          const data = d.data();
+          if (String(data.status || "").toLowerCase() !== "blocked") return;
+          const phone = String(data.phone || "").trim();
+          if (!phone) return;
+          if (isManualBlockRecord(data)) {
+            manuallyBlocked.push(phone);
+          } else {
+            blocked.push(phone);
+          }
+        });
+
+        latestBlocked = blocked;
+        latestManuallyBlocked = manuallyBlocked;
         gotBlacklist = true;
         recompute();
       },
@@ -1142,7 +1251,10 @@ export default function RepliesPage() {
 
   const visibleSelectablePhones = useMemo(() => {
     if (filterMode !== "never_replied") return [];
-    return filteredItems.map((item) => phoneKey(item.phone)).filter(Boolean);
+    return filteredItems
+      .filter((item) => !item.manuallyBlocked)
+      .map((item) => phoneKey(item.phone))
+      .filter(Boolean);
   }, [filteredItems, filterMode]);
 
   const allVisibleSelected =
@@ -1463,7 +1575,7 @@ export default function RepliesPage() {
               <div style={conversationGridStyle}>
                 {filteredItems.map((item) => (
                   <div key={item.id} style={conversationShellStyle}>
-                    {filterMode === "never_replied" ? (
+                    {filterMode === "never_replied" && !item.manuallyBlocked ? (
                       <div style={rowCheckboxWrapStyle}>
                         <input
                           type="checkbox"
@@ -1480,6 +1592,7 @@ export default function RepliesPage() {
                       style={{
                         ...conversationCardStyle,
                         paddingLeft: filterMode === "never_replied" ? 64 : 20,
+                        ...(item.manuallyBlocked ? manuallyBlockedCardStyle : null),
                       }}
                     >
                       <div style={conversationTopStyle}>
@@ -1498,19 +1611,23 @@ export default function RepliesPage() {
                           <div style={timeStyle}>{item.createdAtLabel}</div>
                           <div
                             style={
-                              // Only flag as a delivery issue if the customer
-                              // hasn't replied since — a reply always wins,
-                              // since it proves the conversation is alive.
-                              isFailedOutboundStatus(item.lastOutboundStatus) &&
-                              item.lastDirection !== "inbound"
+                              // Manually blocked always wins, regardless of
+                              // reply/delivery state - it's a deliberate
+                              // staff decision, not a delivery/reply signal.
+                              item.manuallyBlocked
+                                ? manuallyBlockedBadgeStyle
+                                : isFailedOutboundStatus(item.lastOutboundStatus) &&
+                                  item.lastDirection !== "inbound"
                                 ? failedBadgeStyle
                                 : item.hasReply && item.lastDirection === "inbound"
                                 ? repliedBadgeStyle
                                 : awaitingReplyBadgeStyle
                             }
                           >
-                            {isFailedOutboundStatus(item.lastOutboundStatus) &&
-                            item.lastDirection !== "inbound"
+                            {item.manuallyBlocked
+                              ? "Blocked — Unblock to continue chat"
+                              : isFailedOutboundStatus(item.lastOutboundStatus) &&
+                                item.lastDirection !== "inbound"
                               ? "Delivery Issue"
                               : item.hasReply && item.lastDirection === "inbound"
                               ? "Customer Replied"
@@ -1584,19 +1701,35 @@ export default function RepliesPage() {
                                 : "Pin"}
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={() => handleBlockConversation(item)}
-                            disabled={blockingId === item.id}
-                            style={{
-                              ...menuItemStyle,
-                              color: "#b45309",
-                              background: "rgba(245,158,11,0.08)",
-                              opacity: blockingId === item.id ? 0.6 : 1,
-                            }}
-                          >
-                            {blockingId === item.id ? "Blocking..." : "Block"}
-                          </button>
+                          {item.manuallyBlocked ? (
+                            <button
+                              type="button"
+                              onClick={() => handleUnblockConversation(item)}
+                              disabled={blockingId === item.id}
+                              style={{
+                                ...menuItemStyle,
+                                color: "#0d9488",
+                                background: "rgba(13,148,136,0.08)",
+                                opacity: blockingId === item.id ? 0.6 : 1,
+                              }}
+                            >
+                              {blockingId === item.id ? "Unblocking..." : "Unblock"}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleBlockConversation(item)}
+                              disabled={blockingId === item.id}
+                              style={{
+                                ...menuItemStyle,
+                                color: "#b45309",
+                                background: "rgba(245,158,11,0.08)",
+                                opacity: blockingId === item.id ? 0.6 : 1,
+                              }}
+                            >
+                              {blockingId === item.id ? "Blocking..." : "Block"}
+                            </button>
+                          )}
 
                           <button
                             type="button"
@@ -1969,6 +2102,11 @@ const conversationCardStyle: CSSProperties = {
   boxShadow: "0 8px 20px rgba(15, 23, 42, 0.05)",
 };
 
+const manuallyBlockedCardStyle: CSSProperties = {
+  background: "linear-gradient(180deg, #fef2f2 0%, #fee2e2 100%)",
+  border: "1px solid rgba(220, 38, 38, 0.25)",
+};
+
 const actionWrapStyle: CSSProperties = {
   position: "absolute",
   top: 16,
@@ -2087,6 +2225,18 @@ const failedBadgeStyle: CSSProperties = {
   background: "rgba(239, 68, 68, 0.14)",
   color: "#b91c1c",
   border: "1px solid rgba(239, 68, 68, 0.3)",
+  borderRadius: 999,
+  padding: "7px 11px",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const manuallyBlockedBadgeStyle: CSSProperties = {
+  marginTop: 8,
+  display: "inline-block",
+  background: "#dc2626",
+  color: "#ffffff",
+  border: "1px solid #b91c1c",
   borderRadius: 999,
   padding: "7px 11px",
   fontSize: 12,
