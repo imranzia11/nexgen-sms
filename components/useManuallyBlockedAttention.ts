@@ -94,7 +94,16 @@ export function useManuallyBlockedAttention() {
               return;
             }
 
-            const existenceChecks = await Promise.all(
+            // allSettled, not all - a single phone whose conversation no
+            // longer belongs to this account (deleted, or an old cross-
+            // account mismatch) throws a permission-denied error on that
+            // one getDoc(). Promise.all() would reject the ENTIRE batch the
+            // instant that happens, wiping out a perfectly good match found
+            // for any other phone in the same batch - which is exactly what
+            // was hiding Gregory Daws' mark on Abe's account: his own
+            // lookup succeeds, but Promise.all() never got that far because
+            // a different manually-blocked phone's lookup failed first.
+            const existenceChecks = await Promise.allSettled(
               phones.map(async (phone) => {
                 const conversationId = `${user.uid}_${phoneDocId(phone)}`;
                 const snap = await getDoc(doc(db, "conversations", conversationId));
@@ -103,7 +112,9 @@ export function useManuallyBlockedAttention() {
             );
 
             if (!cancelled) {
-              setHasAttention(existenceChecks.some(Boolean));
+              setHasAttention(
+                existenceChecks.some((r) => r.status === "fulfilled" && r.value === true)
+              );
             }
           } catch (error) {
             console.error("Failed to load manually-blocked attention state", error);
