@@ -17,13 +17,14 @@ import {
   doc,
   getDoc,
   getDocs,
-  limit,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
-  startAfter,
+  where,
   updateDoc,
+  type Query,
+  type DocumentData,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { auth, db, storage } from "../../../lib/firebase";
@@ -105,17 +106,6 @@ const threadCache = new Map<
 // Anything cached longer ago than this is treated as too stale to paint
 // instantly — better to show the (plain) loading state than flash old data.
 const CACHE_FRESHNESS_MS = 20_000;
-
-// How many messages load up front, and how many more each "Load older"
-// click pulls in. Previously this page ran 9 separate unbounded queries
-// across three different collections (the subcollection, plus two legacy
-// root collections) every single time a thread was opened, then merged and
-// sorted the results in the browser - slow, and the live listener re-ran
-// all 9 on every new message, which is what caused old messages to visibly
-// re-sort/flicker. Now that a one-time backfill has consolidated everything
-// into conversations/{id}/messages (see tools/backfill-legacy-messages-to-
-// subcollection.ts), this only ever needs ONE query against ONE collection.
-const MESSAGES_PAGE_SIZE = 50;
 
 function buildCacheKey(uid: string, phone: string) {
   return `${uid}_${normalizePhone(phone)}`;
@@ -211,17 +201,6 @@ export default function ReplyThreadPage({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previousPhoneRef = useRef<string>("");
 
-  // Pagination cursor: the oldest message doc currently loaded (across the
-  // live recent-window AND any "Load older" pages), used as the Firestore
-  // startAfter() cursor for the next "Load older" click. A ref, not state -
-  // it doesn't need to trigger a re-render on its own.
-  const oldestDocSnapRef = useRef<any>(null);
-  // Once the user has loaded at least one page of older history, the live
-  // listener (scoped to just the newest MESSAGES_PAGE_SIZE) should stop
-  // moving this cursor - otherwise it would keep resetting to "the oldest
-  // message in the last 50", which is newer than history already loaded.
-  const hasLoadedOlderRef = useRef(false);
-
   // If the user is already signed in when this component mounts (true for
   // any in-app navigation, as opposed to a hard page reload) and we have a
   // fresh cache entry for this exact thread, compute the initial state
@@ -250,8 +229,6 @@ export default function ReplyThreadPage({
   const [messages, setMessages] = useState<MessageItem[]>(
     () => initialCacheEntry?.messages || []
   );
-  const [hasMoreOlder, setHasMoreOlder] = useState(false);
-  const [loadingOlder, setLoadingOlder] = useState(false);
   const [replyBody, setReplyBody] = useState("");
   const [uploadedMedia, setUploadedMedia] = useState<UploadedMediaItem[]>([]);
   const [status, setStatus] = useState("");
@@ -333,6 +310,16 @@ export default function ReplyThreadPage({
         createdAtMs: toMillis(fallbackTime),
       },
     ];
+  }
+
+  async function safeGetDocs(q: Query<DocumentData>) {
+    try {
+      const snap = await getDocs(q);
+      return snap.docs;
+    } catch (error) {
+      console.error("Query failed", error);
+      return [];
+    }
   }
 
   async function markConversationRead(
@@ -439,35 +426,126 @@ export default function ReplyThreadPage({
         return;
       }
 
-      // One bounded query against the one real source of truth - replaces
-      // the old 9-query merge across 3 collections (the subcollection plus
-      // two legacy root collections). That merge is what made threads slow
-      // to open and caused old messages to visibly re-sort/flicker on every
-      // new incoming message, since the live listener re-ran all 9 queries
-      // from scratch every time. Now that a one-time backfill has
-      // consolidated everything into this subcollection (see tools/backfill-
-      // legacy-messages-to-subcollection.ts), only the most recent
-      // MESSAGES_PAGE_SIZE messages are fetched up front; older history
-      // loads on demand via loadOlderMessages() below.
-      const recentQuery = query(
+      const store = new Map<string, MessageItem>();
+      const targetPhone = normalizePhone(currentMeta.phone || "");
+
+      const addToStore = (
+        prefix: string,
+        id: string,
+        data: Record<string, any>
+      ) => {
+        const ownerUid = safeString(data.ownerUid || data.userId);
+        const conversationId = safeString(data.conversationId);
+        const from = normalizePhone(safeString(data.from));
+        const to = normalizePhone(safeString(data.to));
+        const phone = normalizePhone(safeString(data.phone));
+
+        const matchesLegacyPhone =
+          from === targetPhone || to === targetPhone || phone === targetPhone;
+
+        const matchesConversation =
+          conversationId === currentMeta.id ||
+          (ownerUid === currentProfile.uid && matchesLegacyPhone);
+
+        if (!matchesConversation) return;
+
+        const item = makeMessageItem(`${prefix}-${id}`, data);
+        const dedupeKey =
+          item.sid ||
+          `${item.direction}_${normalizePhone(item.from || "")}_${normalizePhone(
+            item.to || ""
+          )}_${item.body}_${(item.mediaUrls || []).join("|")}_${item.createdAtMs}`;
+
+        store.set(dedupeKey, item);
+      };
+
+      // Every query is built up front, then fired together with
+      // Promise.all instead of awaited one-by-one — ~9 sequential
+      // round-trips collapse into roughly 1 round-trip's worth of
+      // latency (whichever query is slowest).
+      const subMessagesQuery = query(
         collection(db, "conversations", currentMeta.id, "messages"),
-        orderBy("createdAt", "desc"),
-        limit(MESSAGES_PAGE_SIZE)
+        where("ownerUid", "==", currentProfile.uid),
+        orderBy("createdAt", "asc")
       );
 
-      const snap = await getDocs(recentQuery);
-      const docsAsc = [...snap.docs].reverse();
-      let merged = docsAsc.map((d) =>
-        makeMessageItem(d.id, d.data() as Record<string, any>)
+      const rootMessageQueries: Query<DocumentData>[] = [
+        query(
+          collection(db, "messages"),
+          where("ownerUid", "==", currentProfile.uid),
+          where("conversationId", "==", currentMeta.id)
+        ),
+        query(
+          collection(db, "messages"),
+          where("ownerUid", "==", currentProfile.uid),
+          where("phone", "==", currentMeta.phone)
+        ),
+        query(
+          collection(db, "messages"),
+          where("ownerUid", "==", currentProfile.uid),
+          where("to", "==", currentMeta.phone)
+        ),
+        query(
+          collection(db, "messages"),
+          where("ownerUid", "==", currentProfile.uid),
+          where("from", "==", currentMeta.phone)
+        ),
+      ];
+
+      const rootReplyQueries: Query<DocumentData>[] = [
+        query(
+          collection(db, "replies"),
+          where("ownerUid", "==", currentProfile.uid),
+          where("conversationId", "==", currentMeta.id)
+        ),
+        query(
+          collection(db, "replies"),
+          where("ownerUid", "==", currentProfile.uid),
+          where("phone", "==", currentMeta.phone)
+        ),
+        query(
+          collection(db, "replies"),
+          where("ownerUid", "==", currentProfile.uid),
+          where("to", "==", currentMeta.phone)
+        ),
+        query(
+          collection(db, "replies"),
+          where("ownerUid", "==", currentProfile.uid),
+          where("from", "==", currentMeta.phone)
+        ),
+      ];
+
+      const [subMessagesDocs, ...restResults] = await Promise.all([
+        safeGetDocs(subMessagesQuery),
+        ...rootMessageQueries.map((q) => safeGetDocs(q)),
+        ...rootReplyQueries.map((q) => safeGetDocs(q)),
+      ]);
+
+      const messageResults = restResults.slice(0, rootMessageQueries.length);
+      const replyResults = restResults.slice(rootMessageQueries.length);
+
+      subMessagesDocs.forEach((d) => {
+        addToStore("conv", d.id, d.data() as Record<string, any>);
+      });
+
+      messageResults.forEach((docs) => {
+        docs.forEach((d) => {
+          addToStore("msg", d.id, d.data() as Record<string, any>);
+        });
+      });
+
+      replyResults.forEach((docs) => {
+        docs.forEach((d) => {
+          addToStore("reply", d.id, d.data() as Record<string, any>);
+        });
+      });
+
+      let merged = Array.from(store.values()).sort(
+        (a, b) => a.createdAtMs - b.createdAtMs
       );
 
       if (merged.length === 0) {
         merged = buildFallbackConversationMessage(currentMeta);
-        setHasMoreOlder(false);
-      } else {
-        oldestDocSnapRef.current = snap.docs[snap.docs.length - 1] || null;
-        hasLoadedOlderRef.current = false;
-        setHasMoreOlder(snap.docs.length === MESSAGES_PAGE_SIZE);
       }
 
       setMessages(merged);
@@ -488,45 +566,6 @@ export default function ReplyThreadPage({
       setTimeout(() => {
         scrollToBottom(false);
       }, 60);
-    }
-  }
-
-  // Loads the next MESSAGES_PAGE_SIZE messages further back in history,
-  // using the oldest currently-loaded message as the cursor. This is a
-  // plain one-time fetch, not a live listener - older pages never change
-  // once loaded, so there's nothing to keep watching, and it never
-  // re-touches (or re-renders) messages already on screen.
-  async function loadOlderMessages() {
-    const currentMeta = conversationMeta;
-    if (!currentMeta?.id || !oldestDocSnapRef.current || loadingOlder) return;
-
-    setLoadingOlder(true);
-    try {
-      const olderQuery = query(
-        collection(db, "conversations", currentMeta.id, "messages"),
-        orderBy("createdAt", "desc"),
-        startAfter(oldestDocSnapRef.current),
-        limit(MESSAGES_PAGE_SIZE)
-      );
-
-      const snap = await getDocs(olderQuery);
-
-      if (snap.docs.length > 0) {
-        const olderItemsAsc = [...snap.docs]
-          .reverse()
-          .map((d) => makeMessageItem(d.id, d.data() as Record<string, any>));
-
-        setMessages((prev) => [...olderItemsAsc, ...prev]);
-        oldestDocSnapRef.current = snap.docs[snap.docs.length - 1];
-        hasLoadedOlderRef.current = true;
-      }
-
-      setHasMoreOlder(snap.docs.length === MESSAGES_PAGE_SIZE);
-    } catch (error) {
-      console.error("Failed to load older messages", error);
-      setStatus("Failed to load older messages.");
-    } finally {
-      setLoadingOlder(false);
     }
   }
 
@@ -675,51 +714,19 @@ export default function ReplyThreadPage({
 
         await loadThreadOnce(meta, safeProfile, { silent: Boolean(cached) });
 
-        // Scoped to just the newest MESSAGES_PAGE_SIZE messages - not the
-        // entire thread history. This is what actually fixes the flicker:
-        // the old version listened to the WHOLE subcollection and re-ran a
-        // 9-query merge across 3 collections on every single change, which
-        // is why old messages visibly re-sorted into place. Now, only this
-        // bounded recent window is "live"; anything loaded further back via
-        // loadOlderMessages() is a one-time fetch that's never re-touched.
+        const refreshFromThreadChange = async () => {
+          const latestMeta = await loadConversationMeta(safeProfile);
+          if (!latestMeta) return;
+          await loadThreadOnce(latestMeta, safeProfile, { silent: true });
+        };
+
         unsubConversationMessages = onSnapshot(
           query(
             collection(db, "conversations", meta.id, "messages"),
-            orderBy("createdAt", "desc"),
-            limit(MESSAGES_PAGE_SIZE)
+            orderBy("createdAt", "asc")
           ),
-          (liveSnap) => {
-            const liveItems = [...liveSnap.docs]
-              .reverse()
-              .map((d) => makeMessageItem(d.id, d.data() as Record<string, any>));
-
-            setMessages((prev) => {
-              const liveWindowOldestMs = liveItems.length
-                ? liveItems[0].createdAtMs
-                : Number.POSITIVE_INFINITY;
-              // Keep anything the user already paged into via "Load older" -
-              // only the recent window itself gets replaced with fresh data.
-              const preservedOlder = prev.filter(
-                (m) => m.createdAtMs < liveWindowOldestMs
-              );
-              const next = [...preservedOlder, ...liveItems];
-              return next.length > 0 ? next : buildFallbackConversationMessage(meta);
-            });
-
-            // Only move the "load older" cursor from this live window if no
-            // older pages have been loaded yet - otherwise this would keep
-            // resetting the cursor to something newer than history the user
-            // already paged into.
-            if (!hasLoadedOlderRef.current) {
-              oldestDocSnapRef.current =
-                liveSnap.docs[liveSnap.docs.length - 1] || oldestDocSnapRef.current;
-              setHasMoreOlder(liveSnap.docs.length === MESSAGES_PAGE_SIZE);
-            }
-
-            // Keep the header (name/blocked/pinned/hasReply/etc) live too,
-            // same as before - just no longer tied to re-running the old
-            // 9-query message merge on every change.
-            void loadConversationMeta(safeProfile);
+          async () => {
+            await refreshFromThreadChange();
           },
           (error: any) => {
             console.error(error);
@@ -982,18 +989,6 @@ export default function ReplyThreadPage({
                 </div>
               ) : (
                 <div style={threadWrapStyle}>
-                  {hasMoreOlder ? (
-                    <div style={loadOlderWrapStyle}>
-                      <button
-                        type="button"
-                        onClick={() => void loadOlderMessages()}
-                        disabled={loadingOlder}
-                        style={loadOlderButtonStyle}
-                      >
-                        {loadingOlder ? "Loading..." : "Load older messages"}
-                      </button>
-                    </div>
-                  ) : null}
                   {messages.map((msg) => {
                     const inbound = msg.direction === "inbound";
                     const failed = !inbound && isFailedMessageStatus(msg.status);
@@ -1531,23 +1526,6 @@ const threadWrapStyle: CSSProperties = {
   maxHeight: 650,
   overflowY: "auto",
   paddingRight: 4,
-};
-
-const loadOlderWrapStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "center",
-  marginBottom: 4,
-};
-
-const loadOlderButtonStyle: CSSProperties = {
-  border: "1px solid rgba(15,23,42,0.1)",
-  borderRadius: 999,
-  padding: "8px 18px",
-  background: "#f8fafc",
-  color: "#0f172a",
-  fontWeight: 700,
-  fontSize: 13,
-  cursor: "pointer",
 };
 
 const messageBubbleStyle: CSSProperties = {
