@@ -459,16 +459,60 @@ export default function ReplyThreadPage({
         store.set(dedupeKey, item);
       };
 
-      // Every query is built up front, then fired together with
-      // Promise.all instead of awaited one-by-one — ~9 sequential
-      // round-trips collapse into roughly 1 round-trip's worth of
-      // latency (whichever query is slowest).
+      const buildSortedMessages = () => {
+        let merged = Array.from(store.values()).sort(
+          (a, b) => a.createdAtMs - b.createdAtMs
+        );
+        if (merged.length === 0) {
+          merged = buildFallbackConversationMessage(currentMeta);
+        }
+        return merged;
+      };
+
+      const paintAndCache = (merged: MessageItem[]) => {
+        setMessages(merged);
+        threadCache.set(cacheKeyFor(currentProfile, currentMeta.phone), {
+          meta: currentMeta,
+          messages: merged,
+          ts: Date.now(),
+        });
+      };
+
+      // Phase 1 — the per-conversation subcollection is the canonical
+      // store every send/inbound path writes to today (see
+      // tools/audit-message-storage-overlap.ts), so it alone almost always
+      // has the full thread. Measured live: each Firestore round-trip in
+      // this environment takes ~500ms and, worse, the SDK's requests queue
+      // up *serially* rather than running concurrently even when fired via
+      // Promise.all — so awaiting all 9 legacy+sub queries up front (the
+      // old approach) meant ~4-4.5s of dead time before anything painted.
+      // Painting off this one query first removes 8 of those 9 round-trips
+      // from the critical path the user actually watches.
       const subMessagesQuery = query(
         collection(db, "conversations", currentMeta.id, "messages"),
         where("ownerUid", "==", currentProfile.uid),
         orderBy("createdAt", "asc")
       );
 
+      const subMessagesDocs = await safeGetDocs(subMessagesQuery);
+      subMessagesDocs.forEach((d) => {
+        addToStore("conv", d.id, d.data() as Record<string, any>);
+      });
+
+      paintAndCache(buildSortedMessages());
+      setLoading(false);
+      setInitialLoaded(true);
+      setTimeout(() => {
+        scrollToBottom(false);
+      }, 60);
+
+      await markConversationRead(currentMeta, currentProfile);
+
+      // Phase 2 — legacy root `messages`/`replies` collections, kept only
+      // for older conversations predating the subcollection becoming the
+      // single source of truth. Runs after the thread is already on
+      // screen, so its latency is invisible; only repaints if it actually
+      // turns up something the subcollection didn't already have.
       const rootMessageQueries: Query<DocumentData>[] = [
         query(
           collection(db, "messages"),
@@ -515,52 +559,40 @@ export default function ReplyThreadPage({
         ),
       ];
 
-      const [subMessagesDocs, ...restResults] = await Promise.all([
-        safeGetDocs(subMessagesQuery),
-        ...rootMessageQueries.map((q) => safeGetDocs(q)),
-        ...rootReplyQueries.map((q) => safeGetDocs(q)),
-      ]);
+      try {
+        const beforeLegacyCount = store.size;
 
-      const messageResults = restResults.slice(0, rootMessageQueries.length);
-      const replyResults = restResults.slice(rootMessageQueries.length);
+        const restResults = await Promise.all([
+          ...rootMessageQueries.map((q) => safeGetDocs(q)),
+          ...rootReplyQueries.map((q) => safeGetDocs(q)),
+        ]);
 
-      subMessagesDocs.forEach((d) => {
-        addToStore("conv", d.id, d.data() as Record<string, any>);
-      });
+        const messageResults = restResults.slice(0, rootMessageQueries.length);
+        const replyResults = restResults.slice(rootMessageQueries.length);
 
-      messageResults.forEach((docs) => {
-        docs.forEach((d) => {
-          addToStore("msg", d.id, d.data() as Record<string, any>);
+        messageResults.forEach((docs) => {
+          docs.forEach((d) => {
+            addToStore("msg", d.id, d.data() as Record<string, any>);
+          });
         });
-      });
 
-      replyResults.forEach((docs) => {
-        docs.forEach((d) => {
-          addToStore("reply", d.id, d.data() as Record<string, any>);
+        replyResults.forEach((docs) => {
+          docs.forEach((d) => {
+            addToStore("reply", d.id, d.data() as Record<string, any>);
+          });
         });
-      });
 
-      let merged = Array.from(store.values()).sort(
-        (a, b) => a.createdAtMs - b.createdAtMs
-      );
-
-      if (merged.length === 0) {
-        merged = buildFallbackConversationMessage(currentMeta);
+        if (store.size !== beforeLegacyCount) {
+          paintAndCache(buildSortedMessages());
+        }
+      } catch (legacyError) {
+        // Non-fatal — the subcollection paint above already succeeded.
+        console.error("Legacy message fallback check failed", legacyError);
       }
-
-      setMessages(merged);
-      threadCache.set(cacheKeyFor(currentProfile, currentMeta.phone), {
-        meta: currentMeta,
-        messages: merged,
-        ts: Date.now(),
-      });
-
-      await markConversationRead(currentMeta, currentProfile);
     } catch (error: any) {
       console.error(error);
       setStatus(error?.message || "Failed to refresh conversation.");
       setMessages([]);
-    } finally {
       setLoading(false);
       setInitialLoaded(true);
       setTimeout(() => {
