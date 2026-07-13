@@ -315,15 +315,17 @@ const LIST_LIMIT_STEP = 50;
 // SCOPED_LIST_ENABLED below).
 const REPLIES_PAGE_SIZE = 20;
 
-// URGENT ROLLBACK (2nd time): re-enabled briefly after confirming
-// lastMessageAt/blocked/hasReply/lastDirection field completeness, but the
-// live site then showed "Waiting for Customer" stat count = 46 while the
-// list itself rendered 0 rows for that tab - a real regression. Reverted
-// back off until the actual cause (likely a composite index declared in
-// firestore.indexes.json but never deployed/built against the live
-// project) is confirmed via the browser console error, not just admin-SDK
-// field audits.
-const SCOPED_LIST_ENABLED = false;
+// Re-enabled a 2nd time after root-causing the "Waiting for Customer"
+// regression: the browser console showed "FirebaseError: The query
+// requires an index" - the composite indexes were declared in
+// firestore.indexes.json but had never actually been deployed to the live
+// Firestore project. Ran `firebase deploy --only firestore:indexes`, then
+// confirmed directly in the Firebase console (Firestore > Indexes) that
+// all 5 `conversations` composite indexes now show "Enabled" (not
+// "Building"). Field completeness (lastMessageAt/blocked/hasReply/
+// lastDirection) was already confirmed 100% earlier. Both conditions are
+// now satisfied.
+const SCOPED_LIST_ENABLED = true;
 
 // Deliberately does NOT filter `pinned != true` on the non-pinned tabs -
 // Firestore excludes any document missing a filtered field entirely, and
