@@ -378,8 +378,21 @@ function LoginPageInner() {
           <section style={rightWrapStyle} className="login-right">
             <div style={cardStyle}>
               <div style={cardTopStyle}>
+                <div style={cardBrandRowStyle}>
+                  <img
+                    src="/logo-mark.png"
+                    alt=""
+                    aria-hidden="true"
+                    style={cardBrandLogoStyle}
+                  />
+                  <span style={cardBrandTextStyle}>Nexgen</span>
+                </div>
                 <h2 style={cardTitleStyle}>Sign in</h2>
-                <p style={cardTextStyle}>Continue to your marketing portal</p>
+                <p style={cardTextStyle}>
+                  {nextPath === "/replies"
+                    ? "Continue to Replies"
+                    : "Continue to your marketing portal"}
+                </p>
               </div>
 
               <form onSubmit={handleLogin} style={formStyle}>
@@ -831,6 +844,27 @@ const cardStyle: CSSProperties = {
 
 const cardTopStyle: CSSProperties = {
   textAlign: "left",
+};
+
+const cardBrandRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  marginBottom: 18,
+};
+
+const cardBrandLogoStyle: CSSProperties = {
+  width: 32,
+  height: 32,
+  borderRadius: 9,
+  objectFit: "cover",
+};
+
+const cardBrandTextStyle: CSSProperties = {
+  fontFamily: "'Space Grotesk', sans-serif",
+  fontSize: 16,
+  fontWeight: 700,
+  color: "#0f172a",
 };
 
 const cardTitleStyle: CSSProperties = {

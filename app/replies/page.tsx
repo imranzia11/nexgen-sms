@@ -72,6 +72,57 @@ function isFailedOutboundStatus(status: string) {
   return status === "failed" || status === "undelivered";
 }
 
+// The single number shown on the compact mobile header/stat line for
+// whichever tab is currently active - avoids repeating this switch at
+// every call site that needs "the count for the tab you're looking at".
+function activeTabCount(
+  mode: FilterMode,
+  counts: StatCounts,
+  attentionCount: number
+): number {
+  switch (mode) {
+    case "all":
+      return counts.all;
+    case "replied":
+      return counts.replied;
+    case "awaiting":
+      return counts.awaiting;
+    case "never_replied":
+      return counts.neverReplied;
+    case "pinned":
+      return counts.pinned;
+    case "failed":
+      return counts.failed;
+    case "attention":
+      return attentionCount;
+    default:
+      return 0;
+  }
+}
+
+// Human-readable label for the compact mobile header subtitle - keeps
+// wording in exactly one place instead of duplicating each tab's name.
+function filterModeLabel(mode: FilterMode): string {
+  switch (mode) {
+    case "all":
+      return "All sent SMS";
+    case "replied":
+      return "Customer replied";
+    case "awaiting":
+      return "Waiting for customer";
+    case "never_replied":
+      return "Never replied";
+    case "pinned":
+      return "Pinned messages";
+    case "failed":
+      return "Failed / undelivered";
+    case "attention":
+      return "Attention required";
+    default:
+      return "";
+  }
+}
+
 // Module-level cache: survives across client-side navigations within the
 // same session (not across full page reloads). Lets us paint the list
 // instantly on repeat visits while a fresh fetch quietly runs underneath
@@ -1475,14 +1526,26 @@ export default function RepliesPage() {
           <div style={heroStyle}>
             <div style={heroOverlayStyle} />
             <div style={heroInnerStyle}>
-              <div>
-                <div style={heroBadgeStyle}>SMS Activity</div>
-                <h1 style={heroTitleStyle}>All Sent SMS</h1>
-                <p style={heroTextStyle}>
-                  This page shows only new customer conversations owned by the
-                  logged-in user. STOP and blacklisted numbers are hidden.
-                </p>
-              </div>
+              {isMobile ? (
+                <div style={mobileBrandRowStyle}>
+                  <img src="/logo-mark.png" alt="" aria-hidden="true" style={mobileBrandLogoStyle} />
+                  <div>
+                    <div style={mobileBrandTitleStyle}>Nexgen Replies</div>
+                    <div style={mobileBrandSubStyle}>
+                      {filterModeLabel(filterMode)}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div style={heroBadgeStyle}>SMS Activity</div>
+                  <h1 style={heroTitleStyle}>All Sent SMS</h1>
+                  <p style={heroTextStyle}>
+                    This page shows only new customer conversations owned by the
+                    logged-in user. STOP and blacklisted numbers are hidden.
+                  </p>
+                </div>
+              )}
 
               <div style={heroActionsStyle}>
                 <div style={searchWrapStyle}>
@@ -1502,7 +1565,20 @@ export default function RepliesPage() {
                 )}
               </div>
 
-              <div style={filterTabsStyle}>
+              <div
+                style={
+                  isMobile
+                    ? {
+                        ...filterTabsStyle,
+                        flexWrap: "nowrap",
+                        overflowX: "auto",
+                        WebkitOverflowScrolling: "touch",
+                        margin: "0 -20px",
+                        padding: "0 20px",
+                      }
+                    : filterTabsStyle
+                }
+              >
                 <button
                   onClick={() => setFilterMode("all")}
                   style={{
@@ -1576,27 +1652,44 @@ export default function RepliesPage() {
                 </button>
               </div>
 
-              <div style={statsGridStyle}>
-                <StatCard label="All Sent SMS" value={String(counts.all)} />
-                <StatCard
-                  label="Customer Replied"
-                  value={String(counts.replied)}
-                />
-                <StatCard
-                  label="Waiting for Customer"
-                  value={String(counts.awaiting)}
-                />
-                <StatCard
-                  label="Never Replied"
-                  value={String(counts.neverReplied)}
-                />
-                <StatCard label="Pinned" value={String(counts.pinned)} />
-                <StatCard label="Failed / Undelivered" value={String(counts.failed)} />
-                <StatCard
-                  label="Attention Required"
-                  value={String(attentionItems.length)}
-                />
-              </div>
+              {isMobile ? (
+                // Full 7-card grid is a desktop-dashboard pattern - crammed
+                // onto a phone it either wraps into a messy multi-row grid
+                // or squeezes numbers down until they clip (both of which
+                // happened). Showing just the active tab's own count reads
+                // clearly at a glance and always matches what's actually
+                // listed below, since it's computed the same way.
+                <div style={mobileStatLineStyle}>
+                  <span style={mobileStatNumberStyle}>
+                    {activeTabCount(filterMode, counts, attentionItems.length)}
+                  </span>
+                  <span style={mobileStatLabelStyle}>
+                    {filterModeLabel(filterMode).toLowerCase()}
+                  </span>
+                </div>
+              ) : (
+                <div style={statsGridStyle}>
+                  <StatCard label="All Sent SMS" value={String(counts.all)} />
+                  <StatCard
+                    label="Customer Replied"
+                    value={String(counts.replied)}
+                  />
+                  <StatCard
+                    label="Waiting for Customer"
+                    value={String(counts.awaiting)}
+                  />
+                  <StatCard
+                    label="Never Replied"
+                    value={String(counts.neverReplied)}
+                  />
+                  <StatCard label="Pinned" value={String(counts.pinned)} />
+                  <StatCard label="Failed / Undelivered" value={String(counts.failed)} />
+                  <StatCard
+                    label="Attention Required"
+                    value={String(attentionItems.length)}
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -2034,6 +2127,34 @@ const heroOverlayStyle: CSSProperties = {
   pointerEvents: "none",
 };
 
+const mobileBrandRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 12,
+};
+
+const mobileBrandLogoStyle: CSSProperties = {
+  width: 40,
+  height: 40,
+  borderRadius: 11,
+  objectFit: "cover",
+  flexShrink: 0,
+};
+
+const mobileBrandTitleStyle: CSSProperties = {
+  color: "#ffffff",
+  fontSize: 19,
+  fontWeight: 800,
+  lineHeight: 1.2,
+};
+
+const mobileBrandSubStyle: CSSProperties = {
+  marginTop: 2,
+  color: "rgba(236,254,255,0.8)",
+  fontSize: 13.5,
+  fontWeight: 600,
+};
+
 const heroInnerStyle: CSSProperties = {
   position: "relative",
   zIndex: 1,
@@ -2094,6 +2215,12 @@ const filterTabStyle: CSSProperties = {
   fontSize: 14,
   fontWeight: 800,
   cursor: "pointer",
+  // Without this, tabs shrink to fit their flex container instead of
+  // overflowing it - which is exactly what breaks the mobile horizontal
+  // scroll strip (see the isMobile override on filterTabsStyle below):
+  // they'd just get squeezed unreadably narrow instead of scrolling.
+  // Harmless on desktop's wrapping layout either way.
+  flexShrink: 0,
 };
 
 const activeFilterTabStyle: CSSProperties = {
@@ -2139,6 +2266,25 @@ const statsGridStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
   gap: 14,
+};
+
+const mobileStatLineStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "baseline",
+  gap: 8,
+};
+
+const mobileStatNumberStyle: CSSProperties = {
+  color: "#ffffff",
+  fontSize: 28,
+  fontWeight: 900,
+  lineHeight: 1,
+};
+
+const mobileStatLabelStyle: CSSProperties = {
+  color: "rgba(236,254,255,0.8)",
+  fontSize: 14,
+  fontWeight: 600,
 };
 
 const statCardStyle: CSSProperties = {
