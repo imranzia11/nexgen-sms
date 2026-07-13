@@ -54,6 +54,14 @@ export default function TemplatesPage() {
 
   const [slots, setSlots] = useState<SlotState[]>(makeEmptySlots());
   const [loadingSlots, setLoadingSlots] = useState(false);
+  // Separate from `checking` (auth) on purpose - without this, the page
+  // rendered its fake default placeholders ("Template 1" / the compliance
+  // footer as if it were a saved message) the instant auth passed, then
+  // swapped in the real saved templates a second or two later once
+  // loadSlots() actually resolved. That looked exactly like stale/wrong
+  // data flashing before the real thing loaded, when it was really just a
+  // loading state with no visual indication that it was loading.
+  const [slotsLoaded, setSlotsLoaded] = useState(false);
 
   const [toastOpen, setToastOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
@@ -158,6 +166,7 @@ export default function TemplatesPage() {
       showToast("Failed to load your saved templates.", "error");
     } finally {
       setLoadingSlots(false);
+      setSlotsLoaded(true);
     }
   };
 
@@ -250,7 +259,7 @@ export default function TemplatesPage() {
     router.push("/login");
   };
 
-  if (checking) {
+  if (checking || !slotsLoaded) {
     return <LoadingScreen />;
   }
 
