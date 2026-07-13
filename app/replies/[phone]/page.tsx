@@ -341,7 +341,7 @@ export default function ReplyThreadPage({
     }
   }
 
-  async function loadConversationMeta(profileArg?: AppUser) {
+  async function loadConversationMeta(profileArg?: AppUser, presetSnap?: any) {
     try {
       if (!routePhone) {
         setStatus("Phone number is missing.");
@@ -357,8 +357,9 @@ export default function ReplyThreadPage({
       setStatus("");
 
       const ownedConversationId = `${currentProfile.uid}_${phoneDocId(routePhone)}`;
-      const ownedConversationRef = doc(db, "conversations", ownedConversationId);
-      const ownedConversationSnap = await getDoc(ownedConversationRef);
+      const ownedConversationSnap =
+        presetSnap ??
+        (await getDoc(doc(db, "conversations", ownedConversationId)));
 
       if (!ownedConversationSnap.exists()) {
         setStatus("Conversation not found.");
@@ -409,7 +410,7 @@ export default function ReplyThreadPage({
   async function loadThreadOnce(
     metaArg?: ConversationMeta,
     profileArg?: AppUser,
-    opts?: { silent?: boolean }
+    opts?: { silent?: boolean; presetSubMessagesDocs?: any[] }
   ) {
     try {
       const currentMeta = metaArg || conversationMeta;
@@ -488,13 +489,15 @@ export default function ReplyThreadPage({
       // old approach) meant ~4-4.5s of dead time before anything painted.
       // Painting off this one query first removes 8 of those 9 round-trips
       // from the critical path the user actually watches.
-      const subMessagesQuery = query(
-        collection(db, "conversations", currentMeta.id, "messages"),
-        where("ownerUid", "==", currentProfile.uid),
-        orderBy("createdAt", "asc")
-      );
-
-      const subMessagesDocs = await safeGetDocs(subMessagesQuery);
+      const subMessagesDocs =
+        opts?.presetSubMessagesDocs ??
+        (await safeGetDocs(
+          query(
+            collection(db, "conversations", currentMeta.id, "messages"),
+            where("ownerUid", "==", currentProfile.uid),
+            orderBy("createdAt", "asc")
+          )
+        ));
       subMessagesDocs.forEach((d) => {
         addToStore("conv", d.id, d.data() as Record<string, any>);
       });
@@ -685,7 +688,27 @@ export default function ReplyThreadPage({
       }
 
       try {
-        const userSnap = await getDoc(doc(db, "users", user.uid));
+        const conversationId = `${user.uid}_${phoneDocId(routePhone)}`;
+
+        // These three reads only need `user.uid` and `routePhone`, both
+        // already known synchronously right here — none actually depends
+        // on another's *contents*. Firing them together (instead of the
+        // old profile -> conversation -> messages chain, each strictly
+        // awaited one after another) removes 2 of the 3 sequential
+        // round-trips that used to sit between sign-in and the thread
+        // actually painting (each round-trip runs ~200-500ms here).
+        const [userSnap, conversationSnapEarly, subMessagesDocsEarly] =
+          await Promise.all([
+            getDoc(doc(db, "users", user.uid)),
+            getDoc(doc(db, "conversations", conversationId)),
+            safeGetDocs(
+              query(
+                collection(db, "conversations", conversationId, "messages"),
+                where("ownerUid", "==", user.uid),
+                orderBy("createdAt", "asc")
+              )
+            ),
+          ]);
 
         if (!userSnap.exists() || userSnap.data().isActive !== true) {
           await signOut(auth).catch(() => {});
@@ -735,7 +758,7 @@ export default function ReplyThreadPage({
           setTimeout(() => scrollToBottom(false), 60);
         }
 
-        const meta = await loadConversationMeta(safeProfile);
+        const meta = await loadConversationMeta(safeProfile, conversationSnapEarly);
         if (!meta) {
           if (!cached) {
             setLoading(false);
@@ -744,7 +767,10 @@ export default function ReplyThreadPage({
           return;
         }
 
-        await loadThreadOnce(meta, safeProfile, { silent: Boolean(cached) });
+        await loadThreadOnce(meta, safeProfile, {
+          silent: Boolean(cached),
+          presetSubMessagesDocs: subMessagesDocsEarly,
+        });
 
         const refreshFromThreadChange = async () => {
           const latestMeta = await loadConversationMeta(safeProfile);
