@@ -61,6 +61,18 @@ function LoginPageInner() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Renders a QR code so a desktop user can scan-to-open the Replies PWA
+  // on their phone instead of typing the URL by hand. Left empty until
+  // mount (rather than reading window.location directly during render) so
+  // server-rendered HTML and the first client render match exactly - this
+  // is a "use client" page, but Next.js still does an initial SSR pass
+  // with no `window`, and mismatched output there is a real (if harmless)
+  // hydration warning, not just a style nit.
+  const [siteOrigin, setSiteOrigin] = useState("");
+  useEffect(() => {
+    setSiteOrigin(window.location.origin);
+  }, []);
+
   const [threadStep, setThreadStep] = useState<ThreadStep>("idle");
   const stepIndexRef = useRef(0);
   const reducedMotionRef = useRef(false);
@@ -340,6 +352,27 @@ function LoginPageInner() {
                 text="Opt-outs and STOP requests are handled automatically."
               />
             </div>
+
+            {siteOrigin ? (
+              <div style={qrCardStyle}>
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&margin=8&data=${encodeURIComponent(
+                    `${siteOrigin}/login?next=/replies`
+                  )}`}
+                  alt="QR code to open Replies on your phone"
+                  width={96}
+                  height={96}
+                  style={qrImageStyle}
+                />
+                <div>
+                  <div style={qrTitleStyle}>Scan to open on your phone</div>
+                  <div style={qrTextStyle}>
+                    Opens straight to sign-in, then Replies - add it to your
+                    home screen for the full app experience.
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </section>
 
           <section style={rightWrapStyle} className="login-right">
@@ -721,6 +754,38 @@ const featureGridStyle: CSSProperties = {
   gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
   gap: 12,
   maxWidth: 460,
+};
+
+const qrCardStyle: CSSProperties = {
+  marginTop: 24,
+  maxWidth: 460,
+  display: "flex",
+  alignItems: "center",
+  gap: 16,
+  padding: 16,
+  borderRadius: 18,
+  background: "rgba(255,255,255,0.08)",
+  border: "1px solid rgba(255,255,255,0.16)",
+};
+
+const qrImageStyle: CSSProperties = {
+  borderRadius: 10,
+  background: "#ffffff",
+  padding: 6,
+  flexShrink: 0,
+};
+
+const qrTitleStyle: CSSProperties = {
+  fontWeight: 700,
+  fontSize: 14.5,
+  color: "#ffffff",
+};
+
+const qrTextStyle: CSSProperties = {
+  marginTop: 4,
+  fontSize: 12.5,
+  lineHeight: 1.5,
+  color: "rgba(236, 254, 255, 0.75)",
 };
 
 const featureCardStyle: CSSProperties = {
