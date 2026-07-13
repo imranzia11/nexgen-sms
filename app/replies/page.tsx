@@ -315,14 +315,17 @@ const LIST_LIMIT_STEP = 50;
 // SCOPED_LIST_ENABLED below).
 const REPLIES_PAGE_SIZE = 20;
 
-// URGENT ROLLBACK (see the live-listener effect for the full story): the
-// scoped, tab-limited query orders by `lastMessageAt`, and any
-// conversation missing that field gets silently dropped from the results
-// - not an error, just excluded. That hid a genuine "Customer Replied"
-// conversation from its own tab in production. Kept off until
-// `lastMessageAt` is confirmed present on every conversation (or
-// backfilled where it's missing).
-const SCOPED_LIST_ENABLED = false;
+// Previously disabled (see git history) because the scoped, tab-limited
+// query orders by `lastMessageAt`, and any conversation missing that field
+// gets silently dropped from the results - not an error, just excluded.
+// That hid a genuine "Customer Replied" conversation from its own tab in
+// production. Re-enabled after tools/audit-lastmessageat-completeness.ts
+// confirmed 100% of conversations across all 5 accounts (ABE 25704/25704,
+// NATE 2467/2467, Sunny 10687/10687, Andy 2/2, Ali Shah 0/0) have a valid
+// `lastMessageAt` - the gap that caused the earlier incident no longer
+// exists. This is also what fixes the /replies list loading every single
+// conversation the account has ever had on every page load.
+const SCOPED_LIST_ENABLED = true;
 
 // Deliberately does NOT filter `pinned != true` on the non-pinned tabs -
 // Firestore excludes any document missing a filtered field entirely, and
