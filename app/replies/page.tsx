@@ -459,6 +459,19 @@ export default function RepliesPage() {
   // tab-scoped live query back to a one-time full-history fetch - see the
   // live-listener effect further down for exactly how that's used.
   const isSearching = search.trim().length > 0;
+  // Staff checking replies from their phone (via the installed home-screen
+  // app - see app/manifest.ts) never need a way back to the full desktop
+  // dashboard; hiding it keeps that experience feeling like a dedicated
+  // Replies app rather than a shrunk-down admin panel. Desktop is
+  // unaffected either way.
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const MOBILE_BREAKPOINT = 880;
+    const check = () => setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
   const [blockedPhones, setBlockedPhones] = useState<string[]>(
     () => getInitialCache()?.blocked || []
   );
@@ -746,7 +759,7 @@ export default function RepliesPage() {
 
     if (!currentUser) {
       alert("You are not logged in.");
-      router.push("/login");
+      router.push("/login?next=/replies");
       return;
     }
 
@@ -1033,7 +1046,7 @@ export default function RepliesPage() {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         await signOut(auth).catch(() => {});
-        router.push("/login");
+        router.push("/login?next=/replies");
         return;
       }
 
@@ -1046,7 +1059,7 @@ export default function RepliesPage() {
 
         if (!userSnap.exists() || userSnap.data().isActive !== true) {
           await signOut(auth).catch(() => {});
-          router.push("/login");
+          router.push("/login?next=/replies");
           return;
         }
 
@@ -1117,7 +1130,7 @@ export default function RepliesPage() {
         }
 
         await signOut(auth).catch(() => {});
-        router.push("/login");
+        router.push("/login?next=/replies");
       }
     });
 
@@ -1482,9 +1495,11 @@ export default function RepliesPage() {
                   />
                 </div>
 
-                <Link href="/dashboard" style={backButtonStyle}>
-                  Back to Dashboard
-                </Link>
+                {isMobile ? null : (
+                  <Link href="/dashboard" style={backButtonStyle}>
+                    Back to Dashboard
+                  </Link>
+                )}
               </div>
 
               <div style={filterTabsStyle}>

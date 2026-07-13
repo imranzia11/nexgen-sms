@@ -1,10 +1,24 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+
+// Lets a caller send the user somewhere other than /dashboard after login -
+// e.g. the installed "Replies" home-screen app sets start_url to
+// /login?next=/replies so opening the icon goes straight into Replies
+// instead of detouring through the full desktop dashboard first. Only a
+// same-site relative path is ever honored (must start with exactly one
+// leading slash, never "//" which browsers treat as protocol-relative to
+// another host) - this is a redirect target read from a URL query string,
+// so it must never be trusted to point off-site.
+function safeNextPath(value: string | null): string {
+  if (!value) return "/dashboard";
+  if (!value.startsWith("/") || value.startsWith("//")) return "/dashboard";
+  return value;
+}
 
 type ThreadStep =
   | "idle"
@@ -22,8 +36,24 @@ const STEP_SEQUENCE: { step: ThreadStep; holdMs: number }[] = [
   { step: "inReceived", holdMs: 2600 },
 ];
 
+// useSearchParams() (used below to read ?next=) requires a Suspense
+// boundary in the App Router - without one, `next build` fails with
+// "useSearchParams() should be wrapped in a suspense boundary" because
+// Next can't prerender a static shell for a component whose output
+// depends on the URL's query string. This wrapper is the entire fix -
+// LoginPageInner itself is unchanged from a plain page component.
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageInner />
+    </Suspense>
+  );
+}
+
+function LoginPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextPath = safeNextPath(searchParams.get("next"));
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -101,7 +131,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push("/dashboard");
+      router.push(nextPath);
     } catch (err: any) {
       setError(err?.message || "Login failed");
     }
