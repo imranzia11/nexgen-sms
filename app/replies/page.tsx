@@ -523,6 +523,19 @@ export default function RepliesPage() {
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
+
+  // "Switch to Mobile" popup (desktop only) - same scan-to-open QR code as
+  // the login page, just reachable from here too since a desktop user is
+  // already looking at Replies and may want to hand off to their phone
+  // without navigating away first. siteOrigin starts empty and fills in
+  // after mount for the same reason as the login page's version: reading
+  // window.location during the initial render would mismatch between the
+  // server-rendered HTML and the client's first render.
+  const [showMobileQr, setShowMobileQr] = useState(false);
+  const [siteOrigin, setSiteOrigin] = useState("");
+  useEffect(() => {
+    setSiteOrigin(window.location.origin);
+  }, []);
   const [blockedPhones, setBlockedPhones] = useState<string[]>(
     () => getInitialCache()?.blocked || []
   );
@@ -1521,6 +1534,44 @@ export default function RepliesPage() {
         }
       `}</style>
 
+      {showMobileQr ? (
+        <div
+          style={mobileQrBackdropStyle}
+          onClick={() => setShowMobileQr(false)}
+        >
+          <div
+            style={mobileQrModalStyle}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setShowMobileQr(false)}
+              style={mobileQrCloseButtonStyle}
+              aria-label="Close"
+            >
+              ✕
+            </button>
+            <img src="/logo-mark.png" alt="" aria-hidden="true" style={mobileQrLogoStyle} />
+            <div style={mobileQrTitleStyle}>Scan to open on your phone</div>
+            <div style={mobileQrTextStyle}>
+              Opens straight to sign-in, then Replies - add it to your home
+              screen for the full app experience.
+            </div>
+            {siteOrigin ? (
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=10&data=${encodeURIComponent(
+                  `${siteOrigin}/login?next=/replies`
+                )}`}
+                alt="QR code to open Replies on your phone"
+                width={200}
+                height={200}
+                style={mobileQrImageStyle}
+              />
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       <main style={pageStyle}>
         <div style={pageWrapStyle}>
           <div style={heroStyle}>
@@ -1559,9 +1610,18 @@ export default function RepliesPage() {
                 </div>
 
                 {isMobile ? null : (
-                  <Link href="/dashboard" style={backButtonStyle}>
-                    Back to Dashboard
-                  </Link>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setShowMobileQr(true)}
+                      style={switchToMobileButtonStyle}
+                    >
+                      Switch to Mobile
+                    </button>
+                    <Link href="/dashboard" style={backButtonStyle}>
+                      Back to Dashboard
+                    </Link>
+                  </>
                 )}
               </div>
 
@@ -2260,6 +2320,86 @@ const backButtonStyle: CSSProperties = {
   fontSize: 15,
   textDecoration: "none",
   whiteSpace: "nowrap",
+};
+
+const switchToMobileButtonStyle: CSSProperties = {
+  border: "1px solid rgba(255,255,255,0.3)",
+  borderRadius: 18,
+  padding: "15px 20px",
+  background: "rgba(255,255,255,0.12)",
+  color: "#ffffff",
+  fontWeight: 900,
+  fontSize: 15,
+  whiteSpace: "nowrap",
+  cursor: "pointer",
+};
+
+const mobileQrBackdropStyle: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(15,23,42,0.55)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 100,
+  padding: 20,
+};
+
+const mobileQrModalStyle: CSSProperties = {
+  position: "relative",
+  background: "#ffffff",
+  borderRadius: 24,
+  padding: "32px 28px",
+  maxWidth: 340,
+  width: "100%",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  textAlign: "center",
+  gap: 6,
+  boxShadow: "0 30px 60px rgba(15,23,42,0.3)",
+};
+
+const mobileQrCloseButtonStyle: CSSProperties = {
+  position: "absolute",
+  top: 14,
+  right: 14,
+  border: "none",
+  background: "#f1f5f9",
+  color: "#0f172a",
+  width: 28,
+  height: 28,
+  borderRadius: 999,
+  cursor: "pointer",
+  fontSize: 13,
+  fontWeight: 700,
+};
+
+const mobileQrLogoStyle: CSSProperties = {
+  width: 44,
+  height: 44,
+  borderRadius: 12,
+  objectFit: "cover",
+  marginBottom: 4,
+};
+
+const mobileQrTitleStyle: CSSProperties = {
+  fontSize: 17,
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const mobileQrTextStyle: CSSProperties = {
+  fontSize: 13.5,
+  lineHeight: 1.55,
+  color: "#64748b",
+  marginBottom: 10,
+};
+
+const mobileQrImageStyle: CSSProperties = {
+  borderRadius: 12,
+  border: "1px solid #e2e8f0",
+  padding: 8,
 };
 
 const statsGridStyle: CSSProperties = {
