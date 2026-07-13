@@ -3,3 +3,11 @@ env:
     secret: CRON_SECRET
     availability:
       - RUNTIME
+
+# Keep one container warm at all times so visitors never hit a cold-start
+# delay (a few extra seconds on the very first request after the app has
+# been idle). Under Firebase's default request-based billing this only
+# costs idle-memory charges (~$2-4/month at the default 512MiB instance
+# size) - CPU is still only billed while actively handling a request.
+runConfig:
+  minInstances: 1
