@@ -23,6 +23,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
 import { formatFirestoreDateNY } from "../../lib/date";
+import { phoneDocId } from "../../lib/phone";
 
 type SmsRow = {
   id: string;
@@ -38,8 +39,9 @@ type SmsRow = {
   // True only for numbers someone on the team deliberately blocked via the
   // Block button - NOT for customers who texted STOP. Those stay fully
   // hidden from this list, same as always. A manually-blocked conversation
-  // stays visible (in whatever tab it'd normally sort into) but renders
-  // red with an Unblock action instead of Block.
+  // moves to the dedicated "Attention Required" tab (see attentionItems)
+  // instead of its normal tab, and renders red with an Unblock action
+  // instead of Block.
   manuallyBlocked: boolean;
 };
 
@@ -61,7 +63,8 @@ type FilterMode =
   | "awaiting"
   | "never_replied"
   | "pinned"
-  | "failed";
+  | "failed"
+  | "attention";
 
 // Matches the same failed/undelivered statuses used to render the red
 // error bubble on the /replies/[phone] thread view.
@@ -459,6 +462,18 @@ export default function RepliesPage() {
   const [blockedPhones, setBlockedPhones] = useState<string[]>(
     () => getInitialCache()?.blocked || []
   );
+  // Manually-blocked conversations used to stay inline in whatever tab
+  // they'd normally sort into (marked red, not removed) - but that relied
+  // on the tab query fetching every conversation regardless of `blocked`.
+  // Once the scoped, tab-limited queries (SCOPED_LIST_ENABLED) filter
+  // where("blocked","==",false) server-side, a manually-blocked
+  // conversation is excluded from every tab's results entirely - it would
+  // otherwise just vanish instead of showing with its red "Blocked" marker.
+  // Given a dedicated tab, sourced the same way the sidebar's attention
+  // mark already works (useManuallyBlockedAttention.ts): a small, targeted
+  // set of per-phone lookups from the manual-block blacklist entries,
+  // never a full collection scan.
+  const [attentionItems, setAttentionItems] = useState<SmsRow[]>([]);
   const [profile, setProfile] = useState<AppUser | null>(null);
   const [counts, setCounts] = useState<StatCounts>(() => getInitialCounts());
   const [filterMode, setFilterMode] = useState<FilterMode>("replied");
@@ -848,7 +863,7 @@ export default function RepliesPage() {
     if (!profile) return;
 
     const ok = window.confirm(
-      `Block ${item.phone}? They won't be able to receive messages until you unblock them. This conversation will stay visible here, marked as blocked.`
+      `Block ${item.phone}? They won't be able to receive messages until you unblock them. This conversation will move to the "Attention Required" tab until you unblock it.`
     );
     if (!ok) return;
 
@@ -1206,6 +1221,80 @@ export default function RepliesPage() {
     };
   }, [profile, filterMode, listLimit, isSearching]);
 
+  // Dedicated live source for the "Attention Required" tab - independent
+  // of the scoped per-tab listener above, which now excludes every
+  // manually-blocked conversation (blocked==true) from its results. The
+  // number of manual blocks per account is small (a handful at most, per
+  // tools/audit scripts run earlier), so this does a small, targeted set
+  // of single-document lookups by conversation ID rather than downloading
+  // any collection - same approach as useManuallyBlockedAttention.ts,
+  // extended here to build full rows instead of just a boolean.
+  useEffect(() => {
+    if (!profile) return;
+    const ownerUid = profile.uid;
+    let cancelled = false;
+
+    const unsubBlacklist = onSnapshot(
+      query(
+        collection(db, "blacklisted_numbers"),
+        where("ownerUid", "==", ownerUid),
+        where("status", "==", "blocked")
+      ),
+      async (snap) => {
+        try {
+          const phones = snap.docs
+            .filter((d) => isManualBlockRecord(d.data() || {}))
+            .map((d) => String(d.data()?.phone || "").trim())
+            .filter(Boolean);
+
+          if (phones.length === 0) {
+            if (!cancelled) setAttentionItems([]);
+            return;
+          }
+
+          // allSettled, not all - one phone whose conversation was deleted
+          // separately (blacklist entry deliberately kept) throws
+          // permission-denied on that single getDoc and must not wipe out
+          // every other valid result in the same batch. Same fix as the
+          // sidebar attention-mark bug earlier this session.
+          const results = await Promise.allSettled(
+            phones.map(async (phone) => {
+              const conversationId = `${ownerUid}_${phoneDocId(phone)}`;
+              const convoSnap = await getDoc(
+                doc(db, "conversations", conversationId)
+              );
+              if (!convoSnap.exists()) return null;
+              const row = makeRow(convoSnap.id, convoSnap.data() as Record<string, any>);
+              return { ...row, manuallyBlocked: true };
+            })
+          );
+
+          const rows = results
+            .filter(
+              (r): r is PromiseFulfilledResult<SmsRow | null> =>
+                r.status === "fulfilled" && r.value !== null
+            )
+            .map((r) => r.value as SmsRow)
+            .sort((a, b) => b.sortSeconds - a.sortSeconds);
+
+          if (!cancelled) setAttentionItems(rows);
+        } catch (error) {
+          console.error("Failed to load Attention Required conversations", error);
+          if (!cancelled) setAttentionItems([]);
+        }
+      },
+      (error) => {
+        console.error("Attention Required listener failed", error);
+        if (!cancelled) setAttentionItems([]);
+      }
+    );
+
+    return () => {
+      cancelled = true;
+      unsubBlacklist();
+    };
+  }, [profile]);
+
   useEffect(() => {
     function handleGlobalClick() {
       setOpenMenuId("");
@@ -1236,19 +1325,27 @@ export default function RepliesPage() {
   }, [filterMode]);
 
   const searchedItems = useMemo(() => {
+    const source = filterMode === "attention" ? attentionItems : items;
     const term = search.trim().toLowerCase();
-    if (!term) return items;
+    if (!term) return source;
 
-    return items.filter((item) => {
+    return source.filter((item) => {
       return (
         item.phone.toLowerCase().includes(term) ||
         String(item.name || "").toLowerCase().includes(term) ||
         item.body.toLowerCase().includes(term)
       );
     });
-  }, [items, search]);
+  }, [items, attentionItems, filterMode, search]);
 
   const filteredItems = useMemo(() => {
+    // Attention Required is already its own dedicated, pre-filtered source
+    // (manual blocks only, via the effect above) - no pinned/reply-status
+    // re-filtering applies here, unlike every other tab.
+    if (filterMode === "attention") {
+      return searchedItems;
+    }
+
     if (filterMode === "pinned") {
       return searchedItems.filter((item) => item.pinned);
     }
@@ -1452,6 +1549,16 @@ export default function RepliesPage() {
                 >
                   ⚠ Failed / Undelivered
                 </button>
+
+                <button
+                  onClick={() => setFilterMode("attention")}
+                  style={{
+                    ...filterTabStyle,
+                    ...(filterMode === "attention" ? activeFilterTabStyle : {}),
+                  }}
+                >
+                  ❗ Attention Required
+                </button>
               </div>
 
               <div style={statsGridStyle}>
@@ -1470,6 +1577,10 @@ export default function RepliesPage() {
                 />
                 <StatCard label="Pinned" value={String(counts.pinned)} />
                 <StatCard label="Failed / Undelivered" value={String(counts.failed)} />
+                <StatCard
+                  label="Attention Required"
+                  value={String(attentionItems.length)}
+                />
               </div>
             </div>
           </div>
@@ -1482,6 +1593,8 @@ export default function RepliesPage() {
                     ? "Pinned Messages"
                     : filterMode === "failed"
                     ? "Failed / Undelivered Messages"
+                    : filterMode === "attention"
+                    ? "Attention Required"
                     : "Outbound SMS Activity"}
                 </h2>
                 <p style={panelDescStyle}>
@@ -1489,6 +1602,8 @@ export default function RepliesPage() {
                     ? "Conversations you've pinned for quick access. Unpin to send them back to their normal tab."
                     : filterMode === "failed"
                     ? "Conversations whose most recent outbound message failed to deliver or was reported undelivered by the carrier."
+                    : filterMode === "attention"
+                    ? "Numbers your team manually blocked. Unblock to resume messaging - a customer's own STOP opt-out is never shown here, those stay fully hidden."
                     : "Only new conversations with `ownerUid` matching the logged-in user are shown for non-admin accounts."}
                 </p>
               </div>
