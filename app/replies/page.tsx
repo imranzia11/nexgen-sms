@@ -24,11 +24,6 @@ import {
 import { auth, db } from "../../lib/firebase";
 import { formatFirestoreDateNY } from "../../lib/date";
 import { phoneDocId } from "../../lib/phone";
-import {
-  enableNotifications,
-  listenForForegroundReplies,
-  syncAppBadge,
-} from "../../lib/pushClient";
 
 type SmsRow = {
   id: string;
@@ -541,40 +536,6 @@ export default function RepliesPage() {
   useEffect(() => {
     setSiteOrigin(window.location.origin);
   }, []);
-
-  // Push notifications ("customer replied" alerts + app icon badge, like
-  // WhatsApp) for the installed home-screen app. Entirely additive: if
-  // notifications are unsupported, not yet enabled, or fail for any
-  // reason, the rest of the page behaves exactly as it already did -
-  // nothing here can affect loading, sending, or displaying replies.
-  const [notifPermission, setNotifPermission] = useState<
-    "unknown" | "granted" | "denied" | "unsupported"
-  >("unknown");
-  const [enablingNotifs, setEnablingNotifs] = useState(false);
-
-  useEffect(() => {
-    if (typeof Notification === "undefined") {
-      setNotifPermission("unsupported");
-      return;
-    }
-    setNotifPermission(Notification.permission === "granted" ? "granted" : "unknown");
-  }, []);
-
-  async function handleEnableNotifications() {
-    setEnablingNotifs(true);
-    try {
-      const result = await enableNotifications();
-      if (result.ok) {
-        setNotifPermission("granted");
-      } else if (result.reason === "denied") {
-        setNotifPermission("denied");
-      } else if (result.reason === "unsupported") {
-        setNotifPermission("unsupported");
-      }
-    } finally {
-      setEnablingNotifs(false);
-    }
-  }
   const [blockedPhones, setBlockedPhones] = useState<string[]>(
     () => getInitialCache()?.blocked || []
   );
@@ -592,19 +553,6 @@ export default function RepliesPage() {
   const [attentionItems, setAttentionItems] = useState<SmsRow[]>([]);
   const [profile, setProfile] = useState<AppUser | null>(null);
   const [counts, setCounts] = useState<StatCounts>(() => getInitialCounts());
-
-  useEffect(() => {
-    if (!profile) return;
-    const stop = listenForForegroundReplies((link) => router.push(link));
-    return stop;
-  }, [profile, router]);
-
-  // Keeps the home-screen icon badge in sync with the exact same
-  // "Customer Replied" number the app already shows in its own stat card -
-  // no separate source of truth, no risk of the two ever disagreeing.
-  useEffect(() => {
-    syncAppBadge(counts.replied);
-  }, [counts.replied]);
   const [filterMode, setFilterMode] = useState<FilterMode>("replied");
   const [listLimit, setListLimit] = useState(DEFAULT_LIST_LIMIT);
   // Purely a render-side page (client-side slice of whatever's already
@@ -1630,33 +1578,15 @@ export default function RepliesPage() {
             <div style={heroOverlayStyle} />
             <div style={heroInnerStyle}>
               {isMobile ? (
-                <>
-                  <div style={mobileBrandRowStyle}>
-                    <img src="/logo-mark.png" alt="" aria-hidden="true" style={mobileBrandLogoStyle} />
-                    <div>
-                      <div style={mobileBrandTitleStyle}>Nexgen Replies</div>
-                      <div style={mobileBrandSubStyle}>
-                        {filterModeLabel(filterMode)}
-                      </div>
+                <div style={mobileBrandRowStyle}>
+                  <img src="/logo-mark.png" alt="" aria-hidden="true" style={mobileBrandLogoStyle} />
+                  <div>
+                    <div style={mobileBrandTitleStyle}>Nexgen Replies</div>
+                    <div style={mobileBrandSubStyle}>
+                      {filterModeLabel(filterMode)}
                     </div>
                   </div>
-
-                  {notifPermission !== "granted" &&
-                  notifPermission !== "unsupported" ? (
-                    <button
-                      type="button"
-                      onClick={() => void handleEnableNotifications()}
-                      disabled={enablingNotifs}
-                      style={enableNotifsBannerStyle}
-                    >
-                      {enablingNotifs
-                        ? "Enabling..."
-                        : notifPermission === "denied"
-                          ? "Notifications blocked - enable in phone Settings"
-                          : "🔔 Enable notifications for new replies"}
-                    </button>
-                  ) : null}
-                </>
+                </div>
               ) : (
                 <div>
                   <div style={heroBadgeStyle}>SMS Activity</div>
@@ -2283,20 +2213,6 @@ const mobileBrandSubStyle: CSSProperties = {
   color: "rgba(236,254,255,0.8)",
   fontSize: 13.5,
   fontWeight: 600,
-};
-
-const enableNotifsBannerStyle: CSSProperties = {
-  marginTop: 14,
-  width: "100%",
-  border: "1px solid rgba(255,255,255,0.25)",
-  borderRadius: 14,
-  padding: "12px 14px",
-  background: "rgba(255,255,255,0.12)",
-  color: "#ffffff",
-  fontWeight: 700,
-  fontSize: 13.5,
-  textAlign: "center",
-  cursor: "pointer",
 };
 
 const heroInnerStyle: CSSProperties = {

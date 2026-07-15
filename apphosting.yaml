@@ -3,14 +3,6 @@ env:
     secret: CRON_SECRET
     availability:
       - RUNTIME
-  # Public Web Push key (not secret - safe to commit, same as the Firebase
-  # web config already hardcoded in lib/firebase.ts). Needed at BUILD time
-  # since NEXT_PUBLIC_ vars get baked into the client bundle by Next.js.
-  - variable: NEXT_PUBLIC_FIREBASE_VAPID_KEY
-    value: "BGECgfDNoz2PgoBLCfkiLKsV-IFSVhTRUzfOQhz7PIBo5SPX3HV66VSf4npLlCjdtp87cJLJwlYSF9O1xyb_Yco"
-    availability:
-      - BUILD
-      - RUNTIME
 
 # Keep one container warm at all times so visitors never hit a cold-start
 # delay (a few extra seconds on the very first request after the app has

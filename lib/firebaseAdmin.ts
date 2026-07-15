@@ -1,7 +1,6 @@
 import { applicationDefault, cert, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
-import { getMessaging } from "firebase-admin/messaging";
 
 const hasServiceAccount =
   !!process.env.FIREBASE_PROJECT_ID &&
@@ -34,4 +33,3 @@ if (!getApps().length) {
 
 export const adminDb = getFirestore();
 export const adminStorage = getStorage();
-export const adminMessaging = getMessaging();
