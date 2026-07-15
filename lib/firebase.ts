@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { initializeFirestore, getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
@@ -15,7 +15,32 @@ const firebaseConfig = {
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+// Root cause of the "Customer Replied tab randomly empty" report: the
+// browser console showed `WebChannelConnection RPC 'Listen' stream ...
+// transport errored` right after a `net::ERR_QUIC_PROTOCOL_ERROR` and a
+// follow-up 400 on firestore.googleapis.com - a known Firestore JS SDK
+// issue (see firebase/firebase-js-sdk#8889, #7354, #9243) where the
+// browser's default QUIC/HTTP3 transport for the realtime Listen channel
+// gets reset by a network/proxy/antivirus in between and the reconnect
+// comes back malformed, silently dropping that one listener's data while
+// other already-connected listeners (and one-shot count queries, which
+// don't use this channel) keep working - exactly matching "Customer
+// Replied" showing 0 while "Waiting for Customer" still showed 34.
+// autoDetectLongPolling makes the SDK probe once at startup and fall back
+// to plain long-polling if that probe looks unreliable, avoiding the QUIC
+// path entirely for affected networks. Pure transport-layer change - no
+// query, rule, or data logic touched.
+let dbInstance;
+try {
+  dbInstance = initializeFirestore(app, {
+    experimentalAutoDetectLongPolling: true,
+  });
+} catch {
+  // Firestore was already initialized against this app instance (e.g. dev
+  // hot-reload re-running this module) - just reuse it instead of throwing.
+  dbInstance = getFirestore(app);
+}
+export const db = dbInstance;
 export const storage = getStorage(app);
 
 // Explicit, not just relying on the SDK default (which is already
