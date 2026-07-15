@@ -4,6 +4,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { getDownloadURL } from "firebase-admin/storage";
 import { adminDb, adminStorage } from "../../../../../lib/firebaseAdmin";
 import { upsertGlobalBlocklist } from "../../../../../lib/globalBlocklist";
+import { notifyOwnerOfReply } from "../../../../../lib/pushNotify";
 import { toE164, phoneDocId } from "../../../../../lib/phone";
 
 export const runtime = "nodejs";
@@ -621,6 +622,21 @@ export async function POST(req: NextRequest) {
     batch.set(convoRef, convoUpdate, { merge: true });
 
     await batch.commit();
+
+    // Best-effort push notification (WhatsApp-style alert + app icon
+    // badge on the installed Replies PWA). Deliberately placed after
+    // batch.commit() and wrapped so nothing here can ever affect whether
+    // the actual message/conversation data above saved correctly - a push
+    // failure only means a missed notification, never a lost message.
+    await notifyOwnerOfReply({
+      ownerUid: uid,
+      conversationId,
+      fromPhone: from,
+      customerName: existingName,
+      previewText: previewText,
+    }).catch((error) => {
+      console.error("Push notification call failed (non-fatal)", error);
+    });
 
     if (isStop) {
       // Do NOT send our own confirmation text here. Twilio's own opt-out
