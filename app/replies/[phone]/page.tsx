@@ -1135,7 +1135,7 @@ export default function ReplyThreadPage({
                   }}
                   style={imgMenuItemStyle}
                 >
-                  Refresh
+                  🔄 Refresh
                 </button>
 
                 <button
@@ -1147,7 +1147,7 @@ export default function ReplyThreadPage({
                   }}
                   style={{ ...imgMenuItemStyle, color: "#dc2626" }}
                 >
-                  {deletingThread ? "Deleting..." : "Delete Conversation"}
+                  {deletingThread ? "Deleting..." : "🗑️ Delete Conversation"}
                 </button>
               </div>
             ) : null}
@@ -1905,25 +1905,37 @@ const imgScreenStyle: CSSProperties = {
   inset: 0,
   display: "flex",
   flexDirection: "column",
-  // Soft cyan-to-slate wash instead of flat iMessage gray - matches the
-  // same gradient family used on every other page (pageStyle/heroStyle)
-  // so this reads as "the fintech app's chat view", not a generic Messages
-  // clone dropped into an otherwise branded product.
+  // Soft cyan-to-slate wash with a faint radial highlight in the corner -
+  // the same premium-dashboard treatment used on the desktop hero cards
+  // (pageStyle/heroStyle), so this reads as "the fintech app's chat view"
+  // rather than a flat, generic Messages background.
   background:
-    "linear-gradient(180deg, #ecfeff 0%, #f1f5f9 45%, #f1f5f9 100%)",
+    "radial-gradient(circle at top right, rgba(20,184,166,0.10), transparent 32%), linear-gradient(180deg, #ecfeff 0%, #f1f5f9 45%, #f1f5f9 100%)",
   overflow: "hidden",
 };
 
 const imgTopBarStyle: CSSProperties = {
+  position: "relative",
+  // A flex-item z-index applies without needing `position` for stacking
+  // purposes here (imgScreenStyle is display:flex), but Safari's handling
+  // of z-index on flex items alongside backdrop-filter is inconsistent
+  // unless the item is also explicitly positioned - `relative` plus this
+  // z-index is what actually keeps the "..." dropdown menu (rendered
+  // inside this bar) above the message thread below it. Without it,
+  // backdrop-filter gives this bar its own stacking context, which traps
+  // the dropdown's z-index inside that context - it can never rise above
+  // a later sibling (the scrollable thread), so it rendered UNDER the
+  // messages instead of floating over them.
+  zIndex: 20,
   flexShrink: 0,
   display: "flex",
   alignItems: "center",
   gap: 10,
   padding: "max(10px, env(safe-area-inset-top)) 10px 12px 8px",
-  background: "rgba(255,255,255,0.9)",
+  background: "rgba(255,255,255,0.92)",
   borderBottom: "1px solid rgba(13,148,136,0.12)",
   backdropFilter: "blur(10px)",
-  boxShadow: "0 1px 0 rgba(15,23,42,0.02)",
+  boxShadow: "0 4px 16px rgba(15,23,42,0.06)",
 };
 
 const imgBackButtonStyle: CSSProperties = {
@@ -1952,6 +1964,7 @@ const imgAvatarStyle: CSSProperties = {
   fontSize: 13,
   fontWeight: 800,
   letterSpacing: 0.2,
+  boxShadow: "0 2px 6px rgba(13,148,136,0.35)",
 };
 
 const imgTitleWrapStyle: CSSProperties = {
@@ -1997,24 +2010,28 @@ const imgMenuButtonStyle: CSSProperties = {
 
 const imgMenuDropdownStyle: CSSProperties = {
   position: "absolute",
-  top: 40,
+  top: 44,
   right: 0,
-  zIndex: 5,
-  minWidth: 190,
+  zIndex: 30,
+  minWidth: 200,
   background: "#ffffff",
-  borderRadius: 14,
-  boxShadow: "0 12px 32px rgba(15,23,42,0.22)",
-  border: "1px solid rgba(15,23,42,0.08)",
+  borderRadius: 18,
+  boxShadow:
+    "0 20px 40px rgba(15,23,42,0.18), 0 2px 8px rgba(15,23,42,0.08)",
+  border: "1px solid rgba(15,23,42,0.06)",
   overflow: "hidden",
+  padding: 6,
 };
 
 const imgMenuItemStyle: CSSProperties = {
-  display: "block",
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
   width: "100%",
   textAlign: "left",
-  padding: "12px 16px",
+  padding: "11px 12px",
+  borderRadius: 12,
   border: "none",
-  borderBottom: "1px solid rgba(15,23,42,0.06)",
   background: "#ffffff",
   color: "#0f172a",
   fontSize: 14,
