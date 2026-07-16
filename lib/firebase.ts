@@ -14,6 +14,7 @@ const firebaseConfig = {
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
+export { app };
 export const auth = getAuth(app);
 // Root cause of the "Customer Replied tab randomly empty" report: the
 // browser console showed `WebChannelConnection RPC 'Listen' stream ...
