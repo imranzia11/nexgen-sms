@@ -679,6 +679,15 @@ export default function ReplyThreadPage({
 
     let unsubConversationMessages: (() => void) | undefined;
     let unsubAuth: (() => void) | undefined;
+    // Set once the initial auth-gate try block resolves the signed-in
+    // user's profile - read by the messages listener's callback below,
+    // which is defined (and can start firing) before that profile exists
+    // yet, since the subscription itself is now set up independently of
+    // that fallible chain. See the comment where subscribeToMessages is
+    // defined for why.
+    let currentProfileForListener: AppUser | null = null;
+    let messagesRetryTimer: ReturnType<typeof setTimeout> | undefined;
+    let cancelledMessagesSub = false;
 
     unsubAuth = onAuthStateChanged(auth, async (user) => {
       if (!user) {
@@ -687,9 +696,52 @@ export default function ReplyThreadPage({
         return;
       }
 
-      try {
-        const conversationId = `${user.uid}_${phoneDocId(routePhone)}`;
+      const conversationId = `${user.uid}_${phoneDocId(routePhone)}`;
 
+      // Subscribed here, independently of the try block below, and with
+      // its own retry loop. Root cause of "have to refresh to see new
+      // replies": Firestore's onSnapshot treats permission-denied as a
+      // TERMINAL error and never retries on its own - and we saw this
+      // exact error fire transiently (a timing race right after sign-in,
+      // before the auth token is fully attached) on conversations whose
+      // data and rules were independently verified to be completely fine
+      // via the Admin SDK. Previously this subscription lived inside the
+      // same try block as the initial paint logic (getDoc/loadThreadOnce
+      // etc.), so if ANY of those threw first - for any transient reason -
+      // execution never even reached the onSnapshot call, silently
+      // leaving the page live-update-free for the rest of the session
+      // with no visible sign anything was wrong (the initial paint still
+      // looked fine, painted from cache). Moving it out here and retrying
+      // on error means a one-off hiccup heals itself a couple seconds
+      // later instead of requiring a manual page reload.
+      const subscribeToMessages = (attempt = 0) => {
+        if (cancelledMessagesSub) return;
+        unsubConversationMessages?.();
+        unsubConversationMessages = onSnapshot(
+          query(
+            collection(db, "conversations", conversationId, "messages"),
+            orderBy("createdAt", "asc")
+          ),
+          async () => {
+            if (!currentProfileForListener) return;
+            const latestMeta = await loadConversationMeta(currentProfileForListener);
+            if (!latestMeta) return;
+            await loadThreadOnce(latestMeta, currentProfileForListener, {
+              silent: true,
+            });
+          },
+          (error: any) => {
+            console.error("[messages onSnapshot]", error);
+            if (cancelledMessagesSub) return;
+            const delay = Math.min(2000 * (attempt + 1), 10000);
+            messagesRetryTimer = setTimeout(() => subscribeToMessages(attempt + 1), delay);
+          }
+        );
+      };
+
+      subscribeToMessages();
+
+      try {
         // These three reads only need `user.uid` and `routePhone`, both
         // already known synchronously right here — none actually depends
         // on another's *contents*. Firing them together (instead of the
@@ -729,6 +781,7 @@ export default function ReplyThreadPage({
           messagingServiceSid: String(userData.messagingServiceSid || ""),
         };
 
+        currentProfileForListener = safeProfile;
         setProfile(safeProfile);
         setChecking(false);
 
@@ -771,25 +824,9 @@ export default function ReplyThreadPage({
           silent: Boolean(cached),
           presetSubMessagesDocs: subMessagesDocsEarly,
         });
-
-        const refreshFromThreadChange = async () => {
-          const latestMeta = await loadConversationMeta(safeProfile);
-          if (!latestMeta) return;
-          await loadThreadOnce(latestMeta, safeProfile, { silent: true });
-        };
-
-        unsubConversationMessages = onSnapshot(
-          query(
-            collection(db, "conversations", meta.id, "messages"),
-            orderBy("createdAt", "asc")
-          ),
-          async () => {
-            await refreshFromThreadChange();
-          },
-          (error: any) => {
-            console.error("[messages onSnapshot]", error);
-          }
-        );
+        // Live listener for new messages is already set up above
+        // (subscribeToMessages), independently of this block - see the
+        // comment there for why it moved out of this try/catch.
       } catch (error: any) {
         console.error("[auth-gate outer catch]", error);
         setStatus(error?.message || "Failed to load conversation.");
@@ -799,6 +836,8 @@ export default function ReplyThreadPage({
     });
 
     return () => {
+      cancelledMessagesSub = true;
+      if (messagesRetryTimer) clearTimeout(messagesRetryTimer);
       if (unsubAuth) unsubAuth();
       if (unsubConversationMessages) unsubConversationMessages();
     };
