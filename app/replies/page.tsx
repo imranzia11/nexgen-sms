@@ -243,6 +243,13 @@ function getInitialCache(): PersistedCache | null {
 type StatCounts = {
   all: number;
   replied: number;
+  // Of `replied` above, how many are also pinned - i.e. how many are
+  // counted in the "Customer Replied" number/badge but NOT shown in the
+  // "Customer Replied" tab's own list (they live under "Pinned Messages"
+  // instead). Purely for the "includes N pinned" hint under the stat
+  // card, so the gap between the number and the visible list is
+  // self-explanatory instead of looking like a bug.
+  pinnedReplied: number;
   awaiting: number;
   neverReplied: number;
   pinned: number;
@@ -252,6 +259,7 @@ type StatCounts = {
 const ZERO_COUNTS: StatCounts = {
   all: 0,
   replied: 0,
+  pinnedReplied: 0,
   awaiting: 0,
   neverReplied: 0,
   pinned: 0,
@@ -292,7 +300,12 @@ function getInitialCounts(): StatCounts {
   if (!currentUid) return ZERO_COUNTS;
 
   const persisted = readPersistedCounts();
-  if (persisted && persisted.uid === currentUid) return persisted.counts;
+  // Spread over ZERO_COUNTS so a cache written by an older version of this
+  // page (missing a field we've since added, e.g. pinnedReplied) still
+  // yields a valid number instead of `undefined` leaking into the UI.
+  if (persisted && persisted.uid === currentUid) {
+    return { ...ZERO_COUNTS, ...persisted.counts };
+  }
 
   return ZERO_COUNTS;
 }
@@ -735,6 +748,7 @@ export default function RepliesPage() {
         all,
         pinned,
         rawReplied,
+        pinnedReplied,
         rawAwaiting,
         pinnedAwaiting,
         rawNeverReplied,
@@ -746,10 +760,18 @@ export default function RepliesPage() {
       ] = await Promise.all([
         count(),
         count(where("pinned", "==", true)),
-        // No pinned-overlap counterpart needed here anymore - replied
-        // counts every conversation with an unanswered reply regardless
-        // of pin status (see the comment on `replied:` below).
+        // Not excluding pinned here - replied counts every conversation
+        // with an unanswered reply regardless of pin status (see the
+        // comment on `replied:` below). pinnedReplied is queried
+        // separately, purely to power the "includes N pinned" hint under
+        // the stat card - it's already included in rawReplied, not added
+        // on top of it.
         count(where("hasReply", "==", true), where("lastDirection", "==", "inbound")),
+        count(
+          where("pinned", "==", true),
+          where("hasReply", "==", true),
+          where("lastDirection", "==", "inbound")
+        ),
         count(where("hasReply", "==", true), where("lastDirection", "==", "outbound")),
         count(
           where("pinned", "==", true),
@@ -773,6 +795,7 @@ export default function RepliesPage() {
         // quick-access shortcut, not a way to make a genuine unread reply
         // disappear from the count.
         replied: rawReplied,
+        pinnedReplied,
         awaiting: Math.max(0, rawAwaiting - pinnedAwaiting),
         neverReplied: Math.max(0, rawNeverReplied - pinnedNeverReplied),
         failed: Math.max(
@@ -1803,13 +1826,20 @@ export default function RepliesPage() {
                 // happened). Showing just the active tab's own count reads
                 // clearly at a glance and always matches what's actually
                 // listed below, since it's computed the same way.
-                <div style={mobileStatLineStyle}>
-                  <span style={mobileStatNumberStyle}>
-                    {activeTabCount(filterMode, counts, attentionItems.length)}
-                  </span>
-                  <span style={mobileStatLabelStyle}>
-                    {filterModeLabel(filterMode).toLowerCase()}
-                  </span>
+                <div>
+                  <div style={mobileStatLineStyle}>
+                    <span style={mobileStatNumberStyle}>
+                      {activeTabCount(filterMode, counts, attentionItems.length)}
+                    </span>
+                    <span style={mobileStatLabelStyle}>
+                      {filterModeLabel(filterMode).toLowerCase()}
+                    </span>
+                  </div>
+                  {filterMode === "replied" && counts.pinnedReplied > 0 ? (
+                    <div style={mobileStatHintStyle}>
+                      Includes {counts.pinnedReplied} pinned
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <div style={statsGridStyle}>
@@ -1817,6 +1847,11 @@ export default function RepliesPage() {
                   <StatCard
                     label="Customer Replied"
                     value={String(counts.replied)}
+                    hint={
+                      counts.pinnedReplied > 0
+                        ? `Includes ${counts.pinnedReplied} pinned`
+                        : undefined
+                    }
                   />
                   <StatCard
                     label="Waiting for Customer"
@@ -2231,11 +2266,20 @@ export default function RepliesPage() {
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function StatCard({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
   return (
     <div style={statCardStyle}>
       <div style={statLabelStyle}>{label}</div>
       <div style={statValueStyle}>{value}</div>
+      {hint ? <div style={statHintStyle}>{hint}</div> : null}
     </div>
   );
 }
@@ -2525,6 +2569,13 @@ const mobileStatLabelStyle: CSSProperties = {
   fontWeight: 600,
 };
 
+const mobileStatHintStyle: CSSProperties = {
+  marginTop: 2,
+  color: "rgba(236, 254, 255, 0.65)",
+  fontSize: 11.5,
+  fontWeight: 600,
+};
+
 const statCardStyle: CSSProperties = {
   background: "rgba(255,255,255,0.18)",
   border: "1px solid rgba(255,255,255,0.12)",
@@ -2546,6 +2597,13 @@ const statValueStyle: CSSProperties = {
   fontWeight: 800,
   lineHeight: 1.15,
   wordBreak: "break-word",
+};
+
+const statHintStyle: CSSProperties = {
+  marginTop: 4,
+  color: "rgba(236, 254, 255, 0.65)",
+  fontSize: 11.5,
+  fontWeight: 600,
 };
 
 const panelStyle: CSSProperties = {
