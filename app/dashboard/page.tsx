@@ -1023,8 +1023,6 @@ export default function DashboardPage() {
         })),
       });
 
-      void persistFollowUpSettings(user.uid);
-
       setCampaignName("");
       setMessage(DEFAULT_SMS_MESSAGE);
       setSelectedTemplateId("");
@@ -1120,8 +1118,6 @@ export default function DashboardPage() {
         fileName: "Single USA Number",
         recipients: [{ name: "", phone: validation.normalized }],
       });
-
-      void persistFollowUpSettings(user.uid);
 
       setSinglePhoneNumber("");
     } catch (error: any) {
