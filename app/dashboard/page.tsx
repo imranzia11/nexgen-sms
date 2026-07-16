@@ -436,6 +436,27 @@ export default function DashboardPage() {
         // has no way of knowing it went back to off the next time they
         // visit - the send still succeeds normally, so nothing looks wrong.
         const savedSettings = data.lastFollowUpSettings || {};
+
+        // Also restore which template (and message text) was last used, so
+        // the "Load a saved template" dropdown and SMS Message box come
+        // back exactly as they were left - not just the follow-up fields.
+        // Templates load in parallel above (loadTemplates(user.uid)) and
+        // may not have resolved yet, but that's fine: the dropdown's value
+        // is just an id string, it renders correctly as soon as the
+        // matching <option> arrives from that separate fetch.
+        if (
+          typeof savedSettings.selectedTemplateId === "string" &&
+          savedSettings.selectedTemplateId
+        ) {
+          setSelectedTemplateId(savedSettings.selectedTemplateId);
+        }
+        if (
+          typeof savedSettings.message === "string" &&
+          savedSettings.message.trim()
+        ) {
+          setMessage(savedSettings.message);
+        }
+
         if (typeof savedSettings.followUpEnabled === "boolean") {
           setFollowUpEnabled(savedSettings.followUpEnabled);
         }
@@ -804,6 +825,8 @@ export default function DashboardPage() {
         doc(db, "users", uid),
         {
           lastFollowUpSettings: {
+            selectedTemplateId,
+            message,
             followUpEnabled,
             followUpMessage,
             followUpHours,
