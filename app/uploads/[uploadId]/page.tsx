@@ -15,6 +15,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../../../lib/firebase";
 import { formatFirestoreDateNY } from "../../../lib/date";
+import { logDeletion } from "../../../lib/deletionLog";
 
 type LeadItem = {
   id: string;
@@ -183,7 +184,15 @@ export default function UploadDetailsPage() {
 
     try {
       setDeletingLeadId(leadId);
+      const deletedLead = leads.find((lead) => lead.id === leadId);
       await deleteDoc(doc(db, "leads", leadId));
+      void logDeletion({
+        type: "lead",
+        phone: deletedLead?.phone,
+        name: deletedLead?.name,
+        fileName: upload?.fileName,
+        source: "upload_detail_page",
+      });
       setLeads((prev) => prev.filter((lead) => lead.id !== leadId));
     } catch (error: any) {
       alert(error?.message || "Failed to delete lead.");

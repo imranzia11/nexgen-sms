@@ -42,6 +42,45 @@ type MessageLogItem = {
   sortMs: number;
 };
 
+type DeletionLogItem = {
+  id: string;
+  type: string;
+  phone: string;
+  name: string;
+  fileName: string;
+  source: string;
+  createdAtLabel: string;
+  sortMs: number;
+};
+
+function deletionTypeLabel(type: string) {
+  switch (type) {
+    case "conversation":
+      return "Conversation";
+    case "lead":
+      return "Lead";
+    case "upload_record":
+      return "Upload file record";
+    default:
+      return type || "Unknown";
+  }
+}
+
+function deletionSourceLabel(source: string) {
+  switch (source) {
+    case "thread_page":
+      return "Deleted from the conversation thread";
+    case "replies_list":
+      return "Deleted from the Replies list";
+    case "upload_detail_page":
+      return "Deleted from an uploaded file's lead list";
+    case "dashboard_uploads":
+      return "Deleted from Imported Files (dashboard)";
+    default:
+      return source || "-";
+  }
+}
+
 type AppUser = {
   uid: string;
   isActive: boolean;
@@ -94,6 +133,7 @@ export default function LogsPage() {
   const [profile, setProfile] = useState<AppUser | null>(null);
 
   const [messages, setMessages] = useState<MessageLogItem[]>([]);
+  const [deletions, setDeletions] = useState<DeletionLogItem[]>([]);
   const [search, setSearch] = useState("");
   const [errorText, setErrorText] = useState("");
   const [selectedDate, setSelectedDate] = useState(() => todayNYDateString());
@@ -201,6 +241,38 @@ export default function LogsPage() {
         .sort((a, b) => b.sortMs - a.sortMs);
 
       setMessages(rows);
+
+      // Same owner-scoped, same-day pattern as the message query above -
+      // this is the append-only audit trail written by lib/deletionLog.ts
+      // any time a conversation, a single lead, or an upload file record
+      // gets manually deleted (see firestore.rules: create-only, no
+      // update/delete, so this can't be tampered with after the fact).
+      const deletionSnap = await getDocs(
+        query(
+          collection(db, "deletionLogs"),
+          where("ownerUid", "==", currentProfile.uid),
+          where("deletedAt", ">=", start),
+          where("deletedAt", "<", end),
+          orderBy("deletedAt", "desc"),
+          limit(300)
+        )
+      );
+
+      const deletionRows: DeletionLogItem[] = deletionSnap.docs.map((d) => {
+        const data = d.data() as Record<string, any>;
+        return {
+          id: d.id,
+          type: String(data.type || ""),
+          phone: String(data.phone || ""),
+          name: String(data.name || ""),
+          fileName: String(data.fileName || ""),
+          source: String(data.source || ""),
+          createdAtLabel: formatFirestoreDateNY(data.deletedAt),
+          sortMs: toSortMs(data.deletedAt),
+        };
+      });
+
+      setDeletions(deletionRows);
     } catch (error: any) {
       console.error("Failed to load logs", error);
       setErrorText(error?.message || "Failed to load logs.");
@@ -409,6 +481,54 @@ export default function LogsPage() {
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </section>
+
+          <section style={panelStyle}>
+            <div style={panelHeaderStyle}>
+              <div>
+                <h2 style={panelTitleStyle}>Deleted Numbers &amp; Leads</h2>
+                <p style={panelDescStyle}>
+                  Every manual deletion you made on{" "}
+                  {selectedDate === todayNYDateString() ? "today" : selectedDate}
+                  {" "}— conversations, individual leads, and file records.
+                  Permanent, append-only record - nothing here can be edited
+                  or removed after the fact.
+                </p>
+              </div>
+            </div>
+
+            {deletions.length === 0 ? (
+              <EmptyState text="No deletions on this day." />
+            ) : (
+              <div style={cardGridStyle}>
+                {deletions.map((item) => (
+                  <div key={item.id} style={logCardStyle}>
+                    <div style={logCardTopStyle}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={logTitleStyle}>
+                          {item.phone || item.fileName || "-"}
+                        </div>
+                        <div style={logBodyStyle}>
+                          {item.name ? `${item.name} · ` : ""}
+                          {deletionSourceLabel(item.source)}
+                          {item.type === "lead" && item.fileName
+                            ? ` · from ${item.fileName}`
+                            : ""}
+                        </div>
+                      </div>
+
+                      <span style={{ ...outcomeChipStyle, ...deletionChipStyle }}>
+                        {deletionTypeLabel(item.type)}
+                      </span>
+                    </div>
+
+                    <div style={logMetaRowStyle}>
+                      <span>{item.createdAtLabel}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </section>
@@ -879,6 +999,12 @@ const failedChipStyle: CSSProperties = {
   background: "rgba(239, 68, 68, 0.12)",
   color: "#dc2626",
   border: "1px solid rgba(239, 68, 68, 0.25)",
+};
+
+const deletionChipStyle: CSSProperties = {
+  background: "rgba(100, 116, 139, 0.12)",
+  color: "#475569",
+  border: "1px solid rgba(100, 116, 139, 0.25)",
 };
 
 const emptyStateStyle: CSSProperties = {

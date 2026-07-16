@@ -29,6 +29,7 @@ import {
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { auth, db, storage } from "../../../lib/firebase";
 import { formatFirestoreDateNY } from "../../../lib/date";
+import { logDeletion } from "../../../lib/deletionLog";
 import { describeTwilioError } from "../../../lib/twilioErrorCodes";
 
 type MediaMetaItem = {
@@ -725,6 +726,12 @@ export default function ReplyThreadPage({
     try {
       setDeletingThread(true);
       await deleteDoc(doc(db, "conversations", conversationMeta.id));
+      void logDeletion({
+        type: "conversation",
+        phone: conversationMeta.phone,
+        name: conversationMeta.name,
+        source: "thread_page",
+      });
       router.push("/replies");
     } catch (error: any) {
       console.error("Failed to delete conversation", error);

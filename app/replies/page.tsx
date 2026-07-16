@@ -23,6 +23,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
 import { formatFirestoreDateNY } from "../../lib/date";
+import { logDeletion } from "../../lib/deletionLog";
 import { phoneDocId } from "../../lib/phone";
 import {
   enableNotifications,
@@ -987,6 +988,15 @@ export default function RepliesPage() {
 
       await deleteDoc(doc(db, "conversations", itemId));
 
+      if (deletedItem) {
+        void logDeletion({
+          type: "conversation",
+          phone: deletedItem.phone,
+          name: deletedItem.name,
+          source: "replies_list",
+        });
+      }
+
       setItems((prev) => {
         const next = prev.filter((item) => item.id !== itemId);
         if (profileRef.current) {
@@ -1678,21 +1688,6 @@ export default function RepliesPage() {
                     </div>
                   </div>
 
-                  {notifPermission !== "granted" &&
-                  notifPermission !== "unsupported" ? (
-                    <button
-                      type="button"
-                      onClick={() => void handleEnableNotifications()}
-                      disabled={enablingNotifs}
-                      style={enableNotifsBannerStyle}
-                    >
-                      {enablingNotifs
-                        ? "Enabling..."
-                        : notifPermission === "denied"
-                          ? "Notifications blocked - enable in phone Settings"
-                          : "🔔 Enable notifications for new replies"}
-                    </button>
-                  ) : null}
                 </>
               ) : (
                 <div>
@@ -1704,6 +1699,27 @@ export default function RepliesPage() {
                   </p>
                 </div>
               )}
+
+              {/* Previously only ever rendered on mobile, so a desktop user
+                  had no way to see or trigger this at all - the "Allow"
+                  permission prompt only fires from a real click, so it has
+                  to be reachable everywhere someone might be signed in from,
+                  not just the installed phone app. */}
+              {notifPermission !== "granted" &&
+              notifPermission !== "unsupported" ? (
+                <button
+                  type="button"
+                  onClick={() => void handleEnableNotifications()}
+                  disabled={enablingNotifs}
+                  style={enableNotifsBannerStyle}
+                >
+                  {enablingNotifs
+                    ? "Enabling..."
+                    : notifPermission === "denied"
+                      ? "Notifications blocked - enable in Settings"
+                      : "🔔 Enable notifications for new replies"}
+                </button>
+              ) : null}
 
               <div style={heroActionsStyle}>
                 <div style={searchWrapStyle}>

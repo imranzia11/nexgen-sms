@@ -138,5 +138,17 @@ service cloud.firestore {
       allow update: if ownsResource() && ownerUidUnchanged();
       allow delete: if ownsResource();
     }
+
+    // Append-only audit trail of manual deletions (conversations, leads,
+    // upload records) - see lib/deletionLog.ts. Deliberately no update or
+    // delete: once an entry is written, nothing in the app (including the
+    // person who did the deleting) can alter or remove it, so it stays a
+    // trustworthy record of who deleted what and when.
+    match /deletionLogs/{docId} {
+      allow read: if ownsResource();
+      allow create: if ownsNewResource();
+      allow update: if false;
+      allow delete: if false;
+    }
   }
 }

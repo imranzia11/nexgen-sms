@@ -25,6 +25,7 @@ import {
 import Papa from "papaparse";
 import { auth, db } from "../../lib/firebase";
 import { formatFirestoreDateNY } from "../../lib/date";
+import { logDeletion } from "../../lib/deletionLog";
 import LoadingScreen from "../../components/LoadingScreen";
 import RepliesNavBadge from "../../components/RepliesNavBadge";
 
@@ -746,7 +747,13 @@ export default function DashboardPage() {
 
     try {
       setDeletingUploadId(uploadId);
+      const deletedUpload = uploads.find((upload) => upload.id === uploadId);
       await deleteDoc(doc(db, "uploads", uploadId));
+      void logDeletion({
+        type: "upload_record",
+        fileName: deletedUpload?.fileName,
+        source: "dashboard_uploads",
+      });
       setUploads((prev) => prev.filter((upload) => upload.id !== uploadId));
 
       if (selectedUploadId === uploadId) {
