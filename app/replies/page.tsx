@@ -735,7 +735,6 @@ export default function RepliesPage() {
         all,
         pinned,
         rawReplied,
-        pinnedReplied,
         rawAwaiting,
         pinnedAwaiting,
         rawNeverReplied,
@@ -747,12 +746,10 @@ export default function RepliesPage() {
       ] = await Promise.all([
         count(),
         count(where("pinned", "==", true)),
+        // No pinned-overlap counterpart needed here anymore - replied
+        // counts every conversation with an unanswered reply regardless
+        // of pin status (see the comment on `replied:` below).
         count(where("hasReply", "==", true), where("lastDirection", "==", "inbound")),
-        count(
-          where("pinned", "==", true),
-          where("hasReply", "==", true),
-          where("lastDirection", "==", "inbound")
-        ),
         count(where("hasReply", "==", true), where("lastDirection", "==", "outbound")),
         count(
           where("pinned", "==", true),
@@ -770,7 +767,12 @@ export default function RepliesPage() {
       const next: StatCounts = {
         all,
         pinned,
-        replied: Math.max(0, rawReplied - pinnedReplied),
+        // Not subtracting pinnedReplied here (unlike the other categories
+        // below) - an unanswered customer reply should count toward this
+        // number even if the conversation is also pinned. Pinning is a
+        // quick-access shortcut, not a way to make a genuine unread reply
+        // disappear from the count.
+        replied: rawReplied,
         awaiting: Math.max(0, rawAwaiting - pinnedAwaiting),
         neverReplied: Math.max(0, rawNeverReplied - pinnedNeverReplied),
         failed: Math.max(
@@ -1489,6 +1491,10 @@ export default function RepliesPage() {
 
     const nonPinned = searchedItems.filter((item) => !item.pinned);
 
+    // A pinned conversation only ever shows under "Pinned Messages", never
+    // duplicated here too - but it still counts toward the Customer
+    // Replied number/badge/notification (see loadCounts and
+    // useRepliedCount) even while it's excluded from this list.
     if (filterMode === "replied") {
       return nonPinned.filter(
         (item) => item.hasReply && item.lastDirection === "inbound"
