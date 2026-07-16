@@ -20,6 +20,7 @@ import {
   getDocs,
   query,
   serverTimestamp,
+  setDoc,
   where,
 } from "firebase/firestore";
 import Papa from "papaparse";
@@ -428,6 +429,29 @@ export default function DashboardPage() {
         setTwilioNumber(
           String(data.twilioNumber || data.assignedTwilioNumber || "").trim()
         );
+
+        // Restore whatever follow-up settings this user last sent with, so
+        // the checkbox/message/hours don't silently reset to "off" on every
+        // page reload. Without this, a client who turned follow-up on once
+        // has no way of knowing it went back to off the next time they
+        // visit - the send still succeeds normally, so nothing looks wrong.
+        const savedSettings = data.lastFollowUpSettings || {};
+        if (typeof savedSettings.followUpEnabled === "boolean") {
+          setFollowUpEnabled(savedSettings.followUpEnabled);
+        }
+        if (
+          typeof savedSettings.followUpMessage === "string" &&
+          savedSettings.followUpMessage.trim()
+        ) {
+          setFollowUpMessage(savedSettings.followUpMessage);
+        }
+        if (
+          typeof savedSettings.followUpHours === "number" &&
+          savedSettings.followUpHours > 0
+        ) {
+          setFollowUpHours(savedSettings.followUpHours);
+        }
+
         setChecking(false);
       } catch (error) {
         console.error("Failed to validate user access", error);
@@ -770,6 +794,28 @@ export default function DashboardPage() {
     }
   };
 
+  // Remembers whatever follow-up settings were just used (on or off) so the
+  // next visit restores them instead of silently defaulting back to off.
+  // Best-effort: a failure here should never block the send flow the user
+  // is actually waiting on.
+  const persistFollowUpSettings = async (uid: string) => {
+    try {
+      await setDoc(
+        doc(db, "users", uid),
+        {
+          lastFollowUpSettings: {
+            followUpEnabled,
+            followUpMessage,
+            followUpHours,
+          },
+        },
+        { merge: true }
+      );
+    } catch (error) {
+      console.error("Failed to save last follow-up settings (non-fatal)", error);
+    }
+  };
+
   const scheduleFollowUp = async (params: {
     idToken: string;
     campaignName: string;
@@ -918,6 +964,8 @@ export default function DashboardPage() {
         })),
       });
 
+      void persistFollowUpSettings(user.uid);
+
       setCampaignName("");
       setMessage(DEFAULT_SMS_MESSAGE);
       setSelectedTemplateId("");
@@ -1013,6 +1061,8 @@ export default function DashboardPage() {
         fileName: "Single USA Number",
         recipients: [{ name: "", phone: validation.normalized }],
       });
+
+      void persistFollowUpSettings(user.uid);
 
       setSinglePhoneNumber("");
     } catch (error: any) {
