@@ -675,12 +675,33 @@ export default function DashboardPage() {
 
     setMessage(template.smsMessage);
 
+    const nextFollowUpEnabled = template.followUpMessage.trim()
+      ? true
+      : followUpEnabled;
+    const nextFollowUpMessage = template.followUpMessage.trim()
+      ? template.followUpMessage
+      : followUpMessage;
+
     if (template.followUpMessage.trim()) {
       setFollowUpMessage(template.followUpMessage);
       setFollowUpEnabled(true);
     }
 
     showToast(`Loaded "${template.name}" into the message fields.`, "success");
+
+    // Save this choice immediately, not just after the next send - without
+    // this, merely picking a template to look at it (without sending) never
+    // sticks, and reloading the page snaps back to whatever was last
+    // actually sent instead of what was just selected.
+    const uid = auth.currentUser?.uid;
+    if (uid) {
+      void persistFollowUpSettings(uid, {
+        selectedTemplateId: value,
+        message: template.smsMessage,
+        followUpEnabled: nextFollowUpEnabled,
+        followUpMessage: nextFollowUpMessage,
+      });
+    }
   };
 
   const handleCsvUpload = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -819,7 +840,21 @@ export default function DashboardPage() {
   // next visit restores them instead of silently defaulting back to off.
   // Best-effort: a failure here should never block the send flow the user
   // is actually waiting on.
-  const persistFollowUpSettings = async (uid: string) => {
+  const persistFollowUpSettings = async (
+    uid: string,
+    overrides?: Partial<{
+      selectedTemplateId: string;
+      message: string;
+      followUpEnabled: boolean;
+      followUpMessage: string;
+      followUpHours: number;
+    }>
+  ) => {
+    // Accepts overrides because React state setters are async - a caller
+    // that just called setMessage(...)/setFollowUpEnabled(...) a line above
+    // would otherwise read the OLD values here (this closure's `message`/
+    // `followUpEnabled` etc. haven't re-rendered yet). Passing the
+    // just-computed values directly avoids saving stale data.
     try {
       await setDoc(
         doc(db, "users", uid),
@@ -830,6 +865,7 @@ export default function DashboardPage() {
             followUpEnabled,
             followUpMessage,
             followUpHours,
+            ...overrides,
           },
         },
         { merge: true }
@@ -1766,7 +1802,16 @@ export default function DashboardPage() {
                       <input
                         type="checkbox"
                         checked={followUpEnabled}
-                        onChange={(e) => setFollowUpEnabled(e.target.checked)}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setFollowUpEnabled(checked);
+                          const uid = auth.currentUser?.uid;
+                          if (uid) {
+                            void persistFollowUpSettings(uid, {
+                              followUpEnabled: checked,
+                            });
+                          }
+                        }}
                         style={followUpCheckboxStyle}
                       />
                       <div>
@@ -1805,7 +1850,15 @@ export default function DashboardPage() {
                                 <button
                                   key={hours}
                                   type="button"
-                                  onClick={() => setFollowUpHours(hours)}
+                                  onClick={() => {
+                                    setFollowUpHours(hours);
+                                    const uid = auth.currentUser?.uid;
+                                    if (uid) {
+                                      void persistFollowUpSettings(uid, {
+                                        followUpHours: hours,
+                                      });
+                                    }
+                                  }}
                                   style={{
                                     ...followUpHourChipStyle,
                                     ...(active
