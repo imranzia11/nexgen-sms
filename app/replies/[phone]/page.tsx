@@ -236,6 +236,24 @@ export default function ReplyThreadPage({
   const [conversationMeta, setConversationMeta] =
     useState<ConversationMeta | null>(initialCacheEntry?.meta || null);
 
+  // The Message Thread / Send Reply layout below is a fixed two-column CSS
+  // grid ("1.15fr 0.85fr"). On a phone-width viewport that produces a grid
+  // blowout: neither column has a min-width, so their content refuses to
+  // shrink past its own natural width and the whole grid (and page) ends up
+  // wider than the screen - the exact "have to scroll sideways, buttons look
+  // squished, Send Reply panel is cut off" layout reported on mobile.
+  // Collapsing to a single column below the same 880px breakpoint used on
+  // /replies fixes it at the source instead of trying to shrink content to
+  // fit a column it was never going to fit in.
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const MOBILE_BREAKPOINT = 880;
+    const check = () => setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
   function scrollToBottom(smooth = true) {
     requestAnimationFrame(() => {
       threadEndRef.current?.scrollIntoView({
@@ -999,7 +1017,12 @@ export default function ReplyThreadPage({
                 </p>
               </div>
 
-              <div style={heroActionsStyle}>
+              <div
+                style={{
+                  ...heroActionsStyle,
+                  ...(isMobile ? { flexDirection: "column", alignItems: "stretch" } : null),
+                }}
+              >
                 <div style={heroInfoChipStyle}>
                   <span style={heroInfoLabelStyle}>Phone</span>
                   <span style={heroInfoValueStyle}>
@@ -1007,15 +1030,26 @@ export default function ReplyThreadPage({
                   </span>
                 </div>
 
-                <Link href="/replies" style={backButtonStyle}>
+                <Link
+                  href="/replies"
+                  style={{
+                    ...backButtonStyle,
+                    ...(isMobile ? { textAlign: "center" as const } : null),
+                  }}
+                >
                   Back to Replies
                 </Link>
               </div>
             </div>
           </div>
 
-          <div style={mainGridStyle}>
-            <section style={threadPanelStyle}>
+          <div
+            style={{
+              ...mainGridStyle,
+              ...(isMobile ? { gridTemplateColumns: "1fr" } : null),
+            }}
+          >
+            <section style={{ ...threadPanelStyle, minWidth: 0 }}>
               <div style={panelHeaderStyle}>
                 <div>
                   <h2 style={panelTitleStyle}>Message Thread</h2>
@@ -1024,13 +1058,19 @@ export default function ReplyThreadPage({
                   </p>
                 </div>
 
-                <div style={panelHeaderActionsStyle}>
+                <div
+                  style={{
+                    ...panelHeaderActionsStyle,
+                    ...(isMobile ? { width: "100%" } : null),
+                  }}
+                >
                   <button
                     type="button"
                     onClick={() => void handleTogglePin()}
                     disabled={pinning || !conversationMeta}
                     style={{
                       ...pinButtonStyle,
+                      ...(isMobile ? { flex: "1 1 0" } : null),
                       opacity: pinning || !conversationMeta ? 0.6 : 1,
                       cursor:
                         pinning || !conversationMeta
@@ -1051,6 +1091,7 @@ export default function ReplyThreadPage({
                     disabled={deletingThread || !conversationMeta}
                     style={{
                       ...deleteThreadButtonStyle,
+                      ...(isMobile ? { flex: "1 1 0" } : null),
                       opacity: deletingThread || !conversationMeta ? 0.6 : 1,
                       cursor:
                         deletingThread || !conversationMeta
@@ -1063,7 +1104,10 @@ export default function ReplyThreadPage({
 
                   <button
                     onClick={() => void handleManualRefresh()}
-                    style={refreshButtonStyle}
+                    style={{
+                      ...refreshButtonStyle,
+                      ...(isMobile ? { flex: "1 1 0" } : null),
+                    }}
                   >
                     Refresh
                   </button>
@@ -1258,7 +1302,17 @@ export default function ReplyThreadPage({
               )}
             </section>
 
-            <section style={composerPanelStyle}>
+            <section
+              style={{
+                ...composerPanelStyle,
+                minWidth: 0,
+                // Sticky-to-top only makes sense in the two-column desktop
+                // layout, where this panel sits beside a much taller
+                // scrolling thread. Stacked on mobile it would instead
+                // pin itself over the message thread while scrolling.
+                ...(isMobile ? { position: "static" as const, top: undefined } : null),
+              }}
+            >
               <div style={panelHeaderStyle}>
                 <div>
                   <h2 style={panelTitleStyle}>Send Reply</h2>

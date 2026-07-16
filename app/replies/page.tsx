@@ -2059,11 +2059,15 @@ export default function RepliesPage() {
                           {item.name ? (
                             <div style={nameStyle}>{item.name}</div>
                           ) : null}
-                          <div style={timeStyleMobile}>{item.createdAtLabel}</div>
+                          {isMobile ? (
+                            <div style={timeStyleMobile}>{item.createdAtLabel}</div>
+                          ) : null}
                         </div>
 
                         <div style={conversationRightStyle}>
-                          <div style={timeStyle}>{item.createdAtLabel}</div>
+                          {isMobile ? null : (
+                            <div style={timeStyle}>{item.createdAtLabel}</div>
+                          )}
                           <div
                             style={
                               // Manually blocked always wins, regardless of
