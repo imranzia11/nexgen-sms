@@ -63,6 +63,19 @@ type AppUser = {
   messagingServiceSid?: string;
 };
 
+// One pending follow-up (from the `followUps` collection - see
+// app/api/schedule-follow-up/route.ts and app/api/cron/send-followups/
+// route.ts). Deliberately a separate shape from SmsRow: a follow-up isn't a
+// conversation, it's a queued outbound message with its own due time.
+type FollowUpRow = {
+  id: string;
+  phone: string;
+  message: string;
+  campaignName: string;
+  dueAtMs: number;
+  delayHours: number;
+};
+
 type FilterMode =
   | "all"
   | "replied"
@@ -70,7 +83,8 @@ type FilterMode =
   | "never_replied"
   | "pinned"
   | "failed"
-  | "attention";
+  | "attention"
+  | "followups";
 
 // Matches the same failed/undelivered statuses used to render the red
 // error bubble on the /replies/[phone] thread view.
@@ -84,7 +98,8 @@ function isFailedOutboundStatus(status: string) {
 function activeTabCount(
   mode: FilterMode,
   counts: StatCounts,
-  attentionCount: number
+  attentionCount: number,
+  followUpsCount: number = 0
 ): number {
   switch (mode) {
     case "all":
@@ -101,6 +116,8 @@ function activeTabCount(
       return counts.failed;
     case "attention":
       return attentionCount;
+    case "followups":
+      return followUpsCount;
     default:
       return 0;
   }
@@ -124,6 +141,8 @@ function filterModeLabel(mode: FilterMode): string {
       return "Failed / undelivered";
     case "attention":
       return "Attention required";
+    case "followups":
+      return "Follow-ups";
     default:
       return "";
   }
@@ -333,6 +352,34 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
       }
     );
   });
+}
+
+// "Sends in 3h 24m" / "Overdue by 1h 5m" - used on the Follow-Ups tab.
+// Deliberately doesn't hide the overdue case: since nothing currently runs
+// the send-followups cron automatically (see chat/task #82's Cloud
+// Scheduler gap), a follow-up sitting overdue is real, useful information,
+// not a bug in this display.
+function formatFollowUpCountdown(dueAtMs: number, nowMs: number): {
+  label: string;
+  overdue: boolean;
+} {
+  if (!dueAtMs) return { label: "Unknown", overdue: false };
+
+  const diffMs = dueAtMs - nowMs;
+  const overdue = diffMs < 0;
+  const absMs = Math.abs(diffMs);
+
+  const totalMinutes = Math.round(absMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  const duration =
+    hours > 0 ? `${hours}h ${minutes}m` : `${Math.max(minutes, 1)}m`;
+
+  return {
+    label: overdue ? `Overdue by ${duration}` : `Sends in ${duration}`,
+    overdue,
+  };
 }
 
 function truncateText(value: string, max = 110) {
@@ -604,6 +651,26 @@ export default function RepliesPage() {
   // set of per-phone lookups from the manual-block blacklist entries,
   // never a full collection scan.
   const [attentionItems, setAttentionItems] = useState<SmsRow[]>([]);
+
+  // Follow-Ups tab: every `followUps` doc still `status: "pending"` for
+  // this owner, minus any number that's since ended up on the blacklist
+  // (STOP reply, abuse auto-block, or manual block) - those will never
+  // actually be sent (the cron skips blocked numbers at send time), so
+  // showing them here as "sends in 3h" would be misleading. skippedCount
+  // tracks how many were excluded that way, purely for a small "N blocked,
+  // won't send" hint under the stat card/tab.
+  const [followUpItems, setFollowUpItems] = useState<FollowUpRow[]>([]);
+  const [followUpsSkippedCount, setFollowUpsSkippedCount] = useState(0);
+
+  // Ticking clock for the "sends in Xh Ym" / "overdue" countdown text -
+  // updated every 30s, which is plenty granular for a delay measured in
+  // hours and avoids a per-second re-render for a whole list of rows.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const [profile, setProfile] = useState<AppUser | null>(null);
   const [counts, setCounts] = useState<StatCounts>(() => getInitialCounts());
 
@@ -1467,6 +1534,110 @@ export default function RepliesPage() {
     };
   }, [profile]);
 
+  // Follow-Ups tab - dedicated live source, same two-listener/recompute
+  // shape as the main conversations effect further down: one listener on
+  // `followUps` (status=="pending", this owner), one on `blacklisted_numbers`
+  // (status=="blocked", this owner, ANY reason - STOP, abuse, or manual -
+  // since the cron skips a blocked number regardless of why it's blocked).
+  // No orderBy in either query (sorted client-side instead) so this doesn't
+  // need a new Firestore composite index deployed.
+  useEffect(() => {
+    if (!profile) return;
+    const ownerUid = profile.uid;
+
+    let latestFollowUps: Array<{ id: string; data: Record<string, any> }> = [];
+    let latestBlockedPhones: string[] = [];
+    let gotFollowUps = false;
+    let gotBlacklist = false;
+
+    function recompute() {
+      if (!gotFollowUps || !gotBlacklist) return;
+
+      const blockedSet = new Set(
+        latestBlockedPhones.map((phone) => phoneKey(phone))
+      );
+
+      let skipped = 0;
+      const rows: FollowUpRow[] = [];
+
+      latestFollowUps.forEach(({ id, data }) => {
+        const phone = String(data.phone || "").trim();
+        if (!phone) return;
+
+        if (blockedSet.has(phoneKey(phone))) {
+          skipped++;
+          return;
+        }
+
+        const dueAt = data.dueAt;
+        const dueAtMs =
+          typeof dueAt?.toDate === "function"
+            ? dueAt.toDate().getTime()
+            : typeof dueAt?.seconds === "number"
+            ? dueAt.seconds * 1000
+            : 0;
+
+        rows.push({
+          id,
+          phone,
+          message: String(data.followUpMessage || ""),
+          campaignName: String(data.campaignName || ""),
+          dueAtMs,
+          delayHours: Number(data.delayHours || 0),
+        });
+      });
+
+      rows.sort((a, b) => a.dueAtMs - b.dueAtMs);
+
+      setFollowUpItems(rows);
+      setFollowUpsSkippedCount(skipped);
+    }
+
+    const unsubFollowUps = onSnapshot(
+      query(
+        collection(db, "followUps"),
+        where("ownerUid", "==", ownerUid),
+        where("status", "==", "pending")
+      ),
+      (snap) => {
+        latestFollowUps = snap.docs.map((d) => ({
+          id: d.id,
+          data: d.data() as Record<string, any>,
+        }));
+        gotFollowUps = true;
+        recompute();
+      },
+      (error) => {
+        console.error("Follow-Ups listener failed", error);
+        setFollowUpItems([]);
+        setFollowUpsSkippedCount(0);
+      }
+    );
+
+    const unsubBlacklistForFollowUps = onSnapshot(
+      query(
+        collection(db, "blacklisted_numbers"),
+        where("ownerUid", "==", ownerUid),
+        where("status", "==", "blocked")
+      ),
+      (snap) => {
+        latestBlockedPhones = snap.docs
+          .map((d) => String(d.data()?.phone || "").trim())
+          .filter(Boolean);
+        gotBlacklist = true;
+        recompute();
+      },
+      (error) => {
+        console.error("Follow-Ups blacklist listener failed", error);
+      }
+    );
+
+    return () => {
+      unsubFollowUps();
+      unsubBlacklistForFollowUps();
+    };
+  }, [profile]);
+
   useEffect(() => {
     function handleGlobalClick() {
       setOpenMenuId("");
@@ -1700,12 +1871,11 @@ export default function RepliesPage() {
                 </div>
               )}
 
-              {/* Previously only ever rendered on mobile, so a desktop user
-                  had no way to see or trigger this at all - the "Allow"
-                  permission prompt only fires from a real click, so it has
-                  to be reachable everywhere someone might be signed in from,
-                  not just the installed phone app. */}
-              {notifPermission !== "granted" &&
+              {/* Mobile (installed home-screen app) only - the "Allow"
+                  permission prompt is meant for the phone-app experience;
+                  desktop staff aren't expected to install/enable push here. */}
+              {isMobile &&
+              notifPermission !== "granted" &&
               notifPermission !== "unsupported" ? (
                 <button
                   type="button"
@@ -1833,6 +2003,16 @@ export default function RepliesPage() {
                 >
                   ❗ Attention Required
                 </button>
+
+                <button
+                  onClick={() => setFilterMode("followups")}
+                  style={{
+                    ...filterTabStyle,
+                    ...(filterMode === "followups" ? activeFilterTabStyle : {}),
+                  }}
+                >
+                  ⏱ Follow-Ups
+                </button>
               </div>
 
               {isMobile ? (
@@ -1845,7 +2025,12 @@ export default function RepliesPage() {
                 <div>
                   <div style={mobileStatLineStyle}>
                     <span style={mobileStatNumberStyle}>
-                      {activeTabCount(filterMode, counts, attentionItems.length)}
+                      {activeTabCount(
+                        filterMode,
+                        counts,
+                        attentionItems.length,
+                        followUpItems.length
+                      )}
                     </span>
                     <span style={mobileStatLabelStyle}>
                       {filterModeLabel(filterMode).toLowerCase()}
@@ -1854,6 +2039,11 @@ export default function RepliesPage() {
                   {filterMode === "replied" && counts.pinnedReplied > 0 ? (
                     <div style={mobileStatHintStyle}>
                       Includes {counts.pinnedReplied} pinned
+                    </div>
+                  ) : null}
+                  {filterMode === "followups" && followUpsSkippedCount > 0 ? (
+                    <div style={mobileStatHintStyle}>
+                      {followUpsSkippedCount} blocked - won&apos;t send
                     </div>
                   ) : null}
                 </div>
@@ -1883,6 +2073,15 @@ export default function RepliesPage() {
                     label="Attention Required"
                     value={String(attentionItems.length)}
                   />
+                  <StatCard
+                    label="Follow-Ups Pending"
+                    value={String(followUpItems.length)}
+                    hint={
+                      followUpsSkippedCount > 0
+                        ? `${followUpsSkippedCount} blocked - won't send`
+                        : undefined
+                    }
+                  />
                 </div>
               )}
             </div>
@@ -1898,6 +2097,8 @@ export default function RepliesPage() {
                     ? "Failed / Undelivered Messages"
                     : filterMode === "attention"
                     ? "Attention Required"
+                    : filterMode === "followups"
+                    ? "Upcoming Follow-Ups"
                     : "Outbound SMS Activity"}
                 </h2>
                 <p style={panelDescStyle}>
@@ -1907,6 +2108,8 @@ export default function RepliesPage() {
                     ? "Conversations whose most recent outbound message failed to deliver or was reported undelivered by the carrier."
                     : filterMode === "attention"
                     ? "Numbers your team manually blocked. Unblock to resume messaging - a customer's own STOP opt-out is never shown here, those stay fully hidden."
+                    : filterMode === "followups"
+                    ? "Follow-up messages queued from a campaign's follow-up setting, with the time remaining until each one sends. Numbers that have since been blocked are left out - they'll never actually go out."
                     : "Only new conversations with `ownerUid` matching the logged-in user are shown for non-admin accounts."}
                 </p>
               </div>
@@ -1995,7 +2198,25 @@ export default function RepliesPage() {
               </div>
             ) : null}
 
-            {loading ? (
+            {filterMode === "followups" ? (
+              followUpItems.length === 0 ? (
+                <div style={emptyStateStyle}>
+                  <div style={emptyDotStyle} />
+                  <div style={emptyTitleStyle}>No follow-ups scheduled.</div>
+                  <div style={emptyTextStyle}>
+                    {followUpsSkippedCount > 0
+                      ? `${followUpsSkippedCount} follow-up(s) exist but are excluded here since those numbers are already blocked and won't be sent.`
+                      : "Turn on \"Send an automated follow-up message\" from the SMS Portal to queue one."}
+                  </div>
+                </div>
+              ) : (
+                <div style={followUpListStyle}>
+                  {followUpItems.map((item) => (
+                    <FollowUpCard key={item.id} item={item} nowMs={nowMs} />
+                  ))}
+                </div>
+              )
+            ) : loading ? (
               <div style={simpleLoadingStyle}>
                 <span style={listLoadingDotStyle} />
                 <span>Loading SMS activity...</span>
@@ -2226,7 +2447,7 @@ export default function RepliesPage() {
               </div>
             )}
 
-            {filteredItems.length > REPLIES_PAGE_SIZE ? (
+            {filterMode !== "followups" && filteredItems.length > REPLIES_PAGE_SIZE ? (
               <div style={repliesPaginationRowStyle}>
                 <span style={repliesPaginationLabelStyle}>
                   Page {page} of {repliesTotalPages} &middot;{" "}
@@ -2264,7 +2485,8 @@ export default function RepliesPage() {
               </div>
             ) : null}
 
-            {SCOPED_LIST_ENABLED &&
+            {filterMode !== "followups" &&
+            SCOPED_LIST_ENABLED &&
             !isSearching &&
             !loading &&
             !loadError &&
@@ -2301,6 +2523,41 @@ function StatCard({
       <div style={statValueStyle}>{value}</div>
       {hint ? <div style={statHintStyle}>{hint}</div> : null}
     </div>
+  );
+}
+
+function FollowUpCard({ item, nowMs }: { item: FollowUpRow; nowMs: number }) {
+  const countdown = formatFollowUpCountdown(item.dueAtMs, nowMs);
+
+  return (
+    <Link
+      href={`/replies/${encodeURIComponent(item.phone)}`}
+      style={followUpCardStyle}
+    >
+      <div style={followUpTopRowStyle}>
+        <div style={phoneStyle}>{item.phone}</div>
+        <div
+          style={{
+            ...followUpCountdownBadgeStyle,
+            ...(countdown.overdue ? followUpCountdownOverdueStyle : null),
+          }}
+        >
+          {countdown.label}
+        </div>
+      </div>
+
+      {item.campaignName ? (
+        <div style={followUpCampaignStyle}>{item.campaignName}</div>
+      ) : null}
+
+      <div style={messagePreviewStyle}>{truncateText(item.message || "-")}</div>
+
+      {item.delayHours > 0 ? (
+        <div style={followUpDelayStyle}>
+          {item.delayHours} hour{item.delayHours === 1 ? "" : "s"} after send
+        </div>
+      ) : null}
+    </Link>
   );
 }
 
@@ -2968,6 +3225,60 @@ const messagePreviewStyle: CSSProperties = {
   color: "#475569",
   fontSize: 15,
   lineHeight: 1.65,
+};
+
+const followUpListStyle: CSSProperties = {
+  marginTop: 20,
+  display: "grid",
+  gap: 14,
+};
+
+const followUpCardStyle: CSSProperties = {
+  textDecoration: "none",
+  color: "#0f172a",
+  background: "linear-gradient(180deg, #ffffff 0%, #fcfffe 100%)",
+  border: "1px solid rgba(15, 23, 42, 0.06)",
+  borderRadius: 22,
+  padding: 20,
+  display: "block",
+  boxShadow: "0 8px 20px rgba(15, 23, 42, 0.05)",
+};
+
+const followUpTopRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+  flexWrap: "wrap",
+};
+
+const followUpCountdownBadgeStyle: CSSProperties = {
+  background: "rgba(13,148,136,0.10)",
+  color: "#0d9488",
+  fontSize: 12.5,
+  fontWeight: 800,
+  padding: "6px 12px",
+  borderRadius: 999,
+  whiteSpace: "nowrap",
+};
+
+const followUpCountdownOverdueStyle: CSSProperties = {
+  background: "rgba(220,38,38,0.10)",
+  color: "#dc2626",
+};
+
+const followUpCampaignStyle: CSSProperties = {
+  marginTop: 8,
+  color: "#0d9488",
+  fontSize: 13,
+  fontWeight: 700,
+};
+
+const followUpDelayStyle: CSSProperties = {
+  marginTop: 10,
+  color: "#94a3b8",
+  fontSize: 12.5,
+  fontWeight: 600,
 };
 
 const openRowStyle: CSSProperties = {
