@@ -188,6 +188,57 @@ function buildDisplayMedia(msg: MessageItem): MediaMetaItem[] {
   }));
 }
 
+// A real messaging app doesn't stamp every single bubble with a time and a
+// redundant "inbound"/"outbound" label - it shows a centered divider only
+// where it's actually useful: the start of a new day, or after a long
+// enough gap that the time is worth calling out again. Anything closer
+// together than that renders as one visual cluster with no clutter between
+// bubbles, which is what makes a real chat thread feel like a chat thread.
+const CLUSTER_GAP_MS = 10 * 60 * 1000;
+
+function shouldShowDivider(current: MessageItem, previous: MessageItem | undefined) {
+  if (!previous) return true;
+  if (current.createdAtMs - previous.createdAtMs > CLUSTER_GAP_MS) return true;
+  const a = new Date(previous.createdAtMs);
+  const b = new Date(current.createdAtMs);
+  return (
+    a.getFullYear() !== b.getFullYear() ||
+    a.getMonth() !== b.getMonth() ||
+    a.getDate() !== b.getDate()
+  );
+}
+
+function formatDividerLabel(ms: number) {
+  if (!ms) return "";
+  const date = new Date(ms);
+  const now = new Date();
+  const isSameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday =
+    date.getFullYear() === yesterday.getFullYear() &&
+    date.getMonth() === yesterday.getMonth() &&
+    date.getDate() === yesterday.getDate();
+
+  const timePart = date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  if (isSameDay) return timePart;
+  if (isYesterday) return `Yesterday ${timePart}`;
+
+  const datePart = date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+  return `${datePart} ${timePart}`;
+}
+
 export default function ReplyThreadPage({
   params,
 }: {
@@ -253,6 +304,12 @@ export default function ReplyThreadPage({
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
+
+  // iMessage-style mobile layout: Pin/Delete/Refresh move behind a small
+  // "..." menu in the compact top bar instead of three buttons competing
+  // for space with the contact name, matching how a real messaging app
+  // tucks secondary actions away instead of showing them all the time.
+  const [showThreadMenu, setShowThreadMenu] = useState(false);
 
   function scrollToBottom(smooth = true) {
     requestAnimationFrame(() => {
@@ -981,7 +1038,9 @@ export default function ReplyThreadPage({
   const isBlocked = conversationMeta?.blocked === true;
 
   if (checking) {
-    return (
+    return isMobile ? (
+      <div style={imgCheckingScreenStyle}>Checking account access...</div>
+    ) : (
       <main style={pageStyle}>
         <div style={pageWrapStyle}>
           <section style={threadPanelStyle}>
@@ -991,6 +1050,334 @@ export default function ReplyThreadPage({
           </section>
         </div>
       </main>
+    );
+  }
+
+  // iMessage-style phone layout: a compact top bar (back arrow + contact
+  // name + a "..." menu for Pin/Delete/Refresh instead of three competing
+  // buttons), a full-height message scroll area with real chat bubbles
+  // instead of "inbound/outbound" labeled cards, and a fixed bottom
+  // compose bar - the same shape as every native texting app, instead of
+  // the desktop two-column workspace squeezed into one column. Desktop
+  // keeps the existing hero/grid layout untouched below.
+  if (isMobile) {
+    let previousMsg: MessageItem | undefined;
+    const lastOutboundIndex = (() => {
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].direction !== "inbound") return i;
+      }
+      return -1;
+    })();
+
+    return (
+      <div style={imgScreenStyle}>
+        <div style={imgTopBarStyle}>
+          <Link href="/replies" style={imgBackButtonStyle} aria-label="Back to Replies">
+            ‹
+          </Link>
+
+          <div style={imgTitleWrapStyle}>
+            <div style={imgTitleStyle}>
+              {conversationMeta?.name || conversationMeta?.phone || routePhone || "Conversation"}
+            </div>
+            {conversationMeta?.name ? (
+              <div style={imgSubtitleStyle}>{conversationMeta.phone}</div>
+            ) : null}
+          </div>
+
+          <div style={imgMenuWrapStyle}>
+            <button
+              type="button"
+              onClick={() => setShowThreadMenu((v) => !v)}
+              style={imgMenuButtonStyle}
+              aria-label="Conversation options"
+            >
+              •••
+            </button>
+
+            {showThreadMenu ? (
+              <div style={imgMenuDropdownStyle}>
+                <button
+                  type="button"
+                  disabled={pinning || !conversationMeta}
+                  onClick={() => {
+                    setShowThreadMenu(false);
+                    void handleTogglePin();
+                  }}
+                  style={imgMenuItemStyle}
+                >
+                  {pinning
+                    ? "Updating..."
+                    : conversationMeta?.pinned
+                      ? "📌 Unpin"
+                      : "📌 Pin"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowThreadMenu(false);
+                    void handleManualRefresh();
+                  }}
+                  style={imgMenuItemStyle}
+                >
+                  Refresh
+                </button>
+
+                <button
+                  type="button"
+                  disabled={deletingThread || !conversationMeta}
+                  onClick={() => {
+                    setShowThreadMenu(false);
+                    void handleDeleteThread();
+                  }}
+                  style={{ ...imgMenuItemStyle, color: "#dc2626" }}
+                >
+                  {deletingThread ? "Deleting..." : "Delete Conversation"}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div
+          style={imgScrollAreaStyle}
+          onClick={() => {
+            if (showThreadMenu) setShowThreadMenu(false);
+          }}
+        >
+          {loading ? (
+            <div style={imgLoadingStyle}>Loading conversation...</div>
+          ) : messages.length === 0 ? (
+            <div style={imgEmptyStyle}>No messages yet.</div>
+          ) : (
+            <>
+              {messages.map((msg, index) => {
+                const inbound = msg.direction === "inbound";
+                const failed = !inbound && isFailedMessageStatus(msg.status);
+                const displayMedia = buildDisplayMedia(msg);
+                const showDivider = shouldShowDivider(msg, previousMsg);
+                previousMsg = msg;
+
+                return (
+                  <div key={msg.id}>
+                    {showDivider ? (
+                      <div style={imgDividerStyle}>
+                        {formatDividerLabel(msg.createdAtMs)}
+                      </div>
+                    ) : null}
+
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: inbound ? "flex-start" : "flex-end",
+                      }}
+                    >
+                      <div
+                        style={{
+                          ...imgBubbleStyle,
+                          ...(inbound
+                            ? imgInboundBubbleStyle
+                            : failed
+                              ? imgFailedBubbleStyle
+                              : imgOutboundBubbleStyle),
+                        }}
+                      >
+                        {msg.body ? (
+                          <div style={imgBubbleTextStyle}>{msg.body}</div>
+                        ) : null}
+
+                        {displayMedia.length > 0 ? (
+                          <div style={mediaGridStyle}>
+                            {displayMedia.map((item, mIndex) => {
+                              const kind = getMediaKind(item.url, item.contentType);
+
+                              if (kind === "image") {
+                                return (
+                                  <a
+                                    key={`${msg.id}-media-${mIndex}`}
+                                    href={item.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={mediaLinkResetStyle}
+                                  >
+                                    <img
+                                      src={item.url}
+                                      alt={`attachment-${mIndex + 1}`}
+                                      style={imageAttachmentStyle}
+                                    />
+                                  </a>
+                                );
+                              }
+
+                              if (kind === "video") {
+                                return (
+                                  <video
+                                    key={`${msg.id}-media-${mIndex}`}
+                                    controls
+                                    playsInline
+                                    preload="metadata"
+                                    style={videoAttachmentStyle}
+                                  >
+                                    <source
+                                      src={item.url}
+                                      type={item.contentType || undefined}
+                                    />
+                                  </video>
+                                );
+                              }
+
+                              if (kind === "audio") {
+                                return (
+                                  <div
+                                    key={`${msg.id}-media-${mIndex}`}
+                                    style={fileAttachmentStyle}
+                                  >
+                                    <div style={fileBadgeStyle}>Audio</div>
+                                    <audio controls preload="metadata" style={audioAttachmentStyle}>
+                                      <source
+                                        src={item.url}
+                                        type={item.contentType || undefined}
+                                      />
+                                    </audio>
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <div
+                                  key={`${msg.id}-media-${mIndex}`}
+                                  style={fileAttachmentStyle}
+                                >
+                                  <div style={fileBadgeStyle}>Attachment</div>
+                                  <a
+                                    href={item.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={fileLinkStyle}
+                                  >
+                                    Open file {mIndex + 1}
+                                  </a>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+
+                        {failed ? (
+                          <div style={imgBubbleErrorStyle}>
+                            {describeTwilioError(msg.errorCode, msg.error)}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {!inbound && !failed && index === lastOutboundIndex && msg.status ? (
+                      <div style={imgDeliveredStyle}>
+                        {msg.status === "delivered"
+                          ? "Delivered"
+                          : msg.status === "read"
+                            ? "Read"
+                            : msg.status}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+
+              <div ref={threadEndRef} />
+            </>
+          )}
+        </div>
+
+        <div style={imgInputBarWrapStyle}>
+          {isBlocked ? (
+            <div style={imgBlockedBannerStyle}>
+              This number is blocked - unblock it from the ⋯ menu on the
+              Replies list to send messages.
+            </div>
+          ) : null}
+
+          {status ? <div style={imgStatusStyle}>{status}</div> : null}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,video/*,audio/*,.pdf"
+            onChange={handleFileChange}
+            style={{ display: "none" }}
+          />
+
+          {uploadedMedia.length > 0 ? (
+            <div style={imgUploadedRowStyle}>
+              {uploadedMedia.map((item) => (
+                <div key={item.url} style={imgUploadedChipStyle}>
+                  <span style={imgUploadedNameStyle}>{item.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveUploadedMedia(item.url)}
+                    style={imgUploadedRemoveStyle}
+                    aria-label={`Remove ${item.name}`}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <div style={imgInputRowStyle}>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingMedia || isBlocked}
+              style={{
+                ...imgAttachButtonStyle,
+                opacity: uploadingMedia || isBlocked ? 0.5 : 1,
+              }}
+              aria-label="Attach photo or file"
+            >
+              {uploadingMedia ? "…" : "+"}
+            </button>
+
+            <textarea
+              value={replyBody}
+              onChange={(e) => setReplyBody(e.target.value)}
+              rows={1}
+              placeholder={isBlocked ? "This number is blocked" : "Text Message"}
+              disabled={isBlocked}
+              style={{
+                ...imgTextInputStyle,
+                ...(isBlocked ? disabledFieldStyle : null),
+              }}
+            />
+
+            <button
+              type="button"
+              onClick={handleSendReply}
+              disabled={
+                isBlocked ||
+                sending ||
+                uploadingMedia ||
+                (!replyBody.trim() && uploadedMedia.length === 0)
+              }
+              style={{
+                ...imgSendButtonStyle,
+                opacity:
+                  isBlocked ||
+                  sending ||
+                  uploadingMedia ||
+                  (!replyBody.trim() && uploadedMedia.length === 0)
+                    ? 0.4
+                    : 1,
+              }}
+              aria-label="Send message"
+            >
+              ↑
+            </button>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -1469,6 +1856,325 @@ function MiniInfoCard({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+// --- iMessage-style mobile layout -------------------------------------
+// A dedicated set of styles for the phone-width thread view (isMobile),
+// separate from the desktop hero/grid styles below. Kept as its own block
+// rather than reusing/overloading the desktop styles because the two
+// layouts are structurally different (fixed full-screen chat vs. a
+// scrolling two-column workspace), not just a resize of the same thing.
+
+const imgCheckingScreenStyle: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "#ffffff",
+  color: "#64748b",
+  fontSize: 14,
+  fontWeight: 600,
+};
+
+const imgScreenStyle: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  display: "flex",
+  flexDirection: "column",
+  background: "#e9e9eb",
+  overflow: "hidden",
+};
+
+const imgTopBarStyle: CSSProperties = {
+  flexShrink: 0,
+  display: "flex",
+  alignItems: "center",
+  gap: 4,
+  padding: "max(10px, env(safe-area-inset-top)) 8px 10px 8px",
+  background: "rgba(255,255,255,0.94)",
+  borderBottom: "1px solid rgba(15,23,42,0.08)",
+  backdropFilter: "blur(10px)",
+};
+
+const imgBackButtonStyle: CSSProperties = {
+  flexShrink: 0,
+  width: 36,
+  height: 36,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontSize: 28,
+  lineHeight: 1,
+  color: "#0d9488",
+  textDecoration: "none",
+};
+
+const imgTitleWrapStyle: CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  textAlign: "center",
+};
+
+const imgTitleStyle: CSSProperties = {
+  fontSize: 15,
+  fontWeight: 800,
+  color: "#0f172a",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const imgSubtitleStyle: CSSProperties = {
+  marginTop: 1,
+  fontSize: 12,
+  color: "#64748b",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const imgMenuWrapStyle: CSSProperties = {
+  position: "relative",
+  flexShrink: 0,
+};
+
+const imgMenuButtonStyle: CSSProperties = {
+  width: 36,
+  height: 36,
+  border: "none",
+  background: "transparent",
+  color: "#0d9488",
+  fontSize: 16,
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const imgMenuDropdownStyle: CSSProperties = {
+  position: "absolute",
+  top: 40,
+  right: 0,
+  zIndex: 5,
+  minWidth: 190,
+  background: "#ffffff",
+  borderRadius: 14,
+  boxShadow: "0 12px 32px rgba(15,23,42,0.22)",
+  border: "1px solid rgba(15,23,42,0.08)",
+  overflow: "hidden",
+};
+
+const imgMenuItemStyle: CSSProperties = {
+  display: "block",
+  width: "100%",
+  textAlign: "left",
+  padding: "12px 16px",
+  border: "none",
+  borderBottom: "1px solid rgba(15,23,42,0.06)",
+  background: "#ffffff",
+  color: "#0f172a",
+  fontSize: 14,
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const imgScrollAreaStyle: CSSProperties = {
+  flex: 1,
+  minHeight: 0,
+  overflowY: "auto",
+  WebkitOverflowScrolling: "touch",
+  padding: "14px 12px",
+};
+
+const imgLoadingStyle: CSSProperties = {
+  textAlign: "center",
+  marginTop: 40,
+  color: "#64748b",
+  fontSize: 14,
+  fontWeight: 600,
+};
+
+const imgEmptyStyle: CSSProperties = {
+  textAlign: "center",
+  marginTop: 40,
+  color: "#94a3b8",
+  fontSize: 14,
+  fontWeight: 600,
+};
+
+const imgDividerStyle: CSSProperties = {
+  textAlign: "center",
+  margin: "14px 0 8px",
+  color: "#8e8e93",
+  fontSize: 12,
+  fontWeight: 600,
+};
+
+const imgBubbleStyle: CSSProperties = {
+  maxWidth: "78%",
+  margin: "2px 0",
+  padding: "9px 14px",
+  fontSize: 15.5,
+  lineHeight: 1.35,
+  wordBreak: "break-word",
+};
+
+const imgInboundBubbleStyle: CSSProperties = {
+  background: "#ffffff",
+  color: "#0f172a",
+  borderRadius: "18px 18px 18px 4px",
+  boxShadow: "0 1px 1px rgba(15,23,42,0.06)",
+};
+
+const imgOutboundBubbleStyle: CSSProperties = {
+  background: "#0d9488",
+  color: "#ffffff",
+  borderRadius: "18px 18px 4px 18px",
+};
+
+const imgFailedBubbleStyle: CSSProperties = {
+  background: "#fee2e2",
+  color: "#991b1b",
+  borderRadius: "18px 18px 4px 18px",
+  border: "1px solid rgba(220,38,38,0.25)",
+};
+
+const imgBubbleTextStyle: CSSProperties = {
+  whiteSpace: "pre-wrap",
+};
+
+const imgBubbleErrorStyle: CSSProperties = {
+  marginTop: 6,
+  fontSize: 12.5,
+  fontWeight: 700,
+};
+
+const imgDeliveredStyle: CSSProperties = {
+  textAlign: "right",
+  marginTop: 2,
+  marginRight: 4,
+  color: "#8e8e93",
+  fontSize: 11.5,
+  fontWeight: 600,
+};
+
+const imgInputBarWrapStyle: CSSProperties = {
+  flexShrink: 0,
+  background: "rgba(255,255,255,0.96)",
+  borderTop: "1px solid rgba(15,23,42,0.08)",
+  padding: "8px 10px max(8px, env(safe-area-inset-bottom)) 10px",
+  backdropFilter: "blur(10px)",
+};
+
+const imgBlockedBannerStyle: CSSProperties = {
+  marginBottom: 8,
+  padding: "10px 12px",
+  borderRadius: 12,
+  background: "#fef2f2",
+  border: "1px solid rgba(220,38,38,0.2)",
+  color: "#b91c1c",
+  fontSize: 12.5,
+  fontWeight: 700,
+  lineHeight: 1.4,
+};
+
+const imgStatusStyle: CSSProperties = {
+  marginBottom: 8,
+  padding: "8px 12px",
+  borderRadius: 12,
+  background: "#f1f5f9",
+  color: "#0f172a",
+  fontSize: 12.5,
+  fontWeight: 600,
+};
+
+const imgUploadedRowStyle: CSSProperties = {
+  display: "flex",
+  gap: 6,
+  flexWrap: "wrap",
+  marginBottom: 8,
+};
+
+const imgUploadedChipStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "6px 10px",
+  borderRadius: 999,
+  background: "#f1f5f9",
+  border: "1px solid rgba(15,23,42,0.08)",
+};
+
+const imgUploadedNameStyle: CSSProperties = {
+  fontSize: 12,
+  fontWeight: 700,
+  color: "#0f172a",
+  maxWidth: 140,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const imgUploadedRemoveStyle: CSSProperties = {
+  border: "none",
+  background: "transparent",
+  color: "#64748b",
+  fontSize: 16,
+  lineHeight: 1,
+  cursor: "pointer",
+  padding: 0,
+};
+
+const imgInputRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "flex-end",
+  gap: 8,
+};
+
+const imgAttachButtonStyle: CSSProperties = {
+  flexShrink: 0,
+  width: 34,
+  height: 34,
+  borderRadius: "50%",
+  border: "1px solid rgba(15,23,42,0.12)",
+  background: "#ffffff",
+  color: "#0d9488",
+  fontSize: 20,
+  fontWeight: 800,
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+const imgTextInputStyle: CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  maxHeight: 110,
+  resize: "none",
+  borderRadius: 20,
+  border: "1px solid rgba(15,23,42,0.14)",
+  padding: "8px 14px",
+  background: "#ffffff",
+  color: "#0f172a",
+  fontSize: 15,
+  lineHeight: 1.35,
+  outline: "none",
+};
+
+const imgSendButtonStyle: CSSProperties = {
+  flexShrink: 0,
+  width: 34,
+  height: 34,
+  borderRadius: "50%",
+  border: "none",
+  background: "#0d9488",
+  color: "#ffffff",
+  fontSize: 16,
+  fontWeight: 900,
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
 
 const pageStyle: CSSProperties = {
   minHeight: "100vh",
