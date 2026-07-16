@@ -1150,6 +1150,14 @@ export default function RepliesPage() {
       });
 
       setOpenMenuId("");
+      // Missing here before: every sibling handler (unblock, delete, bulk
+      // follow-up) calls loadCounts() right after its write so the stat
+      // cards refresh immediately. This one didn't, so the row would move
+      // tabs instantly (optimistic local state) while the Pinned/Customer
+      // Replied numbers at the top stayed stale until something unrelated
+      // happened to trigger a recount - exactly the "counts don't match
+      // what's in the list" symptom seen after pinning/unpinning.
+      if (profileRef.current) void loadCounts(profileRef.current.uid);
     } catch (error) {
       console.error("Failed to toggle pin", error);
       alert("Failed to update pin status.");
