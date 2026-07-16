@@ -1069,12 +1069,26 @@ export default function ReplyThreadPage({
       return -1;
     })();
 
+    const contactInitials = conversationMeta?.name
+      ? conversationMeta.name
+          .trim()
+          .split(/\s+/)
+          .slice(0, 2)
+          .map((word) => word[0])
+          .join("")
+          .toUpperCase()
+      : "";
+
     return (
       <div style={imgScreenStyle}>
         <div style={imgTopBarStyle}>
           <Link href="/replies" style={imgBackButtonStyle} aria-label="Back to Replies">
             ‹
           </Link>
+
+          <div style={imgAvatarStyle}>
+            {contactInitials || "💬"}
+          </div>
 
           <div style={imgTitleWrapStyle}>
             <div style={imgTitleStyle}>
@@ -1170,9 +1184,19 @@ export default function ReplyThreadPage({
                     <div
                       style={{
                         display: "flex",
+                        width: "100%",
+                        minWidth: 0,
+                        alignItems: "flex-end",
+                        gap: 6,
                         justifyContent: inbound ? "flex-start" : "flex-end",
                       }}
                     >
+                      {inbound ? (
+                        <div style={imgMessageAvatarStyle}>
+                          {contactInitials || "💬"}
+                        </div>
+                      ) : null}
+
                       <div
                         style={{
                           ...imgBubbleStyle,
@@ -1881,7 +1905,12 @@ const imgScreenStyle: CSSProperties = {
   inset: 0,
   display: "flex",
   flexDirection: "column",
-  background: "#e9e9eb",
+  // Soft cyan-to-slate wash instead of flat iMessage gray - matches the
+  // same gradient family used on every other page (pageStyle/heroStyle)
+  // so this reads as "the fintech app's chat view", not a generic Messages
+  // clone dropped into an otherwise branded product.
+  background:
+    "linear-gradient(180deg, #ecfeff 0%, #f1f5f9 45%, #f1f5f9 100%)",
   overflow: "hidden",
 };
 
@@ -1889,16 +1918,17 @@ const imgTopBarStyle: CSSProperties = {
   flexShrink: 0,
   display: "flex",
   alignItems: "center",
-  gap: 4,
-  padding: "max(10px, env(safe-area-inset-top)) 8px 10px 8px",
-  background: "rgba(255,255,255,0.94)",
-  borderBottom: "1px solid rgba(15,23,42,0.08)",
+  gap: 10,
+  padding: "max(10px, env(safe-area-inset-top)) 10px 12px 8px",
+  background: "rgba(255,255,255,0.9)",
+  borderBottom: "1px solid rgba(13,148,136,0.12)",
   backdropFilter: "blur(10px)",
+  boxShadow: "0 1px 0 rgba(15,23,42,0.02)",
 };
 
 const imgBackButtonStyle: CSSProperties = {
   flexShrink: 0,
-  width: 36,
+  width: 32,
   height: 36,
   display: "flex",
   alignItems: "center",
@@ -1909,10 +1939,25 @@ const imgBackButtonStyle: CSSProperties = {
   textDecoration: "none",
 };
 
+const imgAvatarStyle: CSSProperties = {
+  flexShrink: 0,
+  width: 34,
+  height: 34,
+  borderRadius: "50%",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)",
+  color: "#ffffff",
+  fontSize: 13,
+  fontWeight: 800,
+  letterSpacing: 0.2,
+};
+
 const imgTitleWrapStyle: CSSProperties = {
   flex: 1,
   minWidth: 0,
-  textAlign: "center",
+  textAlign: "left",
 };
 
 const imgTitleStyle: CSSProperties = {
@@ -1941,10 +1986,11 @@ const imgMenuWrapStyle: CSSProperties = {
 const imgMenuButtonStyle: CSSProperties = {
   width: 36,
   height: 36,
+  borderRadius: "50%",
   border: "none",
-  background: "transparent",
+  background: "rgba(13,148,136,0.08)",
   color: "#0d9488",
-  fontSize: 16,
+  fontSize: 15,
   fontWeight: 900,
   cursor: "pointer",
 };
@@ -1978,8 +2024,17 @@ const imgMenuItemStyle: CSSProperties = {
 
 const imgScrollAreaStyle: CSSProperties = {
   flex: 1,
+  // Both dimensions matter here: minHeight:0 lets this flex item shrink to
+  // fit the column instead of growing with its content's natural height,
+  // and minWidth:0 does the same on the cross axis - without it, a long
+  // unbroken bubble could make this whole flex item (and everything in it)
+  // wider than the screen, which is exactly what clipped bubbles/text at
+  // the right edge and required a sideways scroll to see the rest.
   minHeight: 0,
+  minWidth: 0,
+  width: "100%",
   overflowY: "auto",
+  overflowX: "hidden",
   WebkitOverflowScrolling: "touch",
   padding: "14px 12px",
 };
@@ -2000,40 +2055,65 @@ const imgEmptyStyle: CSSProperties = {
   fontWeight: 600,
 };
 
+// Plain centered text, no pill/chip background - matches the simple
+// "Yesterday" / "Today" dividers real messaging apps use, rather than a
+// styled badge calling attention to itself.
 const imgDividerStyle: CSSProperties = {
   textAlign: "center",
-  margin: "14px 0 8px",
-  color: "#8e8e93",
-  fontSize: 12,
+  margin: "16px 0 10px",
+  color: "#9ca3af",
+  fontSize: 12.5,
   fontWeight: 600,
 };
 
+const imgMessageAvatarStyle: CSSProperties = {
+  flexShrink: 0,
+  width: 26,
+  height: 26,
+  borderRadius: "50%",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)",
+  color: "#ffffff",
+  fontSize: 10.5,
+  fontWeight: 800,
+};
+
 const imgBubbleStyle: CSSProperties = {
-  maxWidth: "78%",
+  maxWidth: "72%",
+  minWidth: 0,
   margin: "2px 0",
-  padding: "9px 14px",
+  padding: "11px 16px",
   fontSize: 15.5,
-  lineHeight: 1.35,
+  lineHeight: 1.4,
   wordBreak: "break-word",
+  overflowWrap: "anywhere",
+  // Uniform, generously rounded corners on every side - a real chat "tail"
+  // (one sharp corner pointing at the sender) reads as iMessage specifically;
+  // fully-rounded bubbles are the more neutral, friendly shape most other
+  // messaging apps use.
+  borderRadius: 20,
 };
 
 const imgInboundBubbleStyle: CSSProperties = {
-  background: "#ffffff",
+  background: "#f0f0f0",
   color: "#0f172a",
-  borderRadius: "18px 18px 18px 4px",
-  boxShadow: "0 1px 1px rgba(15,23,42,0.06)",
 };
 
 const imgOutboundBubbleStyle: CSSProperties = {
-  background: "#0d9488",
+  background: "linear-gradient(135deg, #0f766e 0%, #0d9488 55%, #14b8a6 100%)",
   color: "#ffffff",
-  borderRadius: "18px 18px 4px 18px",
+  // A soft halo around the bubble instead of a hard shadow underneath -
+  // the gentle "glow" look real chat apps use to make the sent bubble
+  // feel like it belongs to the brand color, not just a colored box.
+  boxShadow:
+    "0 0 0 3px rgba(13,148,136,0.10), 0 3px 10px rgba(13,148,136,0.25)",
 };
 
 const imgFailedBubbleStyle: CSSProperties = {
   background: "#fee2e2",
   color: "#991b1b",
-  borderRadius: "18px 18px 4px 18px",
   border: "1px solid rgba(220,38,38,0.25)",
 };
 
@@ -2059,7 +2139,8 @@ const imgDeliveredStyle: CSSProperties = {
 const imgInputBarWrapStyle: CSSProperties = {
   flexShrink: 0,
   background: "rgba(255,255,255,0.96)",
-  borderTop: "1px solid rgba(15,23,42,0.08)",
+  borderTop: "1px solid rgba(13,148,136,0.12)",
+  boxShadow: "0 -2px 12px rgba(15,23,42,0.04)",
   padding: "8px 10px max(8px, env(safe-area-inset-bottom)) 10px",
   backdropFilter: "blur(10px)",
 };
@@ -2134,8 +2215,8 @@ const imgAttachButtonStyle: CSSProperties = {
   width: 34,
   height: 34,
   borderRadius: "50%",
-  border: "1px solid rgba(15,23,42,0.12)",
-  background: "#ffffff",
+  border: "1px solid rgba(13,148,136,0.18)",
+  background: "rgba(13,148,136,0.08)",
   color: "#0d9488",
   fontSize: 20,
   fontWeight: 800,
@@ -2151,9 +2232,9 @@ const imgTextInputStyle: CSSProperties = {
   maxHeight: 110,
   resize: "none",
   borderRadius: 20,
-  border: "1px solid rgba(15,23,42,0.14)",
-  padding: "8px 14px",
-  background: "#ffffff",
+  border: "1px solid rgba(15,23,42,0.12)",
+  padding: "9px 15px",
+  background: "#f8fafc",
   color: "#0f172a",
   fontSize: 15,
   lineHeight: 1.35,
@@ -2166,7 +2247,7 @@ const imgSendButtonStyle: CSSProperties = {
   height: 34,
   borderRadius: "50%",
   border: "none",
-  background: "#0d9488",
+  background: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)",
   color: "#ffffff",
   fontSize: 16,
   fontWeight: 900,
@@ -2174,6 +2255,7 @@ const imgSendButtonStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
+  boxShadow: "0 2px 6px rgba(13,148,136,0.35)",
 };
 
 const pageStyle: CSSProperties = {
