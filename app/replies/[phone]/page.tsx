@@ -401,7 +401,7 @@ export default function ReplyThreadPage({
       );
       return meta;
     } catch (error: any) {
-      console.error(error);
+      console.error("[loadConversationMeta]", error);
       setStatus(error?.message || "Failed to load conversation.");
       return null;
     }
@@ -593,7 +593,7 @@ export default function ReplyThreadPage({
         console.error("Legacy message fallback check failed", legacyError);
       }
     } catch (error: any) {
-      console.error(error);
+      console.error("[loadThreadOnce]", error);
       setStatus(error?.message || "Failed to refresh conversation.");
       setMessages([]);
       setLoading(false);
@@ -787,11 +787,11 @@ export default function ReplyThreadPage({
             await refreshFromThreadChange();
           },
           (error: any) => {
-            console.error(error);
+            console.error("[messages onSnapshot]", error);
           }
         );
       } catch (error: any) {
-        console.error(error);
+        console.error("[auth-gate outer catch]", error);
         setStatus(error?.message || "Failed to load conversation.");
         setMessages([]);
         setLoading(false);
@@ -839,7 +839,7 @@ export default function ReplyThreadPage({
 
       setStatus("Media uploaded.");
     } catch (error: any) {
-      console.error(error);
+      console.error("[handleFileChange]", error);
       setStatus(error?.message || "Failed to upload media.");
     } finally {
       setUploadingMedia(false);
@@ -914,7 +914,7 @@ export default function ReplyThreadPage({
         scrollToBottom(true);
       }, 150);
     } catch (error: any) {
-      console.error(error);
+      console.error("[handleSend]", error);
       setStatus(error?.message || "Failed to send reply.");
     } finally {
       setSending(false);
