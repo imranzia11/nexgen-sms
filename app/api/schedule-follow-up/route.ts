@@ -21,9 +21,19 @@ async function getUserFromRequest(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  // Declared here (not inside the try block) so the catch block below can
+  // still reference whatever was known at the point of failure, for the
+  // error log - see task #82: 3 of 4 follow-up-enabled sends on one
+  // account silently failed to create any followUps doc, with nothing
+  // recording why. A toast the user might not have seen was the only
+  // trace; this gives it a permanent, queryable record instead.
+  let uid: string | undefined;
+  let campaignNameForLog: string | undefined;
+  let recipientCountForLog: number | undefined;
+
   try {
     const decodedUser = await getUserFromRequest(req);
-    const uid = decodedUser.uid;
+    uid = decodedUser.uid;
 
     const userSnap = await adminDb.collection("users").doc(uid).get();
 
@@ -64,6 +74,9 @@ export async function POST(req: NextRequest) {
       delayHours?: number;
       recipients?: Recipient[];
     } = body;
+
+    campaignNameForLog = campaignName;
+    recipientCountForLog = Array.isArray(recipients) ? recipients.length : 0;
 
     if (!message?.trim()) {
       return NextResponse.json(
@@ -204,8 +217,32 @@ export async function POST(req: NextRequest) {
       dueAt: dueAt.toISOString(),
     });
   } catch (err: any) {
+    const errorMessage = err?.message || "Failed to schedule follow-up.";
+    console.error("schedule-follow-up failed", { uid, errorMessage });
+
+    // Best-effort, append-only log so a silent failure like this is
+    // traceable afterward - not just a toast the user may have missed. A
+    // logging problem here must never mask the real error being returned
+    // to the client below.
+    if (uid) {
+      try {
+        await adminDb.collection("followUpScheduleErrors").add({
+          ownerUid: uid,
+          error: errorMessage,
+          campaignName: campaignNameForLog || "",
+          recipientCount: recipientCountForLog ?? 0,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      } catch (logError) {
+        console.error(
+          "schedule-follow-up: failed to write error log (non-fatal)",
+          logError
+        );
+      }
+    }
+
     return NextResponse.json(
-      { ok: false, error: err?.message || "Failed to schedule follow-up." },
+      { ok: false, error: errorMessage },
       { status: 500 }
     );
   }

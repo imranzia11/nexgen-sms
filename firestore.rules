@@ -139,6 +139,17 @@ service cloud.firestore {
       allow delete: if ownsResource();
     }
 
+    // Server-only error log for /api/schedule-follow-up failures (see
+    // task #82 - 3 of 4 follow-up-enabled sends on one account silently
+    // failed with no trace). Only the Admin SDK ever writes these
+    // (bypasses rules entirely), so create/update/delete are all closed
+    // to clients - only read is allowed, for a possible future "Logs" page
+    // surface.
+    match /followUpScheduleErrors/{docId} {
+      allow read: if ownsResource();
+      allow create, update, delete: if false;
+    }
+
     // Append-only audit trail of manual deletions (conversations, leads,
     // upload records) - see lib/deletionLog.ts. Deliberately no update or
     // delete: once an entry is written, nothing in the app (including the
