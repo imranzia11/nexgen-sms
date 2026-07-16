@@ -24,8 +24,13 @@ const messaging = firebase.messaging();
 // actual "WhatsApp-like" alert (sound + banner) comes from the OS itself
 // once we call showNotification below; nothing here plays a sound directly.
 messaging.onBackgroundMessage((payload) => {
-  const title = payload.notification?.title || "New reply";
-  const body = payload.notification?.body || "";
+  // Reads title/body from `data`, not `payload.notification` - the server
+  // (lib/pushNotify.ts) deliberately sends a data-only message. A
+  // top-level/webpush `notification` field would make the browser
+  // auto-display its own system notification in addition to the
+  // showNotification() call below, doubling the banner and sound.
+  const title = payload.data?.title || "New reply";
+  const body = payload.data?.body || "";
   const badgeCount = Number(payload.data?.badgeCount || 0);
   const link = payload.fcmOptions?.link || payload.data?.link || "/login?next=/replies";
 

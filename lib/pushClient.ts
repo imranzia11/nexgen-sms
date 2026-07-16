@@ -90,8 +90,13 @@ export function listenForForegroundReplies(onNavigate?: (link: string) => void) 
     try {
       const messaging = getMessaging(app);
       unsubscribe = onMessage(messaging, (payload) => {
-        const title = payload.notification?.title || "New reply";
-        const body = payload.notification?.body || "";
+        // Reads from `data`, not `payload.notification` - see the comment
+        // in lib/pushNotify.ts: the server sends a data-only message on
+        // purpose so this handler is the only thing that ever displays a
+        // notification in the foreground (a `notification` field would
+        // make the browser auto-display one too, doubling the sound).
+        const title = payload.data?.title || "New reply";
+        const body = payload.data?.body || "";
         const badgeCount = Number(payload.data?.badgeCount || 0);
         const link =
           (payload.fcmOptions as any)?.link ||

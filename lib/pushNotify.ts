@@ -71,16 +71,17 @@ export async function notifyOwnerOfReply(opts: {
     const title = opts.customerName || opts.fromPhone || "New reply";
     const body = truncate(opts.previewText || "Sent a message");
 
+    // Deliberately data-only - no top-level `notification` and no
+    // `webpush.notification` field. Either of those makes the browser's own
+    // push layer auto-display a system notification on top of the manual
+    // showNotification()/new Notification() calls already made by the
+    // service worker (background) and listenForForegroundReplies
+    // (foreground) below - resulting in two banners and two sounds for one
+    // customer reply. Sending data-only means those two handlers are the
+    // only thing that ever displays anything, so it fires exactly once.
     const response = await adminMessaging.sendEachForMulticast({
       tokens,
-      notification: { title, body },
       webpush: {
-        notification: {
-          title,
-          body,
-          icon: "/icons/icon-192.png",
-          badge: "/icons/icon-192.png",
-        },
         fcmOptions: {
           link: `/login?next=${encodeURIComponent(`/replies/${opts.fromPhone}`)}`,
         },
@@ -89,6 +90,8 @@ export async function notifyOwnerOfReply(opts: {
         },
       },
       data: {
+        title,
+        body,
         badgeCount: String(badgeCount),
         conversationId: opts.conversationId,
         phone: opts.fromPhone,
