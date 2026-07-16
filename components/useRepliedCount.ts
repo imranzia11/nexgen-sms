@@ -7,8 +7,10 @@ import { auth, db } from "../lib/firebase";
 
 // Live-ish count of conversations where the customer's most recent message
 // is a reply we haven't followed up on yet (mirrors the "Customer Replied"
-// stat on /replies: !pinned && hasReply && lastDirection === "inbound").
-// Powers the notification badge on the "Replies" nav card across pages.
+// stat on /replies: hasReply && lastDirection === "inbound" - pin status
+// doesn't exclude it; pinning is a quick-access shortcut, not a way to
+// make a genuine unread reply stop counting). Powers the notification
+// badge on the "Replies" nav card across pages.
 //
 // This used to keep a permanent onSnapshot listener open on the entire
 // conversations collection (plus a second one on blacklisted_numbers, to
@@ -44,20 +46,13 @@ export function useRepliedCount() {
           return snap.data().count;
         };
 
-        const [raw, pinnedOverlap] = await Promise.all([
-          countQuery(
-            where("hasReply", "==", true),
-            where("lastDirection", "==", "inbound")
-          ),
-          countQuery(
-            where("pinned", "==", true),
-            where("hasReply", "==", true),
-            where("lastDirection", "==", "inbound")
-          ),
-        ]);
+        const raw = await countQuery(
+          where("hasReply", "==", true),
+          where("lastDirection", "==", "inbound")
+        );
 
         if (!cancelled) {
-          setCount(Math.max(0, raw - pinnedOverlap));
+          setCount(raw);
         }
       } catch (error) {
         console.error("Failed to load replied count", error);

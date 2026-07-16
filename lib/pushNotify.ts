@@ -17,36 +17,24 @@ function truncate(value: string, max = 90) {
 }
 
 // Mirrors the exact "Customer Replied" definition already used by the nav
-// badge (components/useRepliedCount.ts) - not pinned, has an unanswered
-// inbound reply, not blocked - so the OS badge number always matches what
-// the app itself shows elsewhere. Server-side count() aggregation, so this
-// is one cheap query regardless of how many conversations the account has.
+// badge (components/useRepliedCount.ts) - has an unanswered inbound reply,
+// not blocked - so the OS badge number always matches what the app itself
+// shows elsewhere. Pin status doesn't exclude a conversation from this
+// count: pinning is a quick-access shortcut, not a way to make a genuine
+// unread reply stop counting. Server-side count() aggregation, so this is
+// one cheap query regardless of how many conversations the account has.
 async function getUnreadBadgeCount(ownerUid: string): Promise<number> {
   const col = adminDb.collection("conversations");
-  const base = [
-    ["ownerUid", "==", ownerUid],
-    ["blocked", "==", false],
-  ] as const;
 
-  const countQuery = async (...extra: [string, FirebaseFirestore.WhereFilterOp, unknown][]) => {
-    let q: FirebaseFirestore.Query = col;
-    for (const [field, op, value] of [...base, ...extra]) {
-      q = q.where(field, op, value);
-    }
-    const snap = await q.count().get();
-    return snap.data().count;
-  };
+  const snap = await col
+    .where("ownerUid", "==", ownerUid)
+    .where("blocked", "==", false)
+    .where("hasReply", "==", true)
+    .where("lastDirection", "==", "inbound")
+    .count()
+    .get();
 
-  const [raw, pinnedOverlap] = await Promise.all([
-    countQuery(["hasReply", "==", true], ["lastDirection", "==", "inbound"]),
-    countQuery(
-      ["pinned", "==", true],
-      ["hasReply", "==", true],
-      ["lastDirection", "==", "inbound"]
-    ),
-  ]);
-
-  return Math.max(0, raw - pinnedOverlap);
+  return snap.data().count;
 }
 
 export async function notifyOwnerOfReply(opts: {
