@@ -31,21 +31,15 @@ export async function GET(req: NextRequest) {
   for (const doc of snap.docs) {
     const data = doc.data();
 
-    // 3. Skip if the lead already replied
-    const convoSnap = await adminDb
-      .collection("conversations")
-      .doc(data.conversationId)
-      .get();
+    // NOTE: This used to skip sending if the lead had already replied
+    // (hasReply == true on the conversation). Removed on request - a
+    // follow-up should now send unconditionally once its due time arrives,
+    // regardless of whether the customer has replied to anything, ever, on
+    // this conversation. The only remaining reason to skip is the
+    // blocked-number check right below, which stays because it's a legal/
+    // compliance requirement (STOP opt-outs), not a business preference.
 
-    const hasReply = convoSnap.exists && convoSnap.data()?.hasReply === true;
-
-    if (hasReply) {
-      await doc.ref.update({ status: "skipped", skippedReason: "hasReply" });
-      skipped++;
-      continue;
-    }
-
-    // 4. Skip if the lead opted out (STOP) or got auto-blocked
+    // 3. Skip if the lead opted out (STOP) or got auto-blocked
     const blacklistSnap = await adminDb
       .collection("blacklisted_numbers")
       .where("ownerUid", "==", data.ownerUid)
@@ -63,7 +57,7 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    // 5. Send the follow-up SMS. Routed through the shared sendSmsForUser
+    // 4. Send the follow-up SMS. Routed through the shared sendSmsForUser
     // helper so `from` is always pinned to the number stored on the
     // followUps doc, never picked from the shared Messaging Service pool.
     try {
@@ -82,7 +76,7 @@ export async function GET(req: NextRequest) {
         sentAt: FieldValue.serverTimestamp(),
       });
 
-      // 6. Log it in the conversation thread so it shows up in your dashboard
+      // 5. Log it in the conversation thread so it shows up in your dashboard
       const convoRef = adminDb.collection("conversations").doc(data.conversationId);
 
       await convoRef.collection("messages").doc(msg.sid).set({
