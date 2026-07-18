@@ -170,9 +170,6 @@ export async function POST(req: NextRequest) {
       message,
       leads,
       mediaUrls,
-      followUpEnabled,
-      followUpMessage,
-      sendAfterHours,
     }: {
       campaignName?: string;
       fileId?: string;
@@ -180,9 +177,6 @@ export async function POST(req: NextRequest) {
       message?: string;
       leads?: LeadInput[];
       mediaUrls?: string[];
-      followUpEnabled?: boolean;
-      followUpMessage?: string;
-      sendAfterHours?: number;
     } = body;
 
     if (!message?.trim() && (!Array.isArray(mediaUrls) || mediaUrls.length === 0)) {
@@ -412,26 +406,14 @@ export async function POST(req: NextRequest) {
           updatedAt: FieldValue.serverTimestamp(),
         });
 
-        // --- NEW: schedule a follow-up if the user enabled it ---
-        if (followUpEnabled && sendAfterHours) {
-          const dueAt = new Date(
-            Date.now() + Number(sendAfterHours) * 60 * 60 * 1000
-          );
-
-          await adminDb.collection("followUps").add({
-            ownerUid: uid,
-            conversationId: convoId,
-            phone: formattedPhone,
-            twilioNumber,
-            messagingServiceSid: userData.messagingServiceSid || "",
-            campaignName: campaignName || "",
-            followUpMessage: String(followUpMessage || "").trim(),
-            dueAt,
-            status: "pending",
-            createdAt: FieldValue.serverTimestamp(),
-          });
-        }
-        // --- END NEW ---
+        // Follow-up scheduling is handled separately by the dedicated
+        // /api/schedule-follow-up route (called by the dashboard right
+        // after this send succeeds). An older inline version used to live
+        // here, but it was dead code - the dashboard never actually sends
+        // followUpEnabled/sendAfterHours to this endpoint - and it lacked
+        // the blacklist pre-check and duplicate-follow-up prevention that
+        // /api/schedule-follow-up has. Removed to avoid it ever being wired
+        // up again and reintroducing those gaps.
 
         results.push({
           name: lead.name,
