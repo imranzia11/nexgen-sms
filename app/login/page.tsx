@@ -143,14 +143,6 @@ function LoginPageInner() {
         return;
       }
 
-      // Superadmin never sends messages or touches the SMS portal - it
-      // always lands on the cross-account overview dashboard instead of
-      // wherever ?next= would otherwise send a regular user.
-      if (String(data.role || "").toLowerCase() === "superadmin") {
-        router.push("/admin");
-        return;
-      }
-
       router.push(nextPath);
     } catch (err: any) {
       setError(err?.message || "Login failed");
