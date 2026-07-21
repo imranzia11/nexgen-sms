@@ -418,6 +418,17 @@ export default function DashboardPage() {
 
         const data = snap.data();
 
+        // The superadmin account never sends messages - if it lands here
+        // at all (a stale session, a bookmark, typing the URL directly),
+        // send it to the cross-account overview instead of the SMS portal.
+        // The login page also redirects this account straight to /admin on
+        // sign-in, but that only fires during the actual login submit - it
+        // can't catch an already-authenticated session landing here later.
+        if (String(data.role || "").toLowerCase() === "superadmin") {
+          router.push("/admin");
+          return;
+        }
+
         const safeName =
           String(data.name || "").trim() ||
           String(user.displayName || "").trim() ||

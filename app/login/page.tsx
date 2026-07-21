@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { addDoc, collection, doc, getDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 
 // Lets a caller send the user somewhere other than /dashboard after login -
@@ -140,6 +140,26 @@ function LoginPageInner() {
         await signOut(auth).catch(() => {});
         setError("Access denied. Account inactive.");
         setLoading(false);
+        return;
+      }
+
+      // Best-effort login record for the superadmin's per-account history
+      // view - deliberately fire-and-forget. A write failure here (offline,
+      // a rules hiccup, whatever) must never block a real login; it just
+      // means this one sign-in is missing from the history list.
+      addDoc(collection(db, "loginHistory"), {
+        ownerUid: uid,
+        email: String(data.email || email || ""),
+        loginAt: serverTimestamp(),
+      }).catch((error) => {
+        console.error("Failed to record login history (non-fatal)", error);
+      });
+
+      // Superadmin never sends messages or touches the SMS portal - it
+      // always lands on the cross-account overview dashboard instead of
+      // wherever ?next= would otherwise send a regular user.
+      if (String(data.role || "").toLowerCase() === "superadmin") {
+        router.push("/admin");
         return;
       }
 

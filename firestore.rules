@@ -161,5 +161,19 @@ service cloud.firestore {
       allow update: if false;
       allow delete: if false;
     }
+
+    // Append-only login log, one doc per successful sign-in - written by
+    // app/login/page.tsx right after the isActive check passes. Only the
+    // account itself can read its own entries here; the superadmin's
+    // cross-account view of this data goes through /api/admin/account/[uid]
+    // instead, which uses the Admin SDK (bypasses these rules entirely)
+    // behind its own server-side role check. No update/delete - a login
+    // record should never be editable after the fact.
+    match /loginHistory/{docId} {
+      allow read: if ownsResource();
+      allow create: if ownsNewResource();
+      allow update: if false;
+      allow delete: if false;
+    }
   }
 }

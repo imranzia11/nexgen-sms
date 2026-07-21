@@ -1291,6 +1291,14 @@ export default function RepliesPage() {
 
         const userData = userSnap.data() as Record<string, any>;
 
+        // Superadmin has no conversations of its own - if it lands here
+        // (stale session, direct URL, bookmark), send it to its own
+        // cross-account dashboard instead of an empty/irrelevant inbox.
+        if (String(userData.role || "").toLowerCase() === "superadmin") {
+          router.push("/admin");
+          return;
+        }
+
         const safeProfile: AppUser = {
           uid: user.uid,
           role: String(userData.role || "user"),
