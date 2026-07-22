@@ -199,6 +199,38 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // If this send permanently failed (landline/unreachable number, opted
+    // out at the carrier level, etc. - error 30006 is the common case),
+    // any follow-up already queued for this same conversation is now
+    // pointless: the number that couldn't receive the FIRST message
+    // certainly can't receive the follow-up either. Without this, the
+    // cron would still fire that follow-up hours later, wasting a send on
+    // a number already confirmed unreachable. The existing supersede logic
+    // in /api/schedule-follow-up already guarantees at most one "pending"
+    // follow-up per conversation, so this only ever touches that one doc.
+    if (
+      (messageStatus === "failed" || messageStatus === "undelivered") &&
+      conversationRef
+    ) {
+      const pendingFollowUpsSnap = await adminDb
+        .collection("followUps")
+        .where("conversationId", "==", conversationRef.id)
+        .where("status", "==", "pending")
+        .get();
+
+      if (!pendingFollowUpsSnap.empty) {
+        const cancelBatch = adminDb.batch();
+        pendingFollowUpsSnap.docs.forEach((doc) => {
+          cancelBatch.update(doc.ref, {
+            status: "skipped",
+            skippedReason: "original_message_undelivered",
+            skippedAt: now,
+          });
+        });
+        await cancelBatch.commit();
+      }
+    }
+
     return xmlResponse();
   } catch (error) {
     console.error("Twilio status callback error:", error);

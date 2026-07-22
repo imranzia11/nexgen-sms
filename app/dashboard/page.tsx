@@ -926,12 +926,24 @@ export default function DashboardPage() {
     fileId: string;
     fileName: string;
     recipients: { name: string; phone: string }[];
+    // When true, suppresses this function's own toast - used when calling
+    // it once per SMS chunk (see handleSendSms) so a large send doesn't
+    // spam a toast every ~150 recipients. The caller shows one aggregate
+    // toast at the end instead.
+    silent?: boolean;
   }) => {
-    if (!followUpEnabled) return;
+    if (!followUpEnabled) {
+      return { ok: true, scheduled: 0, attempted: 0 };
+    }
 
     if (!followUpMessage.trim()) {
-      showToast("Follow-up is enabled but the follow-up message is empty, so it was not scheduled.", "error");
-      return;
+      if (!params.silent) {
+        showToast(
+          "Follow-up is enabled but the follow-up message is empty, so it was not scheduled.",
+          "error"
+        );
+      }
+      return { ok: false, scheduled: 0, attempted: params.recipients.length };
     }
 
     try {
@@ -954,25 +966,48 @@ export default function DashboardPage() {
       const data = await res.json();
 
       if (!res.ok || !data.ok) {
-        showToast(
-          data.error || "Failed to schedule the follow-up message.",
-          "error"
-        );
-        return;
+        if (!params.silent) {
+          showToast(
+            data.error || "Failed to schedule the follow-up message.",
+            "error"
+          );
+        }
+        return {
+          ok: false,
+          scheduled: 0,
+          attempted: params.recipients.length,
+          error: data.error,
+        };
       }
 
-      showToast(
-        `Follow-up scheduled for ${followUpHours}h from now (${params.recipients.length} recipient${
-          params.recipients.length === 1 ? "" : "s"
-        }).`,
-        "success"
-      );
+      if (!params.silent) {
+        showToast(
+          `Follow-up scheduled for ${followUpHours}h from now (${params.recipients.length} recipient${
+            params.recipients.length === 1 ? "" : "s"
+          }).`,
+          "success"
+        );
+      }
+
+      return {
+        ok: true,
+        scheduled: typeof data.scheduled === "number" ? data.scheduled : params.recipients.length,
+        attempted: params.recipients.length,
+      };
     } catch (error: any) {
       console.error(error);
-      showToast(
-        error?.message || "Unexpected error while scheduling follow-up.",
-        "error"
-      );
+      if (!params.silent) {
+        showToast(
+          error?.message || "Unexpected error while scheduling follow-up.",
+          "error"
+        );
+      }
+      return {
+        ok: false,
+        scheduled: 0,
+        attempted: params.recipients.length,
+        error: error?.message,
+      };
     }
   };
 
@@ -1032,6 +1067,20 @@ export default function DashboardPage() {
       let totalAttempted = 0;
       let anyChunkErrored = false;
 
+      // Follow-up scheduling happens PER CHUNK now, right after that
+      // chunk's SMS send, instead of once at the very end with the whole
+      // list. This fixes a real bug: scheduling once at the end reused the
+      // idToken captured before the loop started, and a large send (e.g.
+      // 5,000 leads across ~34 chunks) can easily run long enough for that
+      // token to expire - when it does, the ONE follow-up request for
+      // every single recipient fails at once, so NOBODY gets a follow-up
+      // even though every message sent fine. Scheduling per chunk with a
+      // freshly-fetched token means a failure only ever costs that one
+      // chunk's ~150 recipients, not the entire blast.
+      let followUpScheduledTotal = 0;
+      let followUpAttemptedTotal = 0;
+      let anyFollowUpChunkErrored = false;
+
       for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
         const chunk = chunks[chunkIndex];
 
@@ -1042,12 +1091,19 @@ export default function DashboardPage() {
           totalLeads: verifiedLeads.length,
         });
 
-        try {
-          // Fresh token per chunk - a large send can run long enough for
-          // the original getIdToken() result to be close to expiring.
-          const chunkToken =
-            chunks.length > 1 ? await user.getIdToken() : idToken;
+        // Fresh token per chunk - a large send can run long enough for the
+        // original getIdToken() result to be close to expiring. Reused for
+        // both this chunk's SMS send and its follow-up scheduling call
+        // right below.
+        const chunkToken = chunks.length > 1 ? await user.getIdToken() : idToken;
+        const chunkRecipients = chunk.map((lead) => ({
+          name: lead.name || "",
+          phone: lead.phone || "",
+        }));
 
+        let chunkSendOk = false;
+
+        try {
           const res = await fetch("/api/send-sms", {
             method: "POST",
             headers: {
@@ -1059,10 +1115,7 @@ export default function DashboardPage() {
               fileId: selectedUploadId,
               fileName: selectedUpload.fileName,
               message: message.trim(),
-              leads: chunk.map((lead) => ({
-                name: lead.name || "",
-                phone: lead.phone || "",
-              })),
+              leads: chunkRecipients,
             }),
           });
 
@@ -1073,12 +1126,12 @@ export default function DashboardPage() {
             totalFailed += chunk.length;
             totalAttempted += chunk.length;
             console.error("Chunk failed", data.error);
-            continue;
+          } else {
+            totalSuccess += data.success || 0;
+            totalFailed += data.failed || 0;
+            totalAttempted += data.total || chunk.length;
+            chunkSendOk = true;
           }
-
-          totalSuccess += data.success || 0;
-          totalFailed += data.failed || 0;
-          totalAttempted += data.total || chunk.length;
         } catch (chunkError) {
           // One chunk failing outright (network blip, etc.) must not stop
           // the rest of a large blast - keep going so the remaining chunks
@@ -1087,6 +1140,24 @@ export default function DashboardPage() {
           totalFailed += chunk.length;
           totalAttempted += chunk.length;
           console.error("Chunk request failed", chunkError);
+        }
+
+        if (chunkSendOk) {
+          const followUpResult = await scheduleFollowUp({
+            idToken: chunkToken,
+            campaignName: resolvedCampaignName,
+            fileId: selectedUploadId,
+            fileName: selectedUpload.fileName,
+            recipients: chunkRecipients,
+            silent: true,
+          });
+
+          followUpScheduledTotal += followUpResult.scheduled;
+          followUpAttemptedTotal += followUpResult.attempted;
+          if (!followUpResult.ok) {
+            anyFollowUpChunkErrored = true;
+            console.error("Follow-up scheduling failed for chunk", followUpResult.error);
+          }
         }
       }
 
@@ -1127,20 +1198,15 @@ export default function DashboardPage() {
         anyChunkErrored ? "error" : totalFailed > 0 ? "info" : "success"
       );
 
-      // Safe to schedule for the FULL list in one call - schedule-follow-up
-      // now chunks its own Firestore batch writes internally (see that
-      // route), so it's no longer at risk of the 500-mutation batch limit
-      // a blast this size would otherwise hit.
-      await scheduleFollowUp({
-        idToken,
-        campaignName: resolvedCampaignName,
-        fileId: selectedUploadId,
-        fileName: selectedUpload.fileName,
-        recipients: verifiedLeads.map((lead) => ({
-          name: lead.name || "",
-          phone: lead.phone || "",
-        })),
-      });
+      if (followUpEnabled) {
+        showToast(
+          `Follow-ups: ${followUpScheduledTotal} of ${followUpAttemptedTotal} scheduled for ${followUpHours}h from now.` +
+            (anyFollowUpChunkErrored
+              ? " Some batches failed to schedule - check the Follow-Ups tab against your list."
+              : ""),
+          anyFollowUpChunkErrored ? "error" : "success"
+        );
+      }
 
       setCampaignName("");
       setMessage(DEFAULT_SMS_MESSAGE);

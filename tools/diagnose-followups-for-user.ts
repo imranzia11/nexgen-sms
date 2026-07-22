@@ -83,6 +83,36 @@ async function main() {
     console.log("No campaigns docs found for this ownerUid at all.\n");
   }
 
+  // Added after task #82 (silent schedule-follow-up failures) - if the
+  // client-side call to /api/schedule-follow-up ever throws (network,
+  // expired auth token, blocked request, etc.), it's logged here instead
+  // of just vanishing. Checked BEFORE the followUps collection below so an
+  // explicit logged error is the first thing you see, not something you
+  // have to infer from an absence.
+  const errorSnap = await adminDb
+    .collection("followUpScheduleErrors")
+    .where("ownerUid", "==", ownerUid)
+    .get();
+
+  if (!errorSnap.empty) {
+    const errors = errorSnap.docs
+      .map((d) => ({ id: d.id, ...d.data() } as any))
+      .sort((a, b) => (toDate(b.createdAt)?.getTime() || 0) - (toDate(a.createdAt)?.getTime() || 0))
+      .slice(0, 10);
+
+    console.log(`=== Logged schedule-follow-up errors (most recent ${errors.length}) ===`);
+    for (const e of errors) {
+      console.log(`--- ${e.id} ---`);
+      console.log(`  createdAt:      ${fmt(e.createdAt)}`);
+      console.log(`  campaignName:   ${e.campaignName || "(none)"}`);
+      console.log(`  recipientCount: ${e.recipientCount}`);
+      console.log(`  error:          ${e.error}`);
+      console.log("");
+    }
+  } else {
+    console.log("No logged schedule-follow-up errors for this ownerUid.\n");
+  }
+
   const snap = await adminDb
     .collection("followUps")
     .where("ownerUid", "==", ownerUid)
@@ -93,8 +123,11 @@ async function main() {
       "No followUps docs found for this ownerUid at all.\n\n" +
         "If any campaign above shows followUpEnabled: YES but there is still no " +
         "matching followUps doc, that means the schedule-follow-up API call " +
-        "failed or was never reached after the SMS send - NOT a missing-cron " +
-        "issue, since a cron can't send something that was never created. " +
+        "failed or was never reached after the SMS send - check the logged " +
+        "errors printed above first. If nothing is logged there either, the " +
+        "call may never have been made at all (e.g. the follow-up message box " +
+        "was empty, which silently skips scheduling client-side with just a " +
+        "toast - see scheduleFollowUp() in app/dashboard/page.tsx). " +
         "If every campaign shows followUpEnabled: no, then the follow-up " +
         "checkbox was simply never turned on for these sends, and the client's " +
         "\"never sent\" report is about a follow-up that was never scheduled " +
