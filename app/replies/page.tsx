@@ -2628,7 +2628,21 @@ export default function RepliesPage() {
                       </div>
                     </Link>
 
-                    <div style={actionWrapStyle}>
+                    <div
+                      style={{
+                        ...actionWrapStyle,
+                        // BUG FIX: every row's wrap previously shared the
+                        // same fixed z-index, so once the dropdown grew
+                        // taller (Mark Success/Mark Closed added), it
+                        // overflowed into the next card - and since ties in
+                        // z-index resolve by DOM order, the *next* row's own
+                        // "..." button (later in the DOM) painted on top of
+                        // the open menu instead of the other way around.
+                        // Bumping just the open row's wrap above all others
+                        // fixes the stacking without touching layout.
+                        zIndex: openMenuId === item.id ? 50 : 5,
+                      }}
+                    >
                       <button
                         type="button"
                         onClick={(e) => {
