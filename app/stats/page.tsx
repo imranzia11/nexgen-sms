@@ -122,6 +122,25 @@ export default function StatsPage() {
 
       const { start, end } = getNYDayRangeUtc(dateStr || selectedDate);
 
+      // BUG FIX: this used to cap at limit(500) - fine when a "big day" was
+      // a few dozen sends, but this account now regularly runs bulk
+      // campaigns of several thousand leads in a single day (e.g. the
+      // ~5,000-lead "july22 Abe10:46" campaign). With the old cap, Firestore
+      // only returned the 500 MOST RECENT messages for the day (orderBy
+      // createdAt desc) and the success count was computed from just that
+      // slice - so a day with ~5,000 real sends showed a few hundred here,
+      // nowhere close to the true total. Raised well above any realistic
+      // single-day volume so this always reflects the actual day, not a
+      // recent-500 slice of it.
+      //
+      // Deliberately still a getDocs() + client-side count rather than a
+      // true count() aggregation: adding a status equality filter to this
+      // query (to let Firestore count matches server-side) would need a
+      // brand-new composite index that isn't deployed yet, which would
+      // break this page with a live query error until that index finishes
+      // building. Fine for now at realistic volumes; worth revisiting with
+      // a proper count() aggregation + index deploy if daily volume keeps
+      // climbing well past this cap.
       const snap = await getDocs(
         query(
           collection(db, "messages"),
@@ -129,7 +148,7 @@ export default function StatsPage() {
           where("createdAt", ">=", start),
           where("createdAt", "<", end),
           orderBy("createdAt", "desc"),
-          limit(500)
+          limit(10000)
         )
       );
 

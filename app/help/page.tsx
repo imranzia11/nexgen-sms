@@ -118,6 +118,24 @@ const FAQ_ITEMS: FaqItem[] = [
       "Turn on the follow-up checkbox before sending and choose how many hours later it should go out. A background job checks every ~15 minutes for follow-ups that are due and sends them automatically. Follow-ups are skipped for numbers that are blocked or opted out (replied STOP), and for any original message that permanently failed to deliver.",
   },
   {
+    id: "follow-up-overdue",
+    question: "Why does a follow-up show \"Overdue\" before it sends?",
+    category: "Follow-ups",
+    keywords: [
+      "overdue",
+      "late",
+      "delay",
+      "delayed",
+      "running late",
+      "behind",
+      "follow up late",
+      "follow-up overdue",
+      "why is my follow up late",
+    ],
+    answer:
+      "Follow-ups are sent automatically in the background, not the instant they become due - so seeing one marked \"Overdue\" for a few minutes is completely normal, not a failure. During busier periods, especially right after a large campaign where a lot of follow-ups become due around the same time, that delay can stretch a bit longer while they work through the queue. As long as the number shown next to \"Overdue\" isn't climbing indefinitely, it's still on track to send - just give it a little time.",
+  },
+  {
     id: "opt-out",
     question: "How does opt-out / STOP work?",
     category: "Compliance",
