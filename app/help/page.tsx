@@ -1,17 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
-import { useEffect } from "react";
 import { auth, db } from "../../lib/firebase";
 import LoadingScreen from "../../components/LoadingScreen";
 
 // A simple, deterministic FAQ matcher rather than a live LLM call - this
 // answers instantly, costs nothing, can't hallucinate a wrong SMS limit or
-// file format rule, and needs no new API key/dependency on a live app. Each
+// file format rule, and needs no new API key/dependency on a live app. The
+// chat-style UI (typing indicator, message bubbles) is purely presentation -
+// the underlying answer is still looked up locally, never generated. Each
 // answer below reflects the ACTUAL current behavior of this system (see
 // app/dashboard/page.tsx SEND_CHUNK_SIZE, getUSPhoneValidation,
 // guessPhoneColumn; app/api/cron/send-followups/route.ts; and
@@ -84,6 +85,21 @@ const FAQ_ITEMS: FaqItem[] = [
     ],
     answer:
       "Every number is checked against the US format as soon as you upload. Numbers that don't match are marked unverified and are automatically excluded from sending - only verified numbers actually get texted.",
+  },
+  {
+    id: "unknown-error",
+    question: "What does an \"unknown error\" on a message mean?",
+    category: "Sending",
+    keywords: [
+      "unknown error",
+      "unknown",
+      "delivery failed",
+      "error while attempting delivery",
+      "weird error",
+      "strange error",
+    ],
+    answer:
+      "That's a generic delivery-failure code from Twilio (error 30008) - it means the carrier rejected the message without giving a specific reason. It isn't something wrong on our end; it happens occasionally at random across any bulk SMS provider and is usually a temporary carrier-side issue. If you see it a lot for one specific number, it may be worth trying that lead again later.",
   },
   {
     id: "follow-ups",
@@ -173,8 +189,7 @@ const FAQ_ITEMS: FaqItem[] = [
     question: "Where can I see my overall sending stats?",
     category: "Tracking",
     keywords: ["stats", "statistics", "success rate", "overview", "total sent"],
-    answer:
-      "The Stats page shows your account's overall send success count and rate.",
+    answer: "The Stats page shows your account's overall send success count and rate.",
   },
 ];
 
@@ -224,7 +239,33 @@ function findBestMatch(query: string) {
   return bestScore >= 2 ? best : null;
 }
 
+// Defined at module scope (not inside the component) so the lint rule that
+// flags impure calls "during render" doesn't fire - this is only ever
+// invoked from an event handler (askQuestion), never during an actual
+// render pass, but the linter can't tell that from inside the component
+// body.
+function getTypingDelayMs() {
+  return 500 + Math.random() * 700;
+}
+
 const SUPPORT_URL = "https://wa.me/971523480839";
+const FALLBACK_TEXT =
+  "I don't have a confident answer for that one yet. Support can help you sort it out directly.";
+const GREETING_TEXT =
+  "Hi! I'm your Nexgen SMS help assistant. Ask me about sending limits, file format, follow-ups, opt-outs, or anything else - I'll answer instantly, and point you to support if I'm not sure.";
+
+type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  isFallback?: boolean;
+};
+
+let idCounter = 0;
+function nextId() {
+  idCounter += 1;
+  return `msg-${Date.now()}-${idCounter}`;
+}
 
 export default function HelpPage() {
   const router = useRouter();
@@ -233,8 +274,13 @@ export default function HelpPage() {
   const [userName, setUserName] = useState("User");
 
   const [query, setQuery] = useState("");
-  const [searched, setSearched] = useState(false);
-  const [matched, setMatched] = useState<FaqItem | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { id: nextId(), role: "assistant", text: GREETING_TEXT },
+  ]);
+  const [isTyping, setIsTyping] = useState(false);
+
+  const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const typingTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -271,37 +317,57 @@ export default function HelpPage() {
     return () => unsub();
   }, [router]);
 
+  useEffect(() => {
+    scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, isTyping]);
+
+  useEffect(() => {
+    return () => {
+      if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
+    };
+  }, []);
+
   const handleLogout = async () => {
     await signOut(auth).catch(() => {});
     router.push("/login");
-  };
-
-  const handleAsk = (e?: React.FormEvent) => {
-    e?.preventDefault();
-    const result = findBestMatch(query);
-    setMatched(result);
-    setSearched(true);
-  };
-
-  const handlePickFaq = (item: FaqItem) => {
-    setQuery(item.question);
-    setMatched(item);
-    setSearched(true);
   };
 
   const handleContactSupport = () => {
     window.open(SUPPORT_URL, "_blank", "noopener,noreferrer");
   };
 
-  const categories = useMemo(() => {
-    const map = new Map<string, FaqItem[]>();
-    for (const item of FAQ_ITEMS) {
-      const list = map.get(item.category) || [];
-      list.push(item);
-      map.set(item.category, list);
-    }
-    return Array.from(map.entries());
-  }, []);
+  const askQuestion = (questionText: string) => {
+    const trimmed = questionText.trim();
+    if (!trimmed || isTyping) return;
+
+    const userMsg: ChatMessage = { id: nextId(), role: "user", text: trimmed };
+    setMessages((prev) => [...prev, userMsg]);
+    setQuery("");
+    setIsTyping(true);
+
+    const result = findBestMatch(trimmed);
+
+    // A short, realistic "thinking" delay before the answer lands - purely
+    // cosmetic (the lookup above is instant), but makes the assistant feel
+    // like it's actually reading the question instead of instantly
+    // teleporting a canned answer onto the screen.
+    const delay = getTypingDelayMs();
+    typingTimerRef.current = window.setTimeout(() => {
+      const assistantMsg: ChatMessage = result
+        ? { id: nextId(), role: "assistant", text: result.answer }
+        : { id: nextId(), role: "assistant", text: FALLBACK_TEXT, isFallback: true };
+
+      setMessages((prev) => [...prev, assistantMsg]);
+      setIsTyping(false);
+    }, delay);
+  };
+
+  const handleAsk = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    askQuestion(query);
+  };
+
+  const suggestionChips = useMemo(() => FAQ_ITEMS.map((item) => item.question), []);
 
   if (checking) {
     return <LoadingScreen text="Loading help center..." />;
@@ -309,6 +375,31 @@ export default function HelpPage() {
 
   return (
     <main style={pageStyle}>
+      <style jsx global>{`
+        @keyframes typingDotBounce {
+          0%,
+          60%,
+          100% {
+            transform: translateY(0);
+            opacity: 0.5;
+          }
+          30% {
+            transform: translateY(-5px);
+            opacity: 1;
+          }
+        }
+        @keyframes messagePopIn {
+          0% {
+            opacity: 0;
+            transform: translateY(8px);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
+
       <div style={pageShellStyle}>
         <aside style={sidebarStyle}>
           <div>
@@ -359,6 +450,16 @@ export default function HelpPage() {
                 </div>
               </Link>
             </div>
+
+            <div style={sidebarRepliesWrapStyle}>
+              <Link href="/help" style={sidebarRepliesCardStyle}>
+                <div style={sidebarRepliesIconStyle}>🎧</div>
+                <div>
+                  <div style={sidebarRepliesTitleStyle}>Help Center</div>
+                  <div style={sidebarRepliesTextStyle}>Ask a question, get instant help</div>
+                </div>
+              </Link>
+            </div>
           </div>
 
           <div style={sidebarBottomLogoutWrapStyle}>
@@ -371,10 +472,6 @@ export default function HelpPage() {
                 Stats
               </Link>
 
-              <Link href="/help" style={sidebarSecondaryLinkButtonStyle}>
-                Help Center
-              </Link>
-
               <button onClick={handleLogout} style={sidebarLogoutButtonStyle}>
                 Logout
               </button>
@@ -383,116 +480,95 @@ export default function HelpPage() {
         </aside>
 
         <section style={contentStyle}>
-          <div style={heroCardStyle}>
-            <div style={heroOverlayStyle} />
-            <div style={heroInnerStyle}>
-              <div>
-                <div style={heroBadgeStyle}>Help Center</div>
-                <h1 style={heroTitleStyle}>Ask a question</h1>
-                <p style={heroTextStyle}>
-                  Ask about SMS sending limits, file format, follow-ups, and
-                  more. If there&apos;s no good answer here, we&apos;ll point
-                  you to support.
-                </p>
+          <div style={chatHeaderStyle}>
+            <div style={chatHeaderAvatarStyle}>🎧</div>
+            <div>
+              <div style={chatHeaderTitleStyle}>Help Assistant</div>
+              <div style={chatHeaderSubStyle}>
+                Answers instantly · escalates to support when unsure
               </div>
-
-              <form onSubmit={handleAsk} style={askFormStyle}>
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="e.g. How many SMS can I send? What file format do I upload?"
-                  style={askInputStyle}
-                />
-                <button type="submit" style={askButtonStyle}>
-                  Ask
-                </button>
-              </form>
             </div>
           </div>
 
-          {searched ? (
-            <section style={panelStyle}>
-              {matched ? (
-                <div>
-                  <div style={panelHeaderStyle}>
-                    <div>
-                      <h2 style={panelTitleStyle}>{matched.question}</h2>
-                    </div>
-                  </div>
-                  <p style={answerTextStyle}>{matched.answer}</p>
-                </div>
-              ) : (
-                <div style={{ display: "grid", gap: 14 }}>
-                  <div>
-                    <h2 style={panelTitleStyle}>
-                      We don&apos;t have an answer for that yet
-                    </h2>
-                    <p style={panelDescStyle}>
-                      Reach out to support directly and we&apos;ll help you
-                      sort it out.
-                    </p>
-                  </div>
-                  <button
-                    onClick={handleContactSupport}
-                    style={contactSupportButtonStyle}
-                    type="button"
+          <div style={chatPanelStyle}>
+            <div style={chatMessagesStyle}>
+              {messages.map((m) => (
+                <div
+                  key={m.id}
+                  style={{
+                    ...chatRowStyle,
+                    justifyContent: m.role === "user" ? "flex-end" : "flex-start",
+                  }}
+                >
+                  {m.role === "assistant" ? (
+                    <div style={chatAvatarSmallStyle}>🎧</div>
+                  ) : null}
+
+                  <div
+                    style={{
+                      ...bubbleBaseStyle,
+                      ...(m.role === "user" ? userBubbleStyle : assistantBubbleStyle),
+                    }}
                   >
-                    Contact Support
-                  </button>
-                </div>
-              )}
-            </section>
-          ) : null}
-
-          <section style={panelStyle}>
-            <div style={panelHeaderStyle}>
-              <div>
-                <h2 style={panelTitleStyle}>Browse common questions</h2>
-                <p style={panelDescStyle}>
-                  Tap any question for an instant answer.
-                </p>
-              </div>
-            </div>
-
-            <div style={{ marginTop: 18, display: "grid", gap: 22 }}>
-              {categories.map(([category, items]) => (
-                <div key={category}>
-                  <div style={categoryLabelStyle}>{category}</div>
-                  <div style={cardGridStyle}>
-                    {items.map((item) => (
+                    {m.text}
+                    {m.isFallback ? (
                       <button
-                        key={item.id}
-                        onClick={() => handlePickFaq(item)}
-                        style={faqCardStyle}
+                        onClick={handleContactSupport}
+                        style={inlineSupportButtonStyle}
                         type="button"
                       >
-                        {item.question}
+                        Contact Support
                       </button>
-                    ))}
+                    ) : null}
                   </div>
                 </div>
               ))}
-            </div>
-          </section>
 
-          <section style={panelStyle}>
-            <div style={panelHeaderStyle}>
-              <div>
-                <h2 style={panelTitleStyle}>Still need help?</h2>
-                <p style={panelDescStyle}>
-                  Get in touch and we&apos;ll help with anything not covered
-                  here.
-                </p>
-              </div>
-              <button
-                onClick={handleContactSupport}
-                style={contactSupportButtonStyle}
-                type="button"
-              >
-                Contact Support
-              </button>
+              {isTyping ? (
+                <div style={{ ...chatRowStyle, justifyContent: "flex-start" }}>
+                  <div style={chatAvatarSmallStyle}>🎧</div>
+                  <div style={{ ...bubbleBaseStyle, ...assistantBubbleStyle, ...typingBubbleStyle }}>
+                    <span style={{ ...typingDotStyle, animationDelay: "0s" }} />
+                    <span style={{ ...typingDotStyle, animationDelay: "0.15s" }} />
+                    <span style={{ ...typingDotStyle, animationDelay: "0.3s" }} />
+                  </div>
+                </div>
+              ) : null}
+
+              <div ref={scrollAnchorRef} />
             </div>
-          </section>
+
+            <div style={chipRowStyle}>
+              {suggestionChips.map((q) => (
+                <button
+                  key={q}
+                  onClick={() => askQuestion(q)}
+                  style={chipStyle}
+                  type="button"
+                  disabled={isTyping}
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+
+            <form onSubmit={handleAsk} style={chatInputRowStyle}>
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Ask a question..."
+                style={chatInputStyle}
+                disabled={isTyping}
+              />
+              <button type="submit" style={chatSendButtonStyle} disabled={isTyping || !query.trim()}>
+                Send
+              </button>
+            </form>
+          </div>
+
+          <button onClick={handleContactSupport} style={footerSupportButtonStyle} type="button">
+            Still stuck? Contact Support directly
+          </button>
         </section>
       </div>
     </main>
@@ -670,167 +746,191 @@ const sidebarLogoutButtonStyle: CSSProperties = {
 const contentStyle: CSSProperties = {
   padding: 24,
   display: "grid",
-  gap: 20,
+  gap: 16,
+  gridTemplateRows: "auto 1fr auto",
+  height: "100vh",
 };
 
-const heroCardStyle: CSSProperties = {
-  position: "relative",
-  overflow: "hidden",
-  borderRadius: 32,
-  background: "linear-gradient(135deg, #0f766e 0%, #0d9488 48%, #14b8a6 100%)",
-  boxShadow: "0 30px 80px rgba(13, 148, 136, 0.28)",
-};
-
-const heroOverlayStyle: CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  background:
-    "radial-gradient(circle at top right, rgba(255,255,255,0.18), transparent 24%), radial-gradient(circle at bottom left, rgba(255,255,255,0.08), transparent 28%)",
-  pointerEvents: "none",
-};
-
-const heroInnerStyle: CSSProperties = {
-  position: "relative",
-  zIndex: 1,
-  padding: 28,
-  display: "grid",
-  gap: 22,
-};
-
-const heroBadgeStyle: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  width: "fit-content",
-  borderRadius: 999,
-  padding: "8px 14px",
-  background: "rgba(255,255,255,0.14)",
-  border: "1px solid rgba(255,255,255,0.18)",
-  color: "#ecfeff",
-  fontSize: 12,
-  fontWeight: 800,
-  letterSpacing: 0.3,
-};
-
-const heroTitleStyle: CSSProperties = {
-  margin: "12px 0 0 0",
-  color: "#ffffff",
-  fontSize: 38,
-  lineHeight: 1.05,
-  fontWeight: 900,
-};
-
-const heroTextStyle: CSSProperties = {
-  margin: "10px 0 0 0",
-  maxWidth: 760,
-  color: "rgba(236,254,255,0.86)",
-  fontSize: 16,
-  lineHeight: 1.65,
-};
-
-const askFormStyle: CSSProperties = {
+const chatHeaderStyle: CSSProperties = {
   display: "flex",
+  alignItems: "center",
   gap: 14,
-  flexWrap: "wrap",
+  borderRadius: 24,
+  padding: "18px 22px",
+  background: "linear-gradient(135deg, #0f766e 0%, #0d9488 48%, #14b8a6 100%)",
+  boxShadow: "0 20px 50px rgba(13, 148, 136, 0.22)",
 };
 
-const askInputStyle: CSSProperties = {
-  flex: 1,
-  minWidth: 280,
-  border: "1px solid rgba(255,255,255,0.16)",
-  borderRadius: 18,
-  padding: "16px 18px",
-  background: "rgba(255,255,255,0.12)",
+const chatHeaderAvatarStyle: CSSProperties = {
+  width: 48,
+  height: 48,
+  borderRadius: "50%",
+  display: "grid",
+  placeItems: "center",
+  background: "rgba(255,255,255,0.18)",
+  fontSize: 22,
+  flexShrink: 0,
+};
+
+const chatHeaderTitleStyle: CSSProperties = {
   color: "#ffffff",
-  fontSize: 15,
-  outline: "none",
+  fontSize: 20,
+  fontWeight: 900,
 };
 
-const askButtonStyle: CSSProperties = {
-  border: "none",
-  borderRadius: 18,
-  padding: "16px 26px",
-  background: "#ecfeff",
-  color: "#0f766e",
-  fontWeight: 900,
+const chatHeaderSubStyle: CSSProperties = {
+  marginTop: 4,
+  color: "rgba(236,254,255,0.85)",
+  fontSize: 13,
+};
+
+const chatPanelStyle: CSSProperties = {
+  background: "rgba(255,255,255,0.92)",
+  border: "1px solid rgba(15,23,42,0.06)",
+  borderRadius: 28,
+  boxShadow: "0 16px 40px rgba(15,23,42,0.06)",
+  backdropFilter: "blur(8px)",
+  display: "grid",
+  gridTemplateRows: "1fr auto auto",
+  minHeight: 0,
+  overflow: "hidden",
+};
+
+const chatMessagesStyle: CSSProperties = {
+  padding: "22px 22px 8px 22px",
+  overflowY: "auto",
+  display: "grid",
+  gap: 14,
+  minHeight: 0,
+};
+
+const chatRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "flex-end",
+  gap: 10,
+  animation: "messagePopIn 0.25s ease-out",
+};
+
+const chatAvatarSmallStyle: CSSProperties = {
+  width: 32,
+  height: 32,
+  borderRadius: "50%",
+  display: "grid",
+  placeItems: "center",
+  background: "#ccfbf1",
+  color: "#115e59",
   fontSize: 15,
+  flexShrink: 0,
+};
+
+const bubbleBaseStyle: CSSProperties = {
+  maxWidth: "70%",
+  padding: "14px 16px",
+  borderRadius: 20,
+  fontSize: 14.5,
+  lineHeight: 1.6,
+};
+
+const assistantBubbleStyle: CSSProperties = {
+  background: "#f1f5f9",
+  color: "#0f172a",
+  borderBottomLeftRadius: 6,
+};
+
+const userBubbleStyle: CSSProperties = {
+  background: "#0d9488",
+  color: "#ffffff",
+  borderBottomRightRadius: 6,
+};
+
+const typingBubbleStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 5,
+  padding: "16px 18px",
+};
+
+const typingDotStyle: CSSProperties = {
+  width: 7,
+  height: 7,
+  borderRadius: "50%",
+  background: "#64748b",
+  display: "inline-block",
+  animation: "typingDotBounce 1.1s infinite ease-in-out",
+};
+
+const inlineSupportButtonStyle: CSSProperties = {
+  display: "block",
+  marginTop: 12,
+  border: "none",
+  borderRadius: 14,
+  padding: "10px 16px",
+  background: "#0f172a",
+  color: "#ffffff",
+  fontWeight: 800,
+  fontSize: 13,
   cursor: "pointer",
 };
 
-const panelStyle: CSSProperties = {
-  background: "rgba(255,255,255,0.88)",
-  border: "1px solid rgba(15,23,42,0.06)",
-  borderRadius: 28,
-  padding: 22,
-  boxShadow: "0 16px 40px rgba(15,23,42,0.06)",
-  backdropFilter: "blur(8px)",
-};
-
-const panelHeaderStyle: CSSProperties = {
+const chipRowStyle: CSSProperties = {
+  padding: "10px 22px",
   display: "flex",
-  justifyContent: "space-between",
-  alignItems: "flex-start",
-  gap: 14,
+  gap: 8,
   flexWrap: "wrap",
+  borderTop: "1px solid rgba(15,23,42,0.06)",
+  maxHeight: 96,
+  overflowY: "auto",
 };
 
-const panelTitleStyle: CSSProperties = {
-  margin: 0,
-  fontSize: 22,
-  fontWeight: 900,
-  color: "#0f172a",
-};
-
-const panelDescStyle: CSSProperties = {
-  margin: "8px 0 0 0",
-  color: "#64748b",
-  fontSize: 14,
-  lineHeight: 1.5,
-};
-
-const answerTextStyle: CSSProperties = {
-  marginTop: 14,
-  color: "#334155",
-  fontSize: 15,
-  lineHeight: 1.7,
-};
-
-const categoryLabelStyle: CSSProperties = {
-  fontSize: 12,
-  fontWeight: 800,
-  letterSpacing: 0.4,
-  textTransform: "uppercase",
+const chipStyle: CSSProperties = {
+  border: "1px solid rgba(13,148,136,0.3)",
+  borderRadius: 999,
+  padding: "8px 14px",
+  background: "rgba(13,148,136,0.06)",
   color: "#0d9488",
-  marginBottom: 10,
+  fontSize: 12.5,
+  fontWeight: 700,
+  cursor: "pointer",
+  whiteSpace: "nowrap",
 };
 
-const cardGridStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+const chatInputRowStyle: CSSProperties = {
+  padding: 18,
+  borderTop: "1px solid rgba(15,23,42,0.06)",
+  display: "flex",
   gap: 12,
 };
 
-const faqCardStyle: CSSProperties = {
-  textAlign: "left",
-  borderRadius: 18,
-  background: "linear-gradient(180deg, #ffffff 0%, #fcfffe 100%)",
-  border: "1px solid rgba(15,23,42,0.08)",
-  padding: "16px 16px",
-  boxShadow: "0 10px 24px rgba(15,23,42,0.05)",
+const chatInputStyle: CSSProperties = {
+  flex: 1,
+  border: "1px solid rgba(15,23,42,0.12)",
+  borderRadius: 16,
+  padding: "14px 16px",
+  fontSize: 14.5,
+  outline: "none",
+  background: "#f8fafc",
   color: "#0f172a",
-  fontSize: 14,
-  fontWeight: 700,
-  cursor: "pointer",
-  lineHeight: 1.4,
 };
 
-const contactSupportButtonStyle: CSSProperties = {
+const chatSendButtonStyle: CSSProperties = {
   border: "none",
   borderRadius: 16,
-  padding: "14px 22px",
+  padding: "14px 24px",
   background: "#0d9488",
   color: "#ffffff",
   fontWeight: 800,
   fontSize: 14,
   cursor: "pointer",
-  whiteSpace: "nowrap",
+};
+
+const footerSupportButtonStyle: CSSProperties = {
+  justifySelf: "start",
+  border: "1px solid rgba(15,23,42,0.1)",
+  borderRadius: 14,
+  padding: "10px 18px",
+  background: "#ffffff",
+  color: "#0d9488",
+  fontWeight: 800,
+  fontSize: 13,
+  cursor: "pointer",
 };

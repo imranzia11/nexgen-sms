@@ -220,6 +220,16 @@ export default function StatsPage() {
                 </div>
               </Link>
             </div>
+
+            <div style={sidebarRepliesWrapStyle}>
+              <Link href="/help" style={sidebarRepliesCardStyle}>
+                <div style={sidebarRepliesIconStyle}>🎧</div>
+                <div>
+                  <div style={sidebarRepliesTitleStyle}>Help Center</div>
+                  <div style={sidebarRepliesTextStyle}>Ask a question, get instant help</div>
+                </div>
+              </Link>
+            </div>
           </div>
 
           <div style={sidebarBottomLogoutWrapStyle}>
@@ -230,10 +240,6 @@ export default function StatsPage() {
 
               <Link href="/stats" style={sidebarSecondaryLinkButtonStyle}>
                 Stats
-              </Link>
-
-              <Link href="/help" style={sidebarSecondaryLinkButtonStyle}>
-                Help Center
               </Link>
 
               <button onClick={handleLogout} style={sidebarLogoutButtonStyle}>
