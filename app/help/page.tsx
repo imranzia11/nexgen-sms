@@ -115,7 +115,40 @@ const FAQ_ITEMS: FaqItem[] = [
       "auto message",
     ],
     answer:
-      "Turn on the follow-up checkbox before sending and choose how many hours later it should go out. A background job checks every ~15 minutes for follow-ups that are due and sends them automatically. Follow-ups are skipped for numbers that are blocked or opted out (replied STOP), and for any original message that permanently failed to deliver.",
+      "Turn on the follow-up checkbox before sending and choose how many hours later it should go out. A background job checks every ~15 minutes for follow-ups that are due and sends them automatically, processing up to 500 at a time. Follow-ups are skipped for numbers that are blocked or opted out (replied STOP), for any original message that permanently failed to deliver, and - checked again right before sending, not just when it was first scheduled - for any lead that has replied at all since the follow-up was queued. Once a customer replies, even something like \"wrong number\" or \"not interested,\" the follow-up won't go out and is marked skipped instead.",
+  },
+  {
+    id: "follow-up-skipped-reply",
+    question: "Why didn't a follow-up go out to someone who replied?",
+    category: "Follow-ups",
+    keywords: [
+      "follow up not sent",
+      "follow-up skipped",
+      "customer replied",
+      "why didn't follow up send",
+      "skipped reason",
+      "already replied",
+    ],
+    answer:
+      "That's expected - a follow-up is automatically skipped if the customer has replied to that conversation at all by the time it's due to send, even if the reply came in after the follow-up was originally scheduled. This check happens right at send time, so a reply that arrives an hour before the follow-up would have gone out still cancels it. It's marked \"skipped\" (not sent), and that conversation shows up under Customer Replied instead.",
+  },
+  {
+    id: "closed-leads",
+    question: "How do I mark a lead as resolved or closed?",
+    category: "Leads",
+    keywords: [
+      "closed lead",
+      "close lead",
+      "resolve",
+      "resolved",
+      "success",
+      "mark closed",
+      "mark success",
+      "done with lead",
+      "archive conversation",
+    ],
+    answer:
+      "Open the ⋯ menu on any conversation in Replies and choose \"Mark Success\" or \"Mark Closed,\" depending on the outcome. It moves out of your regular tabs into a dedicated Closed Leads tab, and any pending follow-up for that number is automatically cancelled. Closed Leads are kept separately so you can review them later for reporting/analysis, and you can reopen one at any time from that tab if needed (reopening doesn't restore a cancelled follow-up).",
   },
   {
     id: "follow-up-overdue",
@@ -133,7 +166,7 @@ const FAQ_ITEMS: FaqItem[] = [
       "why is my follow up late",
     ],
     answer:
-      "Follow-ups are sent automatically in the background, not the instant they become due - so seeing one marked \"Overdue\" for a few minutes is completely normal, not a failure. During busier periods, especially right after a large campaign where a lot of follow-ups become due around the same time, that delay can stretch a bit longer while they work through the queue. As long as the number shown next to \"Overdue\" isn't climbing indefinitely, it's still on track to send - just give it a little time.",
+      "Follow-ups are sent automatically in the background, not the instant they become due - so seeing one marked \"Overdue\" for a few minutes is completely normal, not a failure. During busier periods, especially right after a large campaign where a lot of follow-ups become due around the same time, that delay can stretch a bit longer while they work through the queue - the system now processes up to 500 follow-ups every 15 minutes, so even a large backlog clears fairly quickly. As long as the number shown next to \"Overdue\" isn't climbing indefinitely, it's still on track to send - just give it a little time.",
   },
   {
     id: "opt-out",

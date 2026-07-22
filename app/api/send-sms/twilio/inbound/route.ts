@@ -660,6 +660,18 @@ export async function POST(req: NextRequest) {
         : existingConvo.unblockedAt || null,
     };
 
+    // BUG FIX (explicit request): a lead marked Success/Closed used to stay
+    // parked in the Closed Leads tab forever, even if the customer texted
+    // back later. Any new inbound reply now un-resolves the conversation so
+    // it falls back into the normal tabs (and shows under Customer Replied,
+    // since hasReply/lastDirection above already reflect this new message).
+    // Deliberately does NOT restore any follow-up that was cancelled when it
+    // was closed - same reasoning as the manual Reopen action.
+    if (existingConvo.resolved === true) {
+      convoUpdate.resolved = false;
+      convoUpdate.resolutionOutcome = "";
+    }
+
     const isFirstInboundWrite = !existingThreadMsgSnap.exists;
 
     if (isFirstInboundWrite) {

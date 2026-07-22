@@ -49,6 +49,11 @@ type SmsRow = {
   // instead of its normal tab, and renders red with an Unblock action
   // instead of Block.
   manuallyBlocked: boolean;
+  // Marked via the "Mark Success" / "Mark Closed" menu action once a lead
+  // is done (won or lost) - moves it out of every normal tab and into the
+  // dedicated "Closed Leads" tab, for later analysis (see closedItems).
+  resolved: boolean;
+  resolutionOutcome: "success" | "closed" | "";
 };
 
 type AppUser = {
@@ -84,7 +89,8 @@ type FilterMode =
   | "pinned"
   | "failed"
   | "attention"
-  | "followups";
+  | "followups"
+  | "closed";
 
 // Matches the same failed/undelivered statuses used to render the red
 // error bubble on the /replies/[phone] thread view.
@@ -99,7 +105,8 @@ function activeTabCount(
   mode: FilterMode,
   counts: StatCounts,
   attentionCount: number,
-  followUpsCount: number = 0
+  followUpsCount: number = 0,
+  closedCount: number = 0
 ): number {
   switch (mode) {
     case "all":
@@ -118,6 +125,8 @@ function activeTabCount(
       return attentionCount;
     case "followups":
       return followUpsCount;
+    case "closed":
+      return closedCount;
     default:
       return 0;
   }
@@ -143,6 +152,8 @@ function filterModeLabel(mode: FilterMode): string {
       return "Attention required";
     case "followups":
       return "Follow-ups";
+    case "closed":
+      return "Closed leads";
     default:
       return "";
   }
@@ -556,6 +567,11 @@ function makeRow(id: string, data: Record<string, any>): SmsRow {
       .trim()
       .toLowerCase(),
     manuallyBlocked: false,
+    resolved: data.resolved === true,
+    resolutionOutcome:
+      data.resolutionOutcome === "success" || data.resolutionOutcome === "closed"
+        ? data.resolutionOutcome
+        : "",
   };
 }
 
@@ -661,6 +677,15 @@ export default function RepliesPage() {
   // won't send" hint under the stat card/tab.
   const [followUpItems, setFollowUpItems] = useState<FollowUpRow[]>([]);
   const [followUpsSkippedCount, setFollowUpsSkippedCount] = useState(0);
+
+  // Closed Leads tab: every conversation marked resolved (Success or
+  // Closed) via the "Mark Success" / "Mark Closed" menu action - kept as
+  // its own dedicated live source, same shape as attentionItems/
+  // followUpItems above, so a resolved lead can be excluded from every
+  // normal tab (see searchedItems) without touching the existing
+  // tab-scoped queries that already work.
+  const [closedItems, setClosedItems] = useState<SmsRow[]>([]);
+  const [resolvingId, setResolvingId] = useState("");
 
   // Ticking clock for the "sends in Xh Ym" / "overdue" countdown text -
   // updated every 30s, which is plenty granular for a delay measured in
@@ -1268,6 +1293,89 @@ export default function RepliesPage() {
     }
   }
 
+  // Marks a lead done (won or lost) - moves it out of every normal tab and
+  // into the dedicated "Closed Leads" tab (see closedItems), for later
+  // analysis. Also cancels any follow-up still queued for this number -
+  // there's no reason to keep nudging a lead that's already been resolved
+  // one way or the other.
+  async function handleResolveLead(item: SmsRow, outcome: "success" | "closed") {
+    try {
+      setResolvingId(item.id);
+
+      await setDoc(
+        doc(db, "conversations", item.id),
+        {
+          resolved: true,
+          resolutionOutcome: outcome,
+          resolvedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      const pendingFollowUpsSnap = await getDocs(
+        query(
+          collection(db, "followUps"),
+          where("conversationId", "==", item.id),
+          where("status", "==", "pending")
+        )
+      );
+
+      await Promise.all(
+        pendingFollowUpsSnap.docs.map((fuDoc) =>
+          setDoc(
+            fuDoc.ref,
+            {
+              status: "skipped",
+              skippedReason: "lead_resolved",
+              skippedAt: serverTimestamp(),
+            },
+            { merge: true }
+          )
+        )
+      );
+
+      setItems((prev) => prev.filter((row) => row.id !== item.id));
+      setOpenMenuId("");
+      if (profileRef.current) void loadCounts(profileRef.current.uid);
+    } catch (error) {
+      console.error("Failed to resolve lead", error);
+      alert("Failed to close this lead.");
+    } finally {
+      setResolvingId("");
+    }
+  }
+
+  // Undoes a resolve - back to a normal tab (Replied/Waiting/Never Replied
+  // etc., whichever its actual state reflects). Does NOT restore any
+  // follow-up that was cancelled when it was closed - that decision was
+  // deliberate at the time, and silently re-queuing an old message hours
+  // or days later could be confusing to a customer.
+  async function handleReopenLead(item: SmsRow) {
+    try {
+      setResolvingId(item.id);
+
+      await setDoc(
+        doc(db, "conversations", item.id),
+        {
+          resolved: false,
+          resolutionOutcome: "",
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      setClosedItems((prev) => prev.filter((row) => row.id !== item.id));
+      setOpenMenuId("");
+      if (profileRef.current) void loadCounts(profileRef.current.uid);
+    } catch (error) {
+      console.error("Failed to reopen lead", error);
+      alert("Failed to reopen this lead.");
+    } finally {
+      setResolvingId("");
+    }
+  }
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) {
@@ -1646,6 +1754,37 @@ export default function RepliesPage() {
     };
   }, [profile]);
 
+  // Closed Leads tab - dedicated live source, same pattern as the
+  // Follow-Ups listener above. Deliberately no orderBy in the query
+  // (sorted client-side by resolvedAt instead) so this doesn't need a new
+  // Firestore composite index deployed before it can work.
+  useEffect(() => {
+    if (!profile) return;
+    const ownerUid = profile.uid;
+
+    const unsubClosed = onSnapshot(
+      query(
+        collection(db, "conversations"),
+        where("ownerUid", "==", ownerUid),
+        where("resolved", "==", true)
+      ),
+      (snap) => {
+        const rows = snap.docs
+          .map((d) => makeRow(d.id, d.data() as Record<string, any>))
+          .sort((a, b) => b.sortSeconds - a.sortSeconds);
+        setClosedItems(rows);
+      },
+      (error) => {
+        console.error("Closed Leads listener failed", error);
+        setClosedItems([]);
+      }
+    );
+
+    return () => {
+      unsubClosed();
+    };
+  }, [profile]);
+
   useEffect(() => {
     function handleGlobalClick() {
       setOpenMenuId("");
@@ -1676,7 +1815,12 @@ export default function RepliesPage() {
   }, [filterMode]);
 
   const searchedItems = useMemo(() => {
-    const source = filterMode === "attention" ? attentionItems : items;
+    const rawSource = filterMode === "attention" ? attentionItems : items;
+    // Resolved (Success/Closed) leads have their own dedicated "Closed
+    // Leads" tab (see closedItems/searchedClosedItems below) - hidden from
+    // every other tab once resolved, the same way a blocked number is
+    // hidden everywhere except its own dedicated tab.
+    const source = rawSource.filter((item) => !item.resolved);
     const term = search.trim().toLowerCase();
     if (!term) return source;
 
@@ -1688,6 +1832,19 @@ export default function RepliesPage() {
       );
     });
   }, [items, attentionItems, filterMode, search]);
+
+  const searchedClosedItems = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return closedItems;
+
+    return closedItems.filter((item) => {
+      return (
+        item.phone.toLowerCase().includes(term) ||
+        String(item.name || "").toLowerCase().includes(term) ||
+        item.body.toLowerCase().includes(term)
+      );
+    });
+  }, [closedItems, search]);
 
   // BUG FIX: the Follow-Ups tab renders straight from followUpItems (its
   // own dedicated listener - see the onSnapshot above), never from `items`,
@@ -2041,6 +2198,16 @@ export default function RepliesPage() {
                 >
                   ⏱ Follow-Ups
                 </button>
+
+                <button
+                  onClick={() => setFilterMode("closed")}
+                  style={{
+                    ...filterTabStyle,
+                    ...(filterMode === "closed" ? activeFilterTabStyle : {}),
+                  }}
+                >
+                  ✅ Closed Leads
+                </button>
               </div>
 
               {isMobile ? (
@@ -2057,7 +2224,8 @@ export default function RepliesPage() {
                         filterMode,
                         counts,
                         attentionItems.length,
-                        followUpItems.length
+                        followUpItems.length,
+                        closedItems.length
                       )}
                     </span>
                     <span style={mobileStatLabelStyle}>
@@ -2110,6 +2278,7 @@ export default function RepliesPage() {
                         : undefined
                     }
                   />
+                  <StatCard label="Closed Leads" value={String(closedItems.length)} />
                 </div>
               )}
             </div>
@@ -2247,6 +2416,87 @@ export default function RepliesPage() {
                 <div style={followUpListStyle}>
                   {searchedFollowUpItems.map((item) => (
                     <FollowUpCard key={item.id} item={item} nowMs={nowMs} />
+                  ))}
+                </div>
+              )
+            ) : filterMode === "closed" ? (
+              searchedClosedItems.length === 0 ? (
+                <div style={emptyStateStyle}>
+                  <div style={emptyDotStyle} />
+                  <div style={emptyTitleStyle}>
+                    {closedItems.length === 0
+                      ? "No closed leads yet."
+                      : "No closed leads match your search."}
+                  </div>
+                  <div style={emptyTextStyle}>
+                    {closedItems.length > 0
+                      ? "Try a different phone number, name, or clear the search box."
+                      : "Mark a lead Success or Closed from its ⋯ menu to move it here for analysis."}
+                  </div>
+                </div>
+              ) : (
+                <div style={conversationGridStyle}>
+                  {searchedClosedItems.map((item) => (
+                    <div key={item.id} style={conversationShellStyle}>
+                      <Link
+                        href={`/replies/${encodeURIComponent(item.phone)}`}
+                        style={conversationCardStyle}
+                      >
+                        <div style={conversationTopStyle}>
+                          <div>
+                            <div style={phoneStyle}>{item.phone}</div>
+                            {item.name ? (
+                              <div style={nameStyle}>{item.name}</div>
+                            ) : null}
+                            {isMobile ? (
+                              <div style={timeStyleMobile}>{item.createdAtLabel}</div>
+                            ) : null}
+                          </div>
+
+                          <div style={conversationRightStyle}>
+                            {isMobile ? null : (
+                              <div style={timeStyle}>{item.createdAtLabel}</div>
+                            )}
+                            <div
+                              style={
+                                item.resolutionOutcome === "success"
+                                  ? successOutcomeBadgeStyle
+                                  : closedOutcomeBadgeStyle
+                              }
+                            >
+                              {item.resolutionOutcome === "success" ? "Success" : "Closed"}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={messagePreviewStyle}>
+                          {truncateText(item.body || "-")}
+                        </div>
+
+                        <div style={openRowStyle}>
+                          <span style={openTextStyle}>Open conversation</span>
+                          <span style={openArrowStyle}>→</span>
+                        </div>
+                      </Link>
+
+                      <div style={actionWrapStyle}>
+                        <button
+                          type="button"
+                          onClick={() => handleReopenLead(item)}
+                          disabled={resolvingId === item.id}
+                          style={{
+                            ...actionButtonStyle,
+                            width: "auto",
+                            padding: "8px 12px",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            opacity: resolvingId === item.id ? 0.6 : 1,
+                          }}
+                        >
+                          {resolvingId === item.id ? "Updating..." : "Reopen"}
+                        </button>
+                      </div>
+                    </div>
                   ))}
                 </div>
               )
@@ -2431,6 +2681,34 @@ export default function RepliesPage() {
                                 : "Pin"}
                           </button>
 
+                          <button
+                            type="button"
+                            onClick={() => handleResolveLead(item, "success")}
+                            disabled={resolvingId === item.id}
+                            style={{
+                              ...menuItemStyle,
+                              color: "#059669",
+                              background: "rgba(16,185,129,0.08)",
+                              opacity: resolvingId === item.id ? 0.6 : 1,
+                            }}
+                          >
+                            {resolvingId === item.id ? "Updating..." : "Mark Success"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleResolveLead(item, "closed")}
+                            disabled={resolvingId === item.id}
+                            style={{
+                              ...menuItemStyle,
+                              color: "#475569",
+                              background: "rgba(100,116,139,0.08)",
+                              opacity: resolvingId === item.id ? 0.6 : 1,
+                            }}
+                          >
+                            {resolvingId === item.id ? "Updating..." : "Mark Closed"}
+                          </button>
+
                           {item.manuallyBlocked ? (
                             <button
                               type="button"
@@ -2481,7 +2759,7 @@ export default function RepliesPage() {
               </div>
             )}
 
-            {filterMode !== "followups" && filteredItems.length > REPLIES_PAGE_SIZE ? (
+            {filterMode !== "followups" && filterMode !== "closed" && filteredItems.length > REPLIES_PAGE_SIZE ? (
               <div style={repliesPaginationRowStyle}>
                 <span style={repliesPaginationLabelStyle}>
                   Page {page} of {repliesTotalPages} &middot;{" "}
@@ -2520,6 +2798,7 @@ export default function RepliesPage() {
             ) : null}
 
             {filterMode !== "followups" &&
+            filterMode !== "closed" &&
             SCOPED_LIST_ENABLED &&
             !isSearching &&
             !loading &&
@@ -3248,6 +3527,30 @@ const manuallyBlockedBadgeStyle: CSSProperties = {
   background: "#dc2626",
   color: "#ffffff",
   border: "1px solid #b91c1c",
+  borderRadius: 999,
+  padding: "7px 11px",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const successOutcomeBadgeStyle: CSSProperties = {
+  marginTop: 8,
+  display: "inline-block",
+  background: "rgba(16, 185, 129, 0.12)",
+  color: "#059669",
+  border: "1px solid rgba(16, 185, 129, 0.25)",
+  borderRadius: 999,
+  padding: "7px 11px",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const closedOutcomeBadgeStyle: CSSProperties = {
+  marginTop: 8,
+  display: "inline-block",
+  background: "rgba(100, 116, 139, 0.12)",
+  color: "#475569",
+  border: "1px solid rgba(100, 116, 139, 0.25)",
   borderRadius: 999,
   padding: "7px 11px",
   fontSize: 12,

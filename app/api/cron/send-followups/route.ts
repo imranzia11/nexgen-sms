@@ -68,20 +68,39 @@ export async function GET(req: NextRequest) {
     })
   );
 
+  // REVERTED ON REQUEST: this hasReply skip used to exist, was removed
+  // earlier (task #86) so a follow-up would send unconditionally once due,
+  // and is being restored now - a real example showed a follow-up going
+  // out to a customer who had already replied "wrong number," which isn't
+  // a lead worth following up with. hasReply reflects the CURRENT state at
+  // send time (re-checked here, not the state when the follow-up was
+  // originally scheduled), since a reply can easily arrive during the
+  // hours between scheduling and the follow-up's due time. Batch-fetched
+  // via getAll() (one round trip per 300 conversations, chunked the same
+  // way the recovery scripts already do) rather than one read per
+  // follow-up, so this doesn't reintroduce the N+1 pattern just fixed
+  // above for the blacklist check.
+  const conversationIds = Array.from(
+    new Set(snap.docs.map((d) => String(d.data()?.conversationId || "")).filter(Boolean))
+  );
+
+  const hasReplyByConversationId = new Map<string, boolean>();
+  const GETALL_CHUNK = 300;
+  for (let i = 0; i < conversationIds.length; i += GETALL_CHUNK) {
+    const chunkIds = conversationIds.slice(i, i + GETALL_CHUNK);
+    const refs = chunkIds.map((id) => adminDb.collection("conversations").doc(id));
+    const convoSnaps = await adminDb.getAll(...refs);
+    convoSnaps.forEach((convoSnap) => {
+      hasReplyByConversationId.set(convoSnap.id, convoSnap.exists && convoSnap.data()?.hasReply === true);
+    });
+  }
+
   let sent = 0;
   let skipped = 0;
   let failed = 0;
 
   for (const doc of snap.docs) {
     const data = doc.data();
-
-    // NOTE: This used to skip sending if the lead had already replied
-    // (hasReply == true on the conversation). Removed on request - a
-    // follow-up should now send unconditionally once its due time arrives,
-    // regardless of whether the customer has replied to anything, ever, on
-    // this conversation. The only remaining reason to skip is the
-    // blocked-number check right below, which stays because it's a legal/
-    // compliance requirement (STOP opt-outs), not a business preference.
 
     // 3. Skip if the lead opted out (STOP) or got auto-blocked
     const isBlocked =
@@ -91,6 +110,19 @@ export async function GET(req: NextRequest) {
 
     if (isBlocked) {
       await doc.ref.update({ status: "skipped", skippedReason: "blocked" });
+      skipped++;
+      continue;
+    }
+
+    // 3b. Skip if the customer has replied to anything in this
+    // conversation since the follow-up was scheduled - a reply (even a
+    // "wrong number" or "not interested") means an automated nudge is no
+    // longer appropriate.
+    const customerAlreadyReplied =
+      hasReplyByConversationId.get(String(data.conversationId || "")) ?? false;
+
+    if (customerAlreadyReplied) {
+      await doc.ref.update({ status: "skipped", skippedReason: "customer_replied" });
       skipped++;
       continue;
     }
