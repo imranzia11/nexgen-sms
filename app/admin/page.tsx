@@ -86,6 +86,9 @@ export default function AdminOverviewPage() {
     router.push("/login");
   };
 
+  const activeCount = accounts.filter((a) => a.isActive).length;
+  const inactiveCount = accounts.length - activeCount;
+
   if (checking) {
     return <LoadingScreen text="Checking account access..." />;
   }
@@ -107,9 +110,26 @@ export default function AdminOverviewPage() {
           </button>
         </div>
 
-        <div style={statCardStyle}>
-          <div style={statLabelStyle}>Total Accounts</div>
-          <div style={statValueStyle}>{accounts.length}</div>
+        <div style={statsRowStyle}>
+          <div style={heroStatCardStyle}>
+            <div style={heroStatIconStyle}>●</div>
+            <div>
+              <div style={statLabelStyle}>Active Accounts</div>
+              <div style={heroStatValueStyle}>{activeCount}</div>
+            </div>
+          </div>
+
+          <div style={statCardStyle}>
+            <div style={statLabelStyle}>Total Accounts</div>
+            <div style={statValueStyle}>{accounts.length}</div>
+          </div>
+
+          {inactiveCount > 0 ? (
+            <div style={statCardStyle}>
+              <div style={statLabelStyle}>Inactive</div>
+              <div style={statValueStyle}>{inactiveCount}</div>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -226,8 +246,14 @@ const logoutButtonStyle: CSSProperties = {
   cursor: "pointer",
 };
 
-const statCardStyle: CSSProperties = {
+const statsRowStyle: CSSProperties = {
   marginTop: 28,
+  display: "flex",
+  gap: 16,
+  flexWrap: "wrap",
+};
+
+const statCardStyle: CSSProperties = {
   display: "inline-flex",
   flexDirection: "column",
   background: "rgba(255,255,255,0.18)",
@@ -235,6 +261,32 @@ const statCardStyle: CSSProperties = {
   borderRadius: 20,
   padding: "18px 26px",
   backdropFilter: "blur(10px)",
+};
+
+const heroStatCardStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 16,
+  background: "linear-gradient(135deg, rgba(255,255,255,0.32) 0%, rgba(255,255,255,0.14) 100%)",
+  border: "1px solid rgba(255,255,255,0.3)",
+  borderRadius: 24,
+  padding: "20px 30px",
+  backdropFilter: "blur(10px)",
+  boxShadow: "0 20px 50px rgba(0,0,0,0.14)",
+};
+
+const heroStatIconStyle: CSSProperties = {
+  fontSize: 14,
+  color: "#4ade80",
+  filter: "drop-shadow(0 0 8px rgba(74,222,128,0.9))",
+};
+
+const heroStatValueStyle: CSSProperties = {
+  marginTop: 4,
+  fontSize: 40,
+  fontWeight: 900,
+  color: "#ffffff",
+  lineHeight: 1,
 };
 
 const statLabelStyle: CSSProperties = {

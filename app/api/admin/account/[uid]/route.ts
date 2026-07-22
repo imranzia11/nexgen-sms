@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuth } from "firebase-admin/auth";
 import { adminDb } from "../../../../../lib/firebaseAdmin";
+import { getNYDayRangeUtc, todayNYDateString } from "../../../../../lib/date";
 
 // Per-account detail for the superadmin dashboard: login history for the
 // past 5 days, plus the total SMS sent count for that one account. Same
@@ -71,25 +72,56 @@ export async function GET(
     // logs a sent follow-up into the conversation's messages SUBcollection,
     // never this root one, so it would otherwise be invisible here. Both
     // queries below are equality-only, so neither needs a new index.
-    const [loginSnap, sentSnap, followUpSentSnap] = await Promise.all([
-      adminDb
-        .collection("loginHistory")
-        .where("ownerUid", "==", uid)
-        .limit(200)
-        .get(),
-      adminDb
-        .collection("messages")
-        .where("ownerUid", "==", uid)
-        .where("direction", "==", "outbound")
-        .count()
-        .get(),
-      adminDb
-        .collection("followUps")
-        .where("ownerUid", "==", uid)
-        .where("status", "==", "sent")
-        .count()
-        .get(),
-    ]);
+    // Today's count reuses the exact query shape already proven safe on
+    // /stats and /logs (ownerUid equality + createdAt range + orderBy
+    // createdAt desc) - that's the one composite index already deployed
+    // for `messages` (see firestore.indexes.json). A three-field query
+    // (ownerUid + direction + createdAt range) would need a brand-new,
+    // undeployed index instead, so `direction` is filtered in memory below
+    // rather than added to the query itself - same trade-off already made
+    // on the stats page. Capped at limit(10000): a realistic ceiling for
+    // one account's messages in one day, same cap used there.
+    const { start: todayStart, end: todayEnd } = getNYDayRangeUtc(
+      todayNYDateString()
+    );
+
+    const [loginSnap, sentSnap, followUpSentSnap, todayMessagesSnap] =
+      await Promise.all([
+        adminDb
+          .collection("loginHistory")
+          .where("ownerUid", "==", uid)
+          .limit(200)
+          .get(),
+        adminDb
+          .collection("messages")
+          .where("ownerUid", "==", uid)
+          .where("direction", "==", "outbound")
+          .count()
+          .get(),
+        adminDb
+          .collection("followUps")
+          .where("ownerUid", "==", uid)
+          .where("status", "==", "sent")
+          .count()
+          .get(),
+        adminDb
+          .collection("messages")
+          .where("ownerUid", "==", uid)
+          .where("createdAt", ">=", todayStart)
+          .where("createdAt", "<", todayEnd)
+          .orderBy("createdAt", "desc")
+          .limit(10000)
+          .get(),
+      ]);
+
+    // Same "regular sends + manual replies" definition as smsSentCount
+    // below, just narrowed to today - deliberately does not also add
+    // today's follow-up sends (those live in a different collection and
+    // would need their own new index to date-filter safely; the trade-off
+    // mirrors smsSentCount's own comment above).
+    const todaySentCount = todayMessagesSnap.docs.filter(
+      (d) => d.data()?.direction === "outbound"
+    ).length;
 
     const cutoffMs = Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
 
@@ -115,6 +147,7 @@ export async function GET(
           targetData.twilioNumber || targetData.assignedTwilioNumber || ""
         ),
         smsSentCount: sentSnap.data().count + followUpSentSnap.data().count,
+        todaySentCount,
       },
       loginHistory: loginHistory.map((entry) => ({
         id: entry.id,

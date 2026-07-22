@@ -15,6 +15,7 @@ type AccountDetail = {
   isActive: boolean;
   twilioNumber: string;
   smsSentCount: number;
+  todaySentCount: number;
 };
 
 type LoginEntry = {
@@ -36,6 +37,149 @@ function formatDateTime(value: string): string {
   });
 }
 
+// Same NY-calendar-day convention used everywhere else in the app
+// (lib/date.ts) - a "day" boundary is midnight America/New_York, not the
+// viewer's own timezone, so this always lines up with what /stats and
+// /logs mean by "today".
+function nyDateKey(date: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+  }).format(date);
+}
+
+function nyShortLabel(date: Date): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    month: "numeric",
+    day: "numeric",
+  }).format(date);
+}
+
+// Builds one bar per day for the lookback window (oldest first), even for
+// days with zero logins, so the graph always shows a full, evenly-spaced
+// window instead of silently compressing around whichever days happened
+// to have activity.
+function buildLoginActivity(loginHistory: LoginEntry[], lookbackDays: number) {
+  const countsByDay = new Map<string, number>();
+
+  loginHistory.forEach((entry) => {
+    const d = new Date(entry.loginAt);
+    if (Number.isNaN(d.getTime())) return;
+    const key = nyDateKey(d);
+    countsByDay.set(key, (countsByDay.get(key) || 0) + 1);
+  });
+
+  const days: { key: string; label: string; count: number }[] = [];
+  for (let i = lookbackDays - 1; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+    const key = nyDateKey(d);
+    days.push({
+      key,
+      label: nyShortLabel(d),
+      count: countsByDay.get(key) || 0,
+    });
+  }
+  return days;
+}
+
+const RING_RADIUS = 66;
+const RING_STROKE = 13;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+
+function StatRing({
+  label,
+  value,
+  revealed,
+  accent,
+}: {
+  label: string;
+  value: number;
+  revealed: boolean;
+  accent: string;
+}) {
+  // Purely a visual flourish (no real "target" a send count is measured
+  // against) - the ring always draws fully around on reveal, matching the
+  // exact same decorative pattern already used on the /stats page's
+  // "Messages Sent" ring, just smaller so two fit side by side here.
+  const dashOffset = revealed ? 0 : RING_CIRCUMFERENCE;
+
+  return (
+    <div style={ringCardStyle}>
+      <svg width={168} height={168} viewBox="0 0 168 168">
+        <circle
+          cx={84}
+          cy={84}
+          r={RING_RADIUS}
+          fill="none"
+          stroke="#e2e8f0"
+          strokeWidth={RING_STROKE}
+        />
+        <circle
+          cx={84}
+          cy={84}
+          r={RING_RADIUS}
+          fill="none"
+          stroke={accent}
+          strokeWidth={RING_STROKE}
+          strokeLinecap="round"
+          strokeDasharray={RING_CIRCUMFERENCE}
+          strokeDashoffset={dashOffset}
+          transform="rotate(-90 84 84)"
+          style={{ transition: "stroke-dashoffset 1.1s ease-out" }}
+        />
+        <text
+          x={84}
+          y={80}
+          textAnchor="middle"
+          style={{ fontSize: 30, fontWeight: 900, fill: "#0f172a" }}
+        >
+          {value}
+        </text>
+        <text
+          x={84}
+          y={102}
+          textAnchor="middle"
+          style={{ fontSize: 11, fontWeight: 700, fill: "#64748b" }}
+        >
+          SMS
+        </text>
+      </svg>
+      <div style={ringLabelStyle}>{label}</div>
+    </div>
+  );
+}
+
+function LoginActivityChart({
+  days,
+}: {
+  days: { key: string; label: string; count: number }[];
+}) {
+  const maxCount = Math.max(1, ...days.map((d) => d.count));
+
+  return (
+    <div style={chartWrapStyle}>
+      {days.map((day) => {
+        const heightPct = (day.count / maxCount) * 100;
+        return (
+          <div key={day.key} style={chartColStyle}>
+            <div style={chartBarTrackStyle}>
+              <div
+                style={{
+                  ...chartBarFillStyle,
+                  height: `${Math.max(day.count > 0 ? 6 : 0, heightPct)}%`,
+                }}
+              />
+            </div>
+            <div style={chartCountStyle}>{day.count}</div>
+            <div style={chartLabelStyle}>{day.label}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function AdminAccountDetailPage({
   params,
 }: {
@@ -52,6 +196,7 @@ export default function AdminAccountDetailPage({
   const [loginHistory, setLoginHistory] = useState<LoginEntry[]>([]);
   const [lookbackDays, setLookbackDays] = useState(5);
   const [activeTab, setActiveTab] = useState<TabId>("logins");
+  const [revealed, setRevealed] = useState(false);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -94,6 +239,11 @@ export default function AdminAccountDetailPage({
         setLoginHistory(body.loginHistory || []);
         setLookbackDays(body.lookbackDays || 5);
         setLoading(false);
+
+        // Same reveal-after-paint trick as the /stats page ring - lets the
+        // browser paint the "empty" ring first so the 0 -> full animation
+        // is visible instead of collapsing into an instant jump.
+        window.setTimeout(() => setRevealed(true), 60);
       } catch (error: unknown) {
         setLoadError(
           error instanceof Error
@@ -147,6 +297,30 @@ export default function AdminAccountDetailPage({
       <div style={contentStyle}>
         {!loading && !loadError && account ? (
           <>
+            <div style={ringsRowStyle}>
+              <StatRing
+                label="Sent Today"
+                value={account.todaySentCount}
+                revealed={revealed}
+                accent="#14b8a6"
+              />
+              <StatRing
+                label="Total Sent"
+                value={account.smsSentCount}
+                revealed={revealed}
+                accent="#0f766e"
+              />
+            </div>
+
+            <div style={panelStyle}>
+              <div style={panelTitleStyle}>
+                Login activity - last {lookbackDays} days
+              </div>
+              <LoginActivityChart
+                days={buildLoginActivity(loginHistory, lookbackDays)}
+              />
+            </div>
+
             <div style={tabRowStyle}>
               <button
                 onClick={() => setActiveTab("logins")}
@@ -285,6 +459,78 @@ const contentStyle: CSSProperties = {
   maxWidth: 700,
   margin: "-16px auto 0",
   padding: "0 24px",
+};
+
+const ringsRowStyle: CSSProperties = {
+  display: "flex",
+  gap: 20,
+  flexWrap: "wrap",
+};
+
+const ringCardStyle: CSSProperties = {
+  background: "#ffffff",
+  borderRadius: 24,
+  border: "1px solid #e2ede9",
+  padding: "20px 24px",
+  boxShadow: "0 12px 30px rgba(15, 118, 110, 0.08)",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  gap: 8,
+  flex: "1 1 200px",
+};
+
+const ringLabelStyle: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 700,
+  color: "#5b6b76",
+};
+
+const chartWrapStyle: CSSProperties = {
+  marginTop: 18,
+  display: "flex",
+  alignItems: "flex-end",
+  gap: 14,
+  height: 140,
+};
+
+const chartColStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  gap: 6,
+  flex: 1,
+  height: "100%",
+};
+
+const chartBarTrackStyle: CSSProperties = {
+  flex: 1,
+  width: "100%",
+  maxWidth: 36,
+  display: "flex",
+  alignItems: "flex-end",
+  background: "#f4fbf9",
+  borderRadius: 10,
+  overflow: "hidden",
+};
+
+const chartBarFillStyle: CSSProperties = {
+  width: "100%",
+  background: "linear-gradient(180deg, #14b8a6 0%, #0f766e 100%)",
+  borderRadius: 10,
+  transition: "height 0.8s ease-out",
+};
+
+const chartCountStyle: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const chartLabelStyle: CSSProperties = {
+  fontSize: 11,
+  fontWeight: 600,
+  color: "#94a3b8",
 };
 
 const tabRowStyle: CSSProperties = {
