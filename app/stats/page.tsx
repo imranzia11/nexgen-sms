@@ -232,6 +232,10 @@ export default function StatsPage() {
                 Stats
               </Link>
 
+              <Link href="/help" style={sidebarSecondaryLinkButtonStyle}>
+                Help Center
+              </Link>
+
               <button onClick={handleLogout} style={sidebarLogoutButtonStyle}>
                 Logout
               </button>

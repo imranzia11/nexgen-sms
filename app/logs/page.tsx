@@ -375,6 +375,10 @@ export default function LogsPage() {
                 Stats
               </Link>
 
+              <Link href="/help" style={sidebarSecondaryLinkButtonStyle}>
+                Help Center
+              </Link>
+
               <button onClick={handleLogout} style={sidebarLogoutButtonStyle}>
                 Logout
               </button>

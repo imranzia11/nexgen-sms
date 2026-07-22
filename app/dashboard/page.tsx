@@ -1625,6 +1625,10 @@ export default function DashboardPage() {
                   Stats
                 </Link>
 
+                <Link href="/help" style={sidebarSecondaryLinkButtonStyle}>
+                  Help Center
+                </Link>
+
                 <button onClick={handleLogout} style={sidebarLogoutButtonStyle}>
                   Logout
                 </button>
