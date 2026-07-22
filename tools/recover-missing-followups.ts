@@ -41,13 +41,20 @@ function toDate(value: any): Date | null {
 }
 
 async function main() {
-  const ownerUid = process.argv[2];
-  const campaignName = process.argv[3];
   const apply = process.argv.includes("--apply");
+  const positional = process.argv.slice(2).filter((a) => a !== "--apply");
+  const ownerUid = positional[0];
+  const campaignName = positional[1];
+  // The `campaigns` summary doc has turned out to be unreliable for a send
+  // that hit this bug (in at least one real case it showed no
+  // followUpEnabled/followUpHours at all, even though the checkbox was
+  // clearly on - see the "july22 Abe10:46" incident). Rather than trust
+  // that doc, accept an explicit hours override here instead.
+  const hoursOverrideArg = positional[2];
 
   if (!ownerUid || !campaignName) {
     console.error(
-      'Usage: npx tsx tools/recover-missing-followups.ts <ownerUid> "<campaignName>" [--apply]'
+      'Usage: npx tsx tools/recover-missing-followups.ts <ownerUid> "<campaignName>" [followUpHours] [--apply]'
     );
     process.exit(1);
   }
@@ -69,17 +76,22 @@ async function main() {
     .where("name", "==", campaignName)
     .get();
 
+  const campaign = campaignsSnap.empty ? {} : campaignsSnap.docs[0].data() || {};
+
   if (campaignsSnap.empty) {
-    console.log(`No campaign named "${campaignName}" found for ownerUid ${ownerUid}.`);
-    return;
+    console.log(
+      `No campaigns doc found for "${campaignName}" - proceeding anyway using the actual sent messages as the source of truth.\n`
+    );
   }
 
-  const campaign = campaignsSnap.docs[0].data() || {};
-  const followUpHours = Number(campaign.followUpHours || 0);
+  const followUpHours =
+    Number(hoursOverrideArg) || Number(campaign.followUpHours || 0);
 
-  if (campaign.followUpEnabled !== true || !followUpHours) {
+  if (!followUpHours) {
     console.log(
-      `Campaign "${campaignName}" doesn't show followUpEnabled/followUpHours - nothing to recover.`
+      `Couldn't determine followUpHours - the campaigns doc doesn't have it, and no override was passed.\n` +
+        `Re-run with the correct hours as the third argument, e.g.:\n` +
+        `  npx tsx tools/recover-missing-followups.ts ${ownerUid} "${campaignName}" 4`
     );
     return;
   }
