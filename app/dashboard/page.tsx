@@ -1190,23 +1190,32 @@ export default function DashboardPage() {
         followUpHours: followUpEnabled ? followUpHours : null,
       });
 
-      showToast(
-        `SMS finished. Sent: ${totalSuccess}, Failed: ${totalFailed}, Total Verified Sent Attempted: ${totalAttempted}.` +
-          (anyChunkErrored
-            ? " Some batches hit a network/server error - check the count above against your list."
-            : ""),
-        anyChunkErrored ? "error" : totalFailed > 0 ? "info" : "success"
-      );
+      // Combined into ONE toast call - showToast only has a single slot
+      // (toastMessage/toastOpen are single values, not a queue), so firing
+      // it twice back-to-back would just silently overwrite the first
+      // message before React ever painted it. That was a real bug: the
+      // "SMS finished" summary was never actually visible, only whichever
+      // follow-up toast came right after it.
+      let summary = `SMS finished. Sent: ${totalSuccess}, Failed: ${totalFailed}, Total Verified Sent Attempted: ${totalAttempted}.`;
+      if (anyChunkErrored) {
+        summary += " Some batches hit a network/server error - check the count above against your list.";
+      }
 
       if (followUpEnabled) {
-        showToast(
-          `Follow-ups: ${followUpScheduledTotal} of ${followUpAttemptedTotal} scheduled for ${followUpHours}h from now.` +
-            (anyFollowUpChunkErrored
-              ? " Some batches failed to schedule - check the Follow-Ups tab against your list."
-              : ""),
-          anyFollowUpChunkErrored ? "error" : "success"
-        );
+        summary += ` Follow-ups: ${followUpScheduledTotal} of ${followUpAttemptedTotal} scheduled for ${followUpHours}h from now.`;
+        if (anyFollowUpChunkErrored) {
+          summary += " Some batches failed to schedule - check the Follow-Ups tab against your list.";
+        }
       }
+
+      showToast(
+        summary,
+        anyChunkErrored || anyFollowUpChunkErrored
+          ? "error"
+          : totalFailed > 0
+          ? "info"
+          : "success"
+      );
 
       setCampaignName("");
       setMessage(DEFAULT_SMS_MESSAGE);
@@ -1292,18 +1301,30 @@ export default function DashboardPage() {
         followUpHours: followUpEnabled ? followUpHours : null,
       });
 
-      showToast(
-        `Message sent. Sent: ${data.success}, Failed: ${data.failed}.`,
-        data.failed > 0 ? "info" : "success"
-      );
-
-      await scheduleFollowUp({
+      // Same single-toast-slot issue as handleSendSms - scheduleFollowUp
+      // called silently here and folded into one combined message below,
+      // instead of firing its own toast right after this one and silently
+      // overwriting it before it's ever seen.
+      const followUpResult = await scheduleFollowUp({
         idToken,
         campaignName: directCampaignName,
         fileId: "",
         fileName: "Single USA Number",
         recipients: [{ name: "", phone: validation.normalized }],
+        silent: true,
       });
+
+      let summary = `Message sent. Sent: ${data.success}, Failed: ${data.failed}.`;
+      if (followUpEnabled) {
+        summary += followUpResult.ok
+          ? ` Follow-up scheduled for ${followUpHours}h from now.`
+          : ` Follow-up NOT scheduled: ${followUpResult.error || "unknown error"}.`;
+      }
+
+      showToast(
+        summary,
+        data.failed > 0 || !followUpResult.ok ? "info" : "success"
+      );
 
       setSinglePhoneNumber("");
     } catch (error: any) {
