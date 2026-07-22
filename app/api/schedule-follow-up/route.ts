@@ -9,15 +9,38 @@ type Recipient = {
   phone: string;
 };
 
-async function getUserFromRequest(req: NextRequest) {
+function getBearerToken(req: NextRequest) {
   const authHeader = req.headers.get("authorization") || "";
-  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  return authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+}
+
+async function getUserFromRequest(req: NextRequest) {
+  const token = getBearerToken(req);
 
   if (!token) {
     throw new Error("Missing authorization token.");
   }
 
   return getAuth().verifyIdToken(token);
+}
+
+// Best-effort ONLY - decodes the token payload without verifying its
+// signature or expiry, purely so a failed-auth error log can still be
+// attributed to an account. Never used for anything security-relevant;
+// verifyIdToken above remains the only thing that actually authorizes a
+// request. If the token is malformed/missing/anything else goes wrong here,
+// this just returns "" and the log falls back to an unattributed entry
+// rather than throwing.
+function decodeUidWithoutVerifying(token: string): string {
+  try {
+    const payloadSegment = token.split(".")[1];
+    if (!payloadSegment) return "";
+    const json = Buffer.from(payloadSegment, "base64").toString("utf8");
+    const payload = JSON.parse(json);
+    return String(payload?.sub || payload?.user_id || payload?.uid || "");
+  } catch {
+    return "";
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -30,6 +53,7 @@ export async function POST(req: NextRequest) {
   let uid: string | undefined;
   let campaignNameForLog: string | undefined;
   let recipientCountForLog: number | undefined;
+  let authFailed = false;
 
   try {
     const decodedUser = await getUserFromRequest(req);
@@ -244,27 +268,45 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: any) {
     const errorMessage = err?.message || "Failed to schedule follow-up.";
-    console.error("schedule-follow-up failed", { uid, errorMessage });
+
+    // FIX: this used to only log when `uid` was already set, which is only
+    // ever true once verifyIdToken() has succeeded (see getUserFromRequest
+    // above). An expired/invalid token throws BEFORE that assignment, so
+    // the exact failure mode that caused the 5k-campaign incident (task
+    // #82/the "client is angry" recovery) left literally nothing queryable
+    // - just a bare console.error with no account attribution. Falling
+    // back to a best-effort decode of the token payload (no signature
+    // verification - this is for logging attribution only, never for
+    // authorization) means this failure mode now always leaves a
+    // queryable trace, tagged authFailure so it's easy to tell apart from
+    // a post-auth failure.
+    if (!uid) {
+      authFailed = true;
+      uid = decodeUidWithoutVerifying(getBearerToken(req)) || undefined;
+    }
+
+    console.error("schedule-follow-up failed", { uid, authFailed, errorMessage });
 
     // Best-effort, append-only log so a silent failure like this is
     // traceable afterward - not just a toast the user may have missed. A
     // logging problem here must never mask the real error being returned
-    // to the client below.
-    if (uid) {
-      try {
-        await adminDb.collection("followUpScheduleErrors").add({
-          ownerUid: uid,
-          error: errorMessage,
-          campaignName: campaignNameForLog || "",
-          recipientCount: recipientCountForLog ?? 0,
-          createdAt: FieldValue.serverTimestamp(),
-        });
-      } catch (logError) {
-        console.error(
-          "schedule-follow-up: failed to write error log (non-fatal)",
-          logError
-        );
-      }
+    // to the client below. Always attempted now, even when no uid could
+    // be resolved at all, so a completely garbled/missing token still
+    // leaves a record rather than vanishing silently.
+    try {
+      await adminDb.collection("followUpScheduleErrors").add({
+        ownerUid: uid || "unknown",
+        authFailure: authFailed,
+        error: errorMessage,
+        campaignName: campaignNameForLog || "",
+        recipientCount: recipientCountForLog ?? 0,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    } catch (logError) {
+      console.error(
+        "schedule-follow-up: failed to write error log (non-fatal)",
+        logError
+      );
     }
 
     return NextResponse.json(

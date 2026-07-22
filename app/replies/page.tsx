@@ -1689,6 +1689,26 @@ export default function RepliesPage() {
     });
   }, [items, attentionItems, filterMode, search]);
 
+  // BUG FIX: the Follow-Ups tab renders straight from followUpItems (its
+  // own dedicated listener - see the onSnapshot above), never from `items`,
+  // so it never went through searchedItems/filteredItems at all. The search
+  // box in the header still looked like it applied everywhere, but typing a
+  // number while on this tab did nothing - the full unfiltered list stayed
+  // on screen the whole time. Mirrors the same phone/campaign-name/message
+  // matching used for every other tab.
+  const searchedFollowUpItems = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return followUpItems;
+
+    return followUpItems.filter((item) => {
+      return (
+        item.phone.toLowerCase().includes(term) ||
+        item.campaignName.toLowerCase().includes(term) ||
+        item.message.toLowerCase().includes(term)
+      );
+    });
+  }, [followUpItems, search]);
+
   const filteredItems = useMemo(() => {
     // Attention Required is already its own dedicated, pre-filtered source
     // (manual blocks only, via the effect above) - no pinned/reply-status
@@ -2207,19 +2227,25 @@ export default function RepliesPage() {
             ) : null}
 
             {filterMode === "followups" ? (
-              followUpItems.length === 0 ? (
+              searchedFollowUpItems.length === 0 ? (
                 <div style={emptyStateStyle}>
                   <div style={emptyDotStyle} />
-                  <div style={emptyTitleStyle}>No follow-ups scheduled.</div>
+                  <div style={emptyTitleStyle}>
+                    {followUpItems.length === 0
+                      ? "No follow-ups scheduled."
+                      : "No follow-ups match your search."}
+                  </div>
                   <div style={emptyTextStyle}>
-                    {followUpsSkippedCount > 0
+                    {followUpItems.length > 0
+                      ? "Try a different phone number, campaign name, or clear the search box."
+                      : followUpsSkippedCount > 0
                       ? `${followUpsSkippedCount} follow-up(s) exist but are excluded here since those numbers are already blocked and won't be sent.`
                       : "Turn on \"Send an automated follow-up message\" from the SMS Portal to queue one."}
                   </div>
                 </div>
               ) : (
                 <div style={followUpListStyle}>
-                  {followUpItems.map((item) => (
+                  {searchedFollowUpItems.map((item) => (
                     <FollowUpCard key={item.id} item={item} nowMs={nowMs} />
                   ))}
                 </div>
