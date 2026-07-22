@@ -1376,6 +1376,35 @@ export default function DashboardPage() {
     <>
       <GlobalStyles />
 
+      {sendProgress && sendProgress.totalChunks > 1 ? (
+        <div style={sendOverlayBackdropStyle}>
+          <div style={sendOverlayCardStyle}>
+            <div style={sendOverlaySpinnerStyle} />
+            <div style={sendOverlayTitleStyle}>Sending your messages...</div>
+            <div style={sendOverlaySubtitleStyle}>
+              Batch {sendProgress.chunkIndex} of {sendProgress.totalChunks} &middot;{" "}
+              {sendProgress.sentSoFar} / {sendProgress.totalLeads} sent
+            </div>
+            <div style={sendOverlayTrackStyle}>
+              <div
+                style={{
+                  ...sendOverlayFillStyle,
+                  width: `${Math.min(
+                    100,
+                    (sendProgress.sentSoFar / Math.max(sendProgress.totalLeads, 1)) * 100
+                  )}%`,
+                }}
+              />
+            </div>
+            <div style={sendOverlayWarningStyle}>
+              Do not close or refresh this page until this finishes - a large
+              send goes out in waves from your browser, and closing the tab
+              pauses whatever hasn&apos;t gone out yet.
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {toastOpen ? (
         <div
           style={{
@@ -3199,6 +3228,78 @@ const sendProgressWarningStyle: CSSProperties = {
   fontSize: 12.5,
   color: "#b45309",
   lineHeight: 1.5,
+};
+
+const sendOverlayBackdropStyle: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 9999,
+  background: "rgba(4, 20, 18, 0.72)",
+  backdropFilter: "blur(3px)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 20,
+};
+
+const sendOverlayCardStyle: CSSProperties = {
+  width: "100%",
+  maxWidth: 420,
+  borderRadius: 24,
+  padding: "36px 32px",
+  background: "#ffffff",
+  boxShadow: "0 30px 80px rgba(0,0,0,0.35)",
+  textAlign: "center",
+};
+
+const sendOverlaySpinnerStyle: CSSProperties = {
+  width: 40,
+  height: 40,
+  margin: "0 auto",
+  borderRadius: "50%",
+  border: "4px solid rgba(15,118,110,0.15)",
+  borderTop: "4px solid #0f766e",
+  animation: "spin 1s linear infinite",
+};
+
+const sendOverlayTitleStyle: CSSProperties = {
+  marginTop: 20,
+  fontSize: 19,
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const sendOverlaySubtitleStyle: CSSProperties = {
+  marginTop: 6,
+  fontSize: 14,
+  fontWeight: 700,
+  color: "#0f766e",
+  fontFamily: "'IBM Plex Mono', monospace",
+};
+
+const sendOverlayTrackStyle: CSSProperties = {
+  marginTop: 18,
+  height: 10,
+  borderRadius: 999,
+  background: "#e5f3f0",
+  overflow: "hidden",
+};
+
+const sendOverlayFillStyle: CSSProperties = {
+  height: "100%",
+  borderRadius: 999,
+  background: "linear-gradient(90deg, #0f766e 0%, #14b8a6 100%)",
+  transition: "width 0.3s ease",
+};
+
+const sendOverlayWarningStyle: CSSProperties = {
+  marginTop: 18,
+  fontSize: 12.5,
+  color: "#b45309",
+  lineHeight: 1.6,
+  background: "rgba(180, 83, 9, 0.08)",
+  borderRadius: 12,
+  padding: "10px 14px",
 };
 
 const miniPanelTitleStyle: CSSProperties = {
