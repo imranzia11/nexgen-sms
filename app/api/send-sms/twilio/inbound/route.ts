@@ -229,6 +229,45 @@ function isAbusiveMessage(body: string) {
   return abusiveKeywords.some((item) => text.includes(item));
 }
 
+// BUG FIX: the only opt-out detection used to be an exact match on the
+// single word "STOP" (see isStop below) - the same canonical keyword
+// Twilio's own compliance filter recognizes. A real customer replied
+// "Opt out" (two words) to a follow-up; normalizeKeyword() upper-cased it
+// to "OPT OUT", which is never equal to "STOP", so nothing was blocked -
+// they kept being eligible for future sends despite clearly asking to stop.
+// This list catches the common ways people actually phrase an opt-out
+// request in their own words, in addition to the exact STOP/START/HELP
+// keywords Twilio itself recognizes. normalizeInboundText() strips
+// punctuation (so "don't" becomes "don t"), which is why the "don t ..."
+// forms are listed alongside the "do not ..." ones.
+const optOutPhrases = [
+  "opt out",
+  "optout",
+  "opting out",
+  "unsubscribe me",
+  "remove me",
+  "take me off",
+  "stop texting me",
+  "stop messaging me",
+  "stop contacting me",
+  "stop sending me",
+  "do not text me",
+  "do not message me",
+  "do not contact me",
+  "don t text me",
+  "don t message me",
+  "don t contact me",
+  "no more texts",
+  "no more messages",
+  "please stop texting",
+  "please stop messaging",
+];
+
+function isOptOutPhrase(body: string) {
+  const text = normalizeInboundText(body);
+  return optOutPhrases.some((item) => text.includes(item));
+}
+
 function buildConversationId(uid: string, customerPhone: string) {
   return `${uid}_${phoneDocId(customerPhone)}`;
 }
@@ -324,6 +363,7 @@ async function upsertBlacklist(opts: {
   const isStart = keyword === "START";
   const isStop = keyword === "STOP";
   const isAbuse = keyword === "ABUSE";
+  const isOptOutPhraseKeyword = keyword === "OPT_OUT_PHRASE";
 
   const payload = {
     ownerUid,
@@ -335,7 +375,7 @@ async function upsertBlacklist(opts: {
     keyword,
     reason: isAbuse
       ? "abusive_language"
-      : isStop
+      : isStop || isOptOutPhraseKeyword
         ? "opt_out"
         : isStart
           ? "resubscribe"
@@ -480,16 +520,24 @@ export async function POST(req: NextRequest) {
     const isStart = keyword === "START";
     const isHelp = keyword === "HELP";
     const isAbuse = isAbusiveMessage(body);
+    // Only checked when the exact-keyword isStop already missed it -
+    // avoids double-tagging an exact "STOP" reply with the phrase keyword
+    // instead of the canonical one.
+    const isFreeTextOptOut = !isStop && isOptOutPhrase(body);
 
-    if (isStop || isStart || isAbuse) {
+    if (isStop || isStart || isAbuse || isFreeTextOptOut) {
       await upsertBlacklist({
         ownerUid: uid,
         phone: from,
-        keyword: isAbuse ? "ABUSE" : keyword,
+        keyword: isAbuse ? "ABUSE" : isFreeTextOptOut ? "OPT_OUT_PHRASE" : keyword,
         twilioNumber,
         messageSid,
         body,
-        source: isAbuse ? "inbound_auto_block" : "twilio_inbound",
+        source: isAbuse
+          ? "inbound_auto_block"
+          : isFreeTextOptOut
+            ? "inbound_freetext_optout"
+            : "twilio_inbound",
       });
 
       // Compliance requirement: an opt-out (or auto-detected abuse) must
@@ -499,7 +547,7 @@ export async function POST(req: NextRequest) {
       // checked inside sendSmsForUser on every single send path.
       await upsertGlobalBlocklist({
         phone: from,
-        keyword: isAbuse ? "ABUSE" : keyword,
+        keyword: isAbuse ? "ABUSE" : isFreeTextOptOut ? "OPT_OUT_PHRASE" : keyword,
         triggeredByUid: uid,
         triggeredByTwilioNumber: twilioNumber,
         messageSid,
@@ -508,7 +556,7 @@ export async function POST(req: NextRequest) {
     }
 
     const blockedNow = await getBlockedStatus(uid, from);
-    const shouldBeBlockedAfterThisMessage = isStop
+    const shouldBeBlockedAfterThisMessage = isStop || isFreeTextOptOut
       ? true
       : isStart
         ? false
@@ -516,7 +564,13 @@ export async function POST(req: NextRequest) {
           ? true
           : blockedNow;
 
-    const storedKeyword = isStop || isStart || isHelp ? keyword : isAbuse ? "ABUSE" : "";
+    const storedKeyword = isStop || isStart || isHelp
+      ? keyword
+      : isAbuse
+        ? "ABUSE"
+        : isFreeTextOptOut
+          ? "OPT_OUT_PHRASE"
+          : "";
     const previewText = body || (numMedia > 0 ? "Sent media" : "");
 
     const inboundMessageData = {
@@ -598,7 +652,7 @@ export async function POST(req: NextRequest) {
       lastInboundSid: messageSid,
       blocked: shouldBeBlockedAfterThisMessage,
       blockedAt:
-        isStop || isAbuse
+        isStop || isAbuse || isFreeTextOptOut
           ? FieldValue.serverTimestamp()
           : existingConvo.blockedAt || null,
       unblockedAt: isStart
@@ -651,6 +705,19 @@ export async function POST(req: NextRequest) {
       // nothing about opt-out enforcement - it just stops guaranteed-to-
       // fail sends from cluttering the Twilio error log.
       return xmlResponse();
+    }
+
+    if (isFreeTextOptOut) {
+      // Unlike the exact "STOP" keyword above, Twilio's own compliance
+      // filter only recognizes its fixed canonical list (STOP, STOPALL,
+      // UNSUBSCRIBE, CANCEL, END, QUIT) - a free-text phrase like "opt out"
+      // isn't on that list, so Twilio won't auto-block this confirmation
+      // the way it does for a real STOP. Sending it lets the customer know
+      // their request actually worked, since they didn't use the "magic
+      // word" Twilio itself listens for.
+      return xmlResponse(
+        "You've been unsubscribed and will not receive further messages. Reply START to resubscribe."
+      );
     }
 
     if (isStart) {
