@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../../../../lib/firebaseAdmin";
 import { sendSmsForUser } from "../../../../lib/twilioSend";
+import { phoneDocId } from "../../../../lib/phone";
 
 export async function GET(req: NextRequest) {
   // 1. Protect this route so randoms on the internet can't trigger it
@@ -13,16 +14,59 @@ export async function GET(req: NextRequest) {
   const now = new Date();
 
   // 2. Find all follow-ups that are due and still pending
+  //
+  // BUG FIX: raised from 200 - a mass campaign's follow-ups can all share
+  // nearly the same dueAt (each is original send time + N hours, and a
+  // bulk send's messages typically go out within one tight window), so
+  // thousands can become due within roughly the same hour. At 200 per run
+  // on a 15-minute schedule, that's only ~800/hour of throughput, well
+  // below what a single large campaign's follow-up wave can produce -
+  // exactly what caused a real backlog (and a growing "most overdue" lag)
+  // after the ~5,000-lead "july22 Abe10:46" recovery. Raised to 500 for
+  // roughly 2.5x throughput. Paired with the blacklist-check batching
+  // fix directly below (previously one Firestore query PER follow-up,
+  // now one query per distinct owner) so the extra items don't push this
+  // request close to the platform's ~5 minute timeout.
   const snap = await adminDb
     .collection("followUps")
     .where("status", "==", "pending")
     .where("dueAt", "<=", now)
-    .limit(200)
+    .limit(500)
     .get();
 
   if (snap.empty) {
     return NextResponse.json({ ok: true, processed: 0 });
   }
+
+  // BUG FIX: this used to run a separate Firestore query PER follow-up
+  // just to check if that number was blacklisted - 200 (now up to 500)
+  // individual round trips per run, the single biggest reason a run took
+  // as long as it did. Batched here instead: one query per DISTINCT owner
+  // represented in this batch (almost always a small number, run in
+  // parallel), building an in-memory blocked-phone Set per owner that the
+  // loop below just checks against - zero additional Firestore reads per
+  // item. Mirrors the same fix already applied to /api/schedule-follow-up.
+  const ownerUids = Array.from(
+    new Set(snap.docs.map((d) => String(d.data()?.ownerUid || "")).filter(Boolean))
+  );
+
+  const blockedPhonesByOwner = new Map<string, Set<string>>();
+  await Promise.all(
+    ownerUids.map(async (ownerUid) => {
+      const blacklistSnap = await adminDb
+        .collection("blacklisted_numbers")
+        .where("ownerUid", "==", ownerUid)
+        .where("status", "==", "blocked")
+        .get();
+
+      blockedPhonesByOwner.set(
+        ownerUid,
+        new Set(
+          blacklistSnap.docs.map((d) => phoneDocId(String(d.data()?.phone || "")))
+        )
+      );
+    })
+  );
 
   let sent = 0;
   let skipped = 0;
@@ -40,16 +84,10 @@ export async function GET(req: NextRequest) {
     // compliance requirement (STOP opt-outs), not a business preference.
 
     // 3. Skip if the lead opted out (STOP) or got auto-blocked
-    const blacklistSnap = await adminDb
-      .collection("blacklisted_numbers")
-      .where("ownerUid", "==", data.ownerUid)
-      .where("phone", "==", data.phone)
-      .limit(1)
-      .get();
-
     const isBlocked =
-      !blacklistSnap.empty &&
-      String(blacklistSnap.docs[0].data()?.status || "").toLowerCase() === "blocked";
+      blockedPhonesByOwner
+        .get(String(data.ownerUid || ""))
+        ?.has(phoneDocId(String(data.phone || ""))) ?? false;
 
     if (isBlocked) {
       await doc.ref.update({ status: "skipped", skippedReason: "blocked" });
