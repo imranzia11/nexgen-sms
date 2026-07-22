@@ -25,16 +25,34 @@ function truncate(value: string, max = 90) {
 // one cheap query regardless of how many conversations the account has.
 async function getUnreadBadgeCount(ownerUid: string): Promise<number> {
   const col = adminDb.collection("conversations");
+  const base = [
+    ["ownerUid", "==", ownerUid],
+    ["blocked", "==", false],
+    ["hasReply", "==", true],
+    ["lastDirection", "==", "inbound"],
+  ] as const;
 
-  const snap = await col
-    .where("ownerUid", "==", ownerUid)
-    .where("blocked", "==", false)
-    .where("hasReply", "==", true)
-    .where("lastDirection", "==", "inbound")
-    .count()
-    .get();
+  const baseQuery = base.reduce(
+    (q, [field, op, value]) => q.where(field, op, value),
+    col as FirebaseFirestore.Query
+  );
 
-  return snap.data().count;
+  // BUG FIX: a lead marked Success/Closed keeps hasReply/lastDirection
+  // exactly as they were when it was resolved - resolving it never touches
+  // those fields - so without this, the OS push badge kept counting closed
+  // leads forever, even though they're no longer shown under Customer
+  // Replied at all. Subtracted rather than queried as `resolved == false`
+  // directly, because most existing conversations predate this field and
+  // Firestore's `== false` doesn't match a missing field - only documents
+  // explicitly marked resolved need to match here, so subtraction is the
+  // safe direction. Mirrors the same fix applied to the /replies stat card
+  // and the nav badge hook.
+  const [rawSnap, resolvedSnap] = await Promise.all([
+    baseQuery.count().get(),
+    baseQuery.where("resolved", "==", true).count().get(),
+  ]);
+
+  return Math.max(0, rawSnap.data().count - resolvedSnap.data().count);
 }
 
 export async function notifyOwnerOfReply(opts: {

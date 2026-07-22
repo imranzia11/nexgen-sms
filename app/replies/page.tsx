@@ -842,6 +842,7 @@ export default function RepliesPage() {
         pinned,
         rawReplied,
         pinnedReplied,
+        resolvedReplied,
         rawAwaiting,
         pinnedAwaiting,
         rawNeverReplied,
@@ -865,6 +866,26 @@ export default function RepliesPage() {
           where("hasReply", "==", true),
           where("lastDirection", "==", "inbound")
         ),
+        // BUG FIX: a lead marked Success/Closed (see the Closed Leads tab)
+        // keeps hasReply/lastDirection exactly as they were the moment it
+        // was resolved - resolving it never touches those two fields. So
+        // without this, a closed lead that had a reply before being closed
+        // would count toward "Customer Replied" forever, even though it's
+        // no longer shown there (it lives in Closed Leads instead) - the
+        // number would only ever grow as more leads get closed out.
+        // Queried separately and subtracted below rather than adding
+        // `resolved == false` directly to the query above, because the vast
+        // majority of existing conversations predate this field entirely -
+        // Firestore's `== false` does not match a document where the field
+        // is simply absent, so a direct filter would make ALL of those
+        // vanish from this count too, not just the closed ones. This only
+        // needs to match documents that were explicitly resolved, which
+        // always have the field set, so subtraction is the safe direction.
+        count(
+          where("hasReply", "==", true),
+          where("lastDirection", "==", "inbound"),
+          where("resolved", "==", true)
+        ),
         count(where("hasReply", "==", true), where("lastDirection", "==", "outbound")),
         count(
           where("pinned", "==", true),
@@ -886,8 +907,9 @@ export default function RepliesPage() {
         // below) - an unanswered customer reply should count toward this
         // number even if the conversation is also pinned. Pinning is a
         // quick-access shortcut, not a way to make a genuine unread reply
-        // disappear from the count.
-        replied: rawReplied,
+        // disappear from the count. resolvedReplied IS subtracted - a
+        // closed/resolved lead should never count here, pinned or not.
+        replied: Math.max(0, rawReplied - resolvedReplied),
         pinnedReplied,
         awaiting: Math.max(0, rawAwaiting - pinnedAwaiting),
         neverReplied: Math.max(0, rawNeverReplied - pinnedNeverReplied),

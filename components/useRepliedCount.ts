@@ -46,13 +46,30 @@ export function useRepliedCount() {
           return snap.data().count;
         };
 
-        const raw = await countQuery(
-          where("hasReply", "==", true),
-          where("lastDirection", "==", "inbound")
-        );
+        const [raw, resolvedReplied] = await Promise.all([
+          countQuery(
+            where("hasReply", "==", true),
+            where("lastDirection", "==", "inbound")
+          ),
+          // BUG FIX: a lead marked Success/Closed keeps hasReply/
+          // lastDirection exactly as they were when it was resolved -
+          // resolving it never touches those fields - so without this, the
+          // nav badge kept counting closed leads forever, even though
+          // they're no longer shown under Customer Replied at all.
+          // Subtracted rather than added as `resolved == false` to the
+          // query above, because most existing conversations predate this
+          // field and Firestore's `== false` doesn't match a missing
+          // field - only documents explicitly marked resolved need to
+          // match here, so subtraction is the safe direction.
+          countQuery(
+            where("hasReply", "==", true),
+            where("lastDirection", "==", "inbound"),
+            where("resolved", "==", true)
+          ),
+        ]);
 
         if (!cancelled) {
-          setCount(raw);
+          setCount(Math.max(0, raw - resolvedReplied));
         }
       } catch (error) {
         console.error("Failed to load replied count", error);
