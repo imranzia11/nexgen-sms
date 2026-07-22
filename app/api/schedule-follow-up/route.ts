@@ -143,11 +143,31 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    const batch = adminDb.batch();
+    // Firestore hard-caps a single batch at 500 mutations. A big blast can
+    // produce up to 2 mutations per recipient (superseding an old pending
+    // follow-up + creating the new one), so at a few thousand recipients a
+    // single batch would exceed that cap - and batch.commit() is all-or-
+    // nothing, so the ENTIRE follow-up schedule would silently fail, not
+    // just the overflow. Chunking into multiple batches (committing as the
+    // limit is approached) means a big blast becomes several batches
+    // instead of one that's guaranteed to fail past ~250 recipients.
+    const BATCH_MUTATION_LIMIT = 400;
+    let batch = adminDb.batch();
+    let opsInBatch = 0;
     let scheduled = 0;
     let invalid = 0;
     let blocked = 0;
     let superseded = 0;
+
+    async function queueOp(apply: (b: FirebaseFirestore.WriteBatch) => void) {
+      apply(batch);
+      opsInBatch++;
+      if (opsInBatch >= BATCH_MUTATION_LIMIT) {
+        await batch.commit();
+        batch = adminDb.batch();
+        opsInBatch = 0;
+      }
+    }
 
     for (const recipient of recipients) {
       // Normalize to E164 BEFORE building conversationId, so this matches
@@ -176,37 +196,43 @@ export async function POST(req: NextRequest) {
       // so only the latest follow-up is ever active per conversation.
       const existingPending = pendingByConversation.get(conversationId) || [];
 
-      existingPending.forEach((existingDoc) => {
-        batch.update(existingDoc.ref, {
-          status: "superseded",
-          supersededAt: FieldValue.serverTimestamp(),
-          supersededReason: "Replaced by a newer follow-up for this lead.",
-        });
+      for (const existingDoc of existingPending) {
+        await queueOp((b) =>
+          b.update(existingDoc.ref, {
+            status: "superseded",
+            supersededAt: FieldValue.serverTimestamp(),
+            supersededReason: "Replaced by a newer follow-up for this lead.",
+          })
+        );
         superseded++;
-      });
+      }
 
       const ref = adminDb.collection("followUps").doc();
 
-      batch.set(ref, {
-        ownerUid: uid,
-        conversationId,
-        phone, // now guaranteed E164
-        twilioNumber,
-        messagingServiceSid: userData.messagingServiceSid || "",
-        campaignName: campaignName || "",
-        fileId: fileId || "",
-        fileName: fileName || "",
-        followUpMessage: message.trim(),
-        delayHours: Number(delayHours),
-        dueAt,
-        status: "pending",
-        createdAt: FieldValue.serverTimestamp(),
-      });
+      await queueOp((b) =>
+        b.set(ref, {
+          ownerUid: uid,
+          conversationId,
+          phone, // now guaranteed E164
+          twilioNumber,
+          messagingServiceSid: userData.messagingServiceSid || "",
+          campaignName: campaignName || "",
+          fileId: fileId || "",
+          fileName: fileName || "",
+          followUpMessage: message.trim(),
+          delayHours: Number(delayHours),
+          dueAt,
+          status: "pending",
+          createdAt: FieldValue.serverTimestamp(),
+        })
+      );
 
       scheduled++;
     }
 
-    await batch.commit();
+    if (opsInBatch > 0) {
+      await batch.commit();
+    }
 
     return NextResponse.json({
       ok: true,

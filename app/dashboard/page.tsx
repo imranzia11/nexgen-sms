@@ -147,6 +147,14 @@ const DEFAULT_FOLLOW_UP_MESSAGE =
 
 const FOLLOW_UP_HOUR_OPTIONS = [4, 6, 8, 12, 24];
 
+// Firebase App Hosting kills a request after ~5 minutes, and /api/send-sms
+// processes each lead sequentially (a few Firestore reads/writes + one
+// Twilio call per lead) - large sends need to be split into requests that
+// each comfortably finish well inside that window. 150 leads per chunk
+// keeps a single chunk in the tens-of-seconds range even under slow
+// network/Twilio conditions, with real headroom to spare.
+const SEND_CHUNK_SIZE = 150;
+
 function getUSPhoneValidation(raw: string) {
   const original = String(raw || "").trim();
 
@@ -328,6 +336,15 @@ export default function DashboardPage() {
   const [uploading, setUploading] = useState(false);
   const [sendingSms, setSendingSms] = useState(false);
   const [sendingSingleSms, setSendingSingleSms] = useState(false);
+  // Live progress for a chunked bulk send (see SEND_CHUNK_SIZE below) - null
+  // when nothing is in flight, otherwise drives the "Batch X of Y" banner
+  // so a large send doesn't look frozen for 20-30+ minutes.
+  const [sendProgress, setSendProgress] = useState<{
+    chunkIndex: number;
+    totalChunks: number;
+    sentSoFar: number;
+    totalLeads: number;
+  } | null>(null);
 
   const [uploads, setUploads] = useState<UploadItem[]>(
     () => getInitialDashboardCache()?.uploads || []
@@ -387,6 +404,23 @@ export default function DashboardPage() {
       }
     };
   }, []);
+
+  // A chunked bulk send runs as a series of requests driven by this browser
+  // tab (see SEND_CHUNK_SIZE / handleSendSms) - closing or reloading the tab
+  // mid-send stops it right where it is, with no way for the app to finish
+  // the rest on its own. This native "are you sure" prompt is the one
+  // real backstop against that happening by accident on a large send.
+  useEffect(() => {
+    if (!sendProgress || sendProgress.totalChunks <= 1) return;
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [sendProgress]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -971,35 +1005,97 @@ export default function DashboardPage() {
 
     setSendingSms(true);
 
+    // Splitting into fixed-size chunks sent as SEPARATE requests, one at a
+    // time - see SEND_CHUNK_SIZE above for why. Each chunk still writes
+    // messages/conversations exactly as before; only the request boundary
+    // changes, so a chunk failure only ever loses that chunk, never the
+    // ones already completed.
+    const chunks: typeof verifiedLeads[] = [];
+    for (let i = 0; i < verifiedLeads.length; i += SEND_CHUNK_SIZE) {
+      chunks.push(verifiedLeads.slice(i, i + SEND_CHUNK_SIZE));
+    }
+
+    setSendProgress({
+      chunkIndex: 0,
+      totalChunks: chunks.length,
+      sentSoFar: 0,
+      totalLeads: verifiedLeads.length,
+    });
+
     try {
       const idToken = await user.getIdToken();
       const resolvedCampaignName =
         campaignName.trim() || `Campaign for ${selectedUpload.fileName}`;
 
-      const res = await fetch("/api/send-sms", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          campaignName: resolvedCampaignName,
-          fileId: selectedUploadId,
-          fileName: selectedUpload.fileName,
-          message: message.trim(),
-          leads: verifiedLeads.map((lead) => ({
-            name: lead.name || "",
-            phone: lead.phone || "",
-          })),
-        }),
-      });
+      let totalSuccess = 0;
+      let totalFailed = 0;
+      let totalAttempted = 0;
+      let anyChunkErrored = false;
 
-      const data = await res.json();
+      for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+        const chunk = chunks[chunkIndex];
 
-      if (!res.ok || !data.ok) {
-        showToast(data.error || "Failed to send SMS.", "error");
-        return;
+        setSendProgress({
+          chunkIndex: chunkIndex + 1,
+          totalChunks: chunks.length,
+          sentSoFar: totalAttempted,
+          totalLeads: verifiedLeads.length,
+        });
+
+        try {
+          // Fresh token per chunk - a large send can run long enough for
+          // the original getIdToken() result to be close to expiring.
+          const chunkToken =
+            chunks.length > 1 ? await user.getIdToken() : idToken;
+
+          const res = await fetch("/api/send-sms", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${chunkToken}`,
+            },
+            body: JSON.stringify({
+              campaignName: resolvedCampaignName,
+              fileId: selectedUploadId,
+              fileName: selectedUpload.fileName,
+              message: message.trim(),
+              leads: chunk.map((lead) => ({
+                name: lead.name || "",
+                phone: lead.phone || "",
+              })),
+            }),
+          });
+
+          const data = await res.json();
+
+          if (!res.ok || !data.ok) {
+            anyChunkErrored = true;
+            totalFailed += chunk.length;
+            totalAttempted += chunk.length;
+            console.error("Chunk failed", data.error);
+            continue;
+          }
+
+          totalSuccess += data.success || 0;
+          totalFailed += data.failed || 0;
+          totalAttempted += data.total || chunk.length;
+        } catch (chunkError) {
+          // One chunk failing outright (network blip, etc.) must not stop
+          // the rest of a large blast - keep going so the remaining chunks
+          // still get their chance, then report the shortfall at the end.
+          anyChunkErrored = true;
+          totalFailed += chunk.length;
+          totalAttempted += chunk.length;
+          console.error("Chunk request failed", chunkError);
+        }
       }
+
+      setSendProgress({
+        chunkIndex: chunks.length,
+        totalChunks: chunks.length,
+        sentSoFar: totalAttempted,
+        totalLeads: verifiedLeads.length,
+      });
 
       await addDoc(collection(db, "campaigns"), {
         ownerUid: user.uid,
@@ -1009,9 +1105,14 @@ export default function DashboardPage() {
         name: resolvedCampaignName,
         message: message.trim(),
         totalRecipients: verifiedLeads.length,
-        successCount: data.success || 0,
-        failedCount: data.failed || 0,
-        status: data.failed > 0 ? "completed_with_failures" : "completed",
+        successCount: totalSuccess,
+        failedCount: totalFailed,
+        status:
+          totalFailed > 0
+            ? anyChunkErrored
+              ? "completed_with_errors"
+              : "completed_with_failures"
+            : "completed",
         createdByName: userName,
         createdAt: serverTimestamp(),
         followUpEnabled,
@@ -1019,10 +1120,17 @@ export default function DashboardPage() {
       });
 
       showToast(
-        `SMS finished. Sent: ${data.success}, Failed: ${data.failed}, Total Verified Sent Attempted: ${data.total}.`,
-        data.failed > 0 ? "info" : "success"
+        `SMS finished. Sent: ${totalSuccess}, Failed: ${totalFailed}, Total Verified Sent Attempted: ${totalAttempted}.` +
+          (anyChunkErrored
+            ? " Some batches hit a network/server error - check the count above against your list."
+            : ""),
+        anyChunkErrored ? "error" : totalFailed > 0 ? "info" : "success"
       );
 
+      // Safe to schedule for the FULL list in one call - schedule-follow-up
+      // now chunks its own Firestore batch writes internally (see that
+      // route), so it's no longer at risk of the 500-mutation batch limit
+      // a blast this size would otherwise hit.
       await scheduleFollowUp({
         idToken,
         campaignName: resolvedCampaignName,
@@ -1042,6 +1150,7 @@ export default function DashboardPage() {
       showToast(error?.message || "Unexpected error while sending SMS.", "error");
     } finally {
       setSendingSms(false);
+      setSendProgress(null);
     }
   };
 
@@ -1938,6 +2047,38 @@ export default function DashboardPage() {
                           }`
                         : "No file selected"}
                     </div>
+
+                    {sendProgress && sendProgress.totalChunks > 1 ? (
+                      <div style={sendProgressCardStyle}>
+                        <div style={sendProgressTopRowStyle}>
+                          <span style={sendProgressTitleStyle}>
+                            Sending batch {sendProgress.chunkIndex} of{" "}
+                            {sendProgress.totalChunks}
+                          </span>
+                          <span style={sendProgressCountStyle}>
+                            {sendProgress.sentSoFar} / {sendProgress.totalLeads}
+                          </span>
+                        </div>
+                        <div style={sendProgressTrackStyle}>
+                          <div
+                            style={{
+                              ...sendProgressFillStyle,
+                              width: `${Math.min(
+                                100,
+                                (sendProgress.sentSoFar /
+                                  Math.max(sendProgress.totalLeads, 1)) *
+                                  100
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                        <div style={sendProgressWarningStyle}>
+                          Keep this tab open until the send finishes - a large
+                          send is sent in waves from your browser, so closing
+                          the tab pauses whatever hasn&apos;t gone out yet.
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
 
                   <section style={singleSendCardStyle}>
@@ -2943,6 +3084,55 @@ const sendHelpTextStyle: CSSProperties = {
   fontSize: 13,
   lineHeight: 1.5,
   wordBreak: "break-word",
+};
+
+const sendProgressCardStyle: CSSProperties = {
+  borderRadius: 14,
+  border: "1px solid #cdeee7",
+  background: "#f0fbf8",
+  padding: "14px 16px",
+  display: "grid",
+  gap: 10,
+};
+
+const sendProgressTopRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+};
+
+const sendProgressTitleStyle: CSSProperties = {
+  fontSize: 13.5,
+  fontWeight: 800,
+  color: "#0f766e",
+};
+
+const sendProgressCountStyle: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 700,
+  color: "#0f172a",
+  fontFamily: "'IBM Plex Mono', monospace",
+};
+
+const sendProgressTrackStyle: CSSProperties = {
+  height: 8,
+  borderRadius: 999,
+  background: "#d7ede8",
+  overflow: "hidden",
+};
+
+const sendProgressFillStyle: CSSProperties = {
+  height: "100%",
+  borderRadius: 999,
+  background: "linear-gradient(90deg, #0f766e 0%, #14b8a6 100%)",
+  transition: "width 0.3s ease",
+};
+
+const sendProgressWarningStyle: CSSProperties = {
+  fontSize: 12.5,
+  color: "#b45309",
+  lineHeight: 1.5,
 };
 
 const miniPanelTitleStyle: CSSProperties = {
