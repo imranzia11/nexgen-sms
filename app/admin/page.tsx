@@ -105,9 +105,14 @@ export default function AdminOverviewPage() {
               login history and SMS volume.
             </p>
           </div>
-          <button onClick={handleLogout} style={logoutButtonStyle}>
-            Log out
-          </button>
+          <div style={heroActionsStyle}>
+            <Link href="/admin/diagnose" style={diagnoseLinkStyle}>
+              Diagnose Follow-Ups
+            </Link>
+            <button onClick={handleLogout} style={logoutButtonStyle}>
+              Log out
+            </button>
+          </div>
         </div>
 
         <div style={statsRowStyle}>
@@ -233,6 +238,24 @@ const heroSubStyle: CSSProperties = {
   fontSize: 15,
   color: "rgba(236, 254, 255, 0.8)",
   maxWidth: 480,
+};
+
+const heroActionsStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  flexWrap: "wrap",
+};
+
+const diagnoseLinkStyle: CSSProperties = {
+  border: "1px solid rgba(255,255,255,0.28)",
+  background: "rgba(255,255,255,0.08)",
+  color: "#ecfeff",
+  borderRadius: 999,
+  padding: "10px 18px",
+  fontSize: 13.5,
+  fontWeight: 700,
+  textDecoration: "none",
 };
 
 const logoutButtonStyle: CSSProperties = {
