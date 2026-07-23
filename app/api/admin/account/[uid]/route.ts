@@ -90,42 +90,69 @@ export async function GET(
     const { start: windowStart } = getNYDayRangeUtc(windowStartDateStr);
     const { end: windowEnd } = getNYDayRangeUtc(todayNYDateString());
 
-    const [loginSnap, sentSnap, followUpSentSnap, windowMessagesSnap] =
-      await Promise.all([
-        adminDb
-          .collection("loginHistory")
-          .where("ownerUid", "==", uid)
-          .limit(200)
-          .get(),
-        adminDb
-          .collection("messages")
-          .where("ownerUid", "==", uid)
-          .where("direction", "==", "outbound")
-          .count()
-          .get(),
-        adminDb
-          .collection("followUps")
-          .where("ownerUid", "==", uid)
-          .where("status", "==", "sent")
-          .count()
-          .get(),
-        adminDb
-          .collection("messages")
-          .where("ownerUid", "==", uid)
-          .where("createdAt", ">=", windowStart)
-          .where("createdAt", "<", windowEnd)
-          .orderBy("createdAt", "desc")
-          .limit(20000)
-          .get(),
-      ]);
+    const [
+      loginSnap,
+      sentSnap,
+      followUpSentSnap,
+      windowMessagesSnap,
+      allSentFollowUpsSnap,
+    ] = await Promise.all([
+      adminDb
+        .collection("loginHistory")
+        .where("ownerUid", "==", uid)
+        .limit(200)
+        .get(),
+      adminDb
+        .collection("messages")
+        .where("ownerUid", "==", uid)
+        .where("direction", "==", "outbound")
+        .count()
+        .get(),
+      adminDb
+        .collection("followUps")
+        .where("ownerUid", "==", uid)
+        .where("status", "==", "sent")
+        .count()
+        .get(),
+      adminDb
+        .collection("messages")
+        .where("ownerUid", "==", uid)
+        .where("createdAt", ">=", windowStart)
+        .where("createdAt", "<", windowEnd)
+        .orderBy("createdAt", "desc")
+        .limit(20000)
+        .get(),
+      // BUG FIX: the per-day breakdown used to only count the root
+      // `messages` collection, silently leaving out every follow-up send -
+      // on a day where a large batch of follow-ups went out, the daily
+      // chart and "Sent Today" ring showed a fraction of what actually
+      // went out (confirmed live: a day showing 5,075 here was actually
+      // 7,000+ once follow-ups were included). smsSentCount (the all-time
+      // total) already summed both sources - this brings the daily
+      // breakdown in line with that same definition.
+      //
+      // No `sentAt` range filter here on purpose - combining that with the
+      // existing ownerUid/status equality filters would need a brand-new,
+      // undeployed composite index (same constraint noted above for
+      // loginHistory). Fetching every sent follow-up for the account
+      // instead (pure equality, already proven safe/no-index-needed by the
+      // followUpSentSnap count query above) and bucketing by day in memory
+      // avoids that, at the cost of reading more documents than strictly
+      // needed for a rarely-loaded superadmin page - worth it for
+      // correctness. Capped at 50000 purely as a hard safety ceiling, not
+      // expected to bind in practice.
+      adminDb
+        .collection("followUps")
+        .where("ownerUid", "==", uid)
+        .where("status", "==", "sent")
+        .limit(50000)
+        .get(),
+    ]);
 
-    // Same "regular sends + manual replies" definition as smsSentCount
-    // below, just narrowed to this window - deliberately does not also add
-    // follow-up sends (those live in a different collection and would need
-    // their own new index to date-filter safely; the trade-off mirrors
-    // smsSentCount's own comment above). Bucketed by NY calendar day so the
-    // per-day breakdown lines up with the same "day" the rest of the app
-    // means everywhere else (lib/date.ts).
+    // Same "regular sends + manual replies + follow-up sends" definition as
+    // smsSentCount below, just narrowed to this window and bucketed by NY
+    // calendar day so the per-day breakdown lines up with the same "day"
+    // the rest of the app means everywhere else (lib/date.ts).
     const sentCountByDay = new Map<string, number>();
     windowMessagesSnap.docs.forEach((d) => {
       const data = d.data();
@@ -135,6 +162,15 @@ export async function GET(
         typeof createdAt?.toDate === "function" ? createdAt.toDate() : null;
       if (!createdAtDate) return;
       const key = nyDateKey(createdAtDate);
+      sentCountByDay.set(key, (sentCountByDay.get(key) || 0) + 1);
+    });
+    allSentFollowUpsSnap.docs.forEach((d) => {
+      const data = d.data();
+      const sentAt = data?.sentAt;
+      const sentAtDate =
+        typeof sentAt?.toDate === "function" ? sentAt.toDate() : null;
+      if (!sentAtDate) return;
+      const key = nyDateKey(sentAtDate);
       sentCountByDay.set(key, (sentCountByDay.get(key) || 0) + 1);
     });
 
