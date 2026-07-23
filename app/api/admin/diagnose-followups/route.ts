@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuth } from "firebase-admin/auth";
 import { adminDb } from "../../../../lib/firebaseAdmin";
-import { toE164 } from "../../../../lib/phone";
+import { toE164, phoneDocId } from "../../../../lib/phone";
 
 // READ-ONLY diagnostic for the superadmin dashboard. Given a phone number,
 // finds every conversation across every account with that phone, and dumps
@@ -51,17 +51,43 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const convoSnap = await adminDb
-      .collection("conversations")
-      .where("phone", "==", phone)
-      .get();
+    // Two lookup strategies, merged: (1) a where("phone","==") query, which
+    // only finds a conversation if that field was ever backfilled/written in
+    // exactly this E.164 form, and (2) deriving the exact doc ID directly
+    // (`${ownerUid}_${phoneDocId(phone)}`) for every account and batch-
+    // fetching those IDs - this is the SAME id-construction the inbound
+    // webhook itself uses (buildConversationId), so it finds the doc even if
+    // its "phone" field is missing, stale, or differently formatted, which
+    // this codebase has hit before (e.g. the twilioNumber trailing-space
+    // bug). Deduped by doc ID below.
+    const [phoneFieldSnap, usersSnap] = await Promise.all([
+      adminDb.collection("conversations").where("phone", "==", phone).get(),
+      adminDb.collection("users").get(),
+    ]);
 
-    if (convoSnap.empty) {
+    const targetDocId = phoneDocId(phone);
+    const candidateRefs = usersSnap.docs.map((userDoc) =>
+      adminDb.collection("conversations").doc(`${userDoc.id}_${targetDocId}`)
+    );
+
+    const candidateSnaps = candidateRefs.length
+      ? await adminDb.getAll(...candidateRefs)
+      : [];
+
+    const byId = new Map<string, FirebaseFirestore.DocumentSnapshot>();
+    phoneFieldSnap.docs.forEach((d) => byId.set(d.id, d));
+    candidateSnaps.forEach((d) => {
+      if (d.exists) byId.set(d.id, d);
+    });
+
+    const convoDocs = Array.from(byId.values());
+
+    if (convoDocs.length === 0) {
       return NextResponse.json({ ok: true, phone, conversations: [] });
     }
 
     const conversations = await Promise.all(
-      convoSnap.docs.map(async (convoDoc: FirebaseFirestore.QueryDocumentSnapshot) => {
+      convoDocs.map(async (convoDoc: FirebaseFirestore.DocumentSnapshot) => {
         const convo = convoDoc.data() || {};
 
         const [ownerSnap, messagesSnap, followUpsSnap] = await Promise.all([
