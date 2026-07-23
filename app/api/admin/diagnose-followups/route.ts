@@ -88,20 +88,32 @@ export async function GET(req: NextRequest) {
     // the conversation is visibly reachable in the normal UI - meaning its
     // stored "phone" field AND its document ID both diverge from what every
     // other page in the app expects for this number. Rather than guess at
-    // yet another format, pull every conversation (bounded, cheap at this
-    // account count - see /admin roster showing a handful of active
-    // accounts) and match in memory on the last 10 digits, which survives
-    // any missing "+", missing country code, stray formatting, etc. This
-    // also surfaces the ACTUAL stored phone/id so we can see exactly how it
-    // diverged instead of continuing to guess blind.
+    // yet another format, pull EVERY conversation for EVERY account (scoped
+    // per-owner via the equality-only ownerUid filter, no new index needed,
+    // no limit - a single flat collection().limit(20000).get() across all
+    // accounts combined silently truncated before reaching this account's
+    // docs on a platform with 20000+ total conversations) and match in
+    // memory on the last 10 digits, which survives any missing "+", missing
+    // country code, stray formatting, etc. This also surfaces the ACTUAL
+    // stored phone/id so we can see exactly how it diverged.
     if (convoDocs.length === 0) {
       scannedFallback = true;
       const last10 = phone.replace(/\D/g, "").slice(-10);
 
-      const allConvoSnap = await adminDb.collection("conversations").limit(20000).get();
-      scannedCount = allConvoSnap.size;
+      const perOwnerSnaps = await Promise.all(
+        usersSnap.docs.map((userDoc) =>
+          adminDb
+            .collection("conversations")
+            .where("ownerUid", "==", userDoc.id)
+            .limit(50000) // safety ceiling only, not expected to bind
+            .get()
+        )
+      );
 
-      convoDocs = allConvoSnap.docs.filter((d) => {
+      const allDocs = perOwnerSnaps.flatMap((snap) => snap.docs);
+      scannedCount = allDocs.length;
+
+      convoDocs = allDocs.filter((d) => {
         const data = d.data() || {};
         const storedPhoneDigits = String(data.phone || "").replace(/\D/g, "");
         const idDigits = d.id.replace(/\D/g, "");
