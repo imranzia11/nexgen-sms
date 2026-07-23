@@ -29,6 +29,12 @@ type FollowUpRow = {
   error: string | null;
 };
 
+type AccountOption = {
+  uid: string;
+  name: string;
+  email: string;
+};
+
 type ConversationResult = {
   conversationId: string;
   storedPhone: string;
@@ -61,6 +67,8 @@ export default function DiagnoseFollowUpsPage() {
 
   const [checking, setChecking] = useState(true);
   const [phone, setPhone] = useState("");
+  const [ownerUid, setOwnerUid] = useState("");
+  const [accounts, setAccounts] = useState<AccountOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [results, setResults] = useState<ConversationResult[] | null>(null);
@@ -90,6 +98,28 @@ export default function DiagnoseFollowUpsPage() {
         }
 
         setChecking(false);
+
+        // Best-effort - the account picker is a convenience (scoping the
+        // lookup to one account is much faster than a cross-account scan).
+        // If this fails for any reason, the phone-only lookup still works.
+        try {
+          const idToken = await user.getIdToken();
+          const res = await fetch("/api/admin/overview", {
+            headers: { Authorization: `Bearer ${idToken}` },
+          });
+          const body = await res.json();
+          if (res.ok && body.ok) {
+            setAccounts(
+              (body.accounts || []).map((a: { uid: string; name: string; email: string }) => ({
+                uid: a.uid,
+                name: a.name,
+                email: a.email,
+              }))
+            );
+          }
+        } catch {
+          // ignore - account picker just stays empty/"All accounts"
+        }
       } catch {
         setChecking(false);
       }
@@ -113,10 +143,11 @@ export default function DiagnoseFollowUpsPage() {
       }
 
       const idToken = await user.getIdToken();
-      const res = await fetch(
-        `/api/admin/diagnose-followups?phone=${encodeURIComponent(phone.trim())}`,
-        { headers: { Authorization: `Bearer ${idToken}` } }
-      );
+      const params = new URLSearchParams({ phone: phone.trim() });
+      if (ownerUid) params.set("ownerUid", ownerUid);
+      const res = await fetch(`/api/admin/diagnose-followups?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
       const body = await res.json();
 
       if (!res.ok || !body.ok) {
@@ -158,6 +189,18 @@ export default function DiagnoseFollowUpsPage() {
 
       <div style={contentStyle}>
         <div style={searchRowStyle}>
+          <select
+            value={ownerUid}
+            onChange={(e) => setOwnerUid(e.target.value)}
+            style={accountSelectStyle}
+          >
+            <option value="">All accounts (slower)</option>
+            {accounts.map((a) => (
+              <option key={a.uid} value={a.uid}>
+                {a.name || a.email}
+              </option>
+            ))}
+          </select>
           <input
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
@@ -367,11 +410,24 @@ const contentStyle: CSSProperties = {
 const searchRowStyle: CSSProperties = {
   display: "flex",
   gap: 10,
+  flexWrap: "wrap",
   background: "#ffffff",
   borderRadius: 18,
   border: "1px solid #e2ede9",
   padding: 14,
   boxShadow: "0 12px 30px rgba(15, 118, 110, 0.08)",
+};
+
+const accountSelectStyle: CSSProperties = {
+  border: "1px solid #dbe6e2",
+  borderRadius: 12,
+  padding: "12px 14px",
+  fontSize: 14,
+  fontWeight: 600,
+  color: "#0f172a",
+  background: "#f4fbf9",
+  outline: "none",
+  minWidth: 200,
 };
 
 const inputStyle: CSSProperties = {

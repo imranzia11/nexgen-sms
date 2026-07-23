@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuth } from "firebase-admin/auth";
+import { FieldPath } from "firebase-admin/firestore";
 import { adminDb } from "../../../../lib/firebaseAdmin";
 import { toE164, phoneDocId } from "../../../../lib/phone";
 
@@ -43,6 +44,10 @@ export async function GET(req: NextRequest) {
 
     const rawPhone = req.nextUrl.searchParams.get("phone") || "";
     const phone = toE164(rawPhone);
+    // Optional: scope the whole lookup to one account. Much faster and
+    // fully sufficient once you know which account owns the number - skips
+    // every cross-account fallback below entirely.
+    const ownerUidFilter = (req.nextUrl.searchParams.get("ownerUid") || "").trim();
 
     if (!phone) {
       return NextResponse.json(
@@ -60,14 +65,25 @@ export async function GET(req: NextRequest) {
     // its "phone" field is missing, stale, or differently formatted, which
     // this codebase has hit before (e.g. the twilioNumber trailing-space
     // bug). Deduped by doc ID below.
+    const phoneFieldQuery = ownerUidFilter
+      ? adminDb
+          .collection("conversations")
+          .where("phone", "==", phone)
+          .where("ownerUid", "==", ownerUidFilter)
+      : adminDb.collection("conversations").where("phone", "==", phone);
+
     const [phoneFieldSnap, usersSnap] = await Promise.all([
-      adminDb.collection("conversations").where("phone", "==", phone).get(),
-      adminDb.collection("users").get(),
+      phoneFieldQuery.get(),
+      ownerUidFilter ? Promise.resolve(null) : adminDb.collection("users").get(),
     ]);
 
+    const candidateOwnerUids = ownerUidFilter
+      ? [ownerUidFilter]
+      : (usersSnap?.docs || []).map((userDoc) => userDoc.id);
+
     const targetDocId = phoneDocId(phone);
-    const candidateRefs = usersSnap.docs.map((userDoc) =>
-      adminDb.collection("conversations").doc(`${userDoc.id}_${targetDocId}`)
+    const candidateRefs = candidateOwnerUids.map((uid) =>
+      adminDb.collection("conversations").doc(`${uid}_${targetDocId}`)
     );
 
     const candidateSnaps = candidateRefs.length
@@ -101,10 +117,10 @@ export async function GET(req: NextRequest) {
       const last10 = phone.replace(/\D/g, "").slice(-10);
 
       const perOwnerSnaps = await Promise.all(
-        usersSnap.docs.map((userDoc) =>
+        candidateOwnerUids.map((uid) =>
           adminDb
             .collection("conversations")
-            .where("ownerUid", "==", userDoc.id)
+            .where("ownerUid", "==", uid)
             .limit(50000) // safety ceiling only, not expected to bind
             .get()
         )
@@ -122,6 +138,55 @@ export async function GET(req: NextRequest) {
           (last10.length === 10 && idDigits.endsWith(last10))
         );
       });
+
+      // STILL nothing? The per-owner scan above only covers ownerUids that
+      // currently have a doc in "users" - if this conversation's owner
+      // account was ever removed/deleted from "users" (this platform has a
+      // real history of account-data inconsistencies - see the duplicate-
+      // twilioNumber and cross-account-leak fixes elsewhere in this repo),
+      // its conversations would be invisible to that approach entirely.
+      // This tier ignores "users" completely and paginates through the
+      // WHOLE "conversations" collection via a documentId cursor (no
+      // arbitrary cap, no reliance on any other collection), so it will
+      // find the doc even if its owner account no longer exists anywhere
+      // else in the system. Skipped when scoped to one account - a single
+      // where(ownerUid==) query is already exhaustive for that account, so
+      // there's nothing a whole-platform scan would add.
+      if (convoDocs.length === 0 && !ownerUidFilter) {
+        let cursor: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+        const PAGE_SIZE = 5000;
+        let fullScanCount = 0;
+
+        for (;;) {
+          let pageQuery = adminDb
+            .collection("conversations")
+            .orderBy(FieldPath.documentId())
+            .limit(PAGE_SIZE);
+          if (cursor) pageQuery = pageQuery.startAfter(cursor);
+
+          const pageSnap = await pageQuery.get();
+          if (pageSnap.empty) break;
+
+          fullScanCount += pageSnap.size;
+
+          pageSnap.docs.forEach((d) => {
+            const data = d.data() || {};
+            const storedPhoneDigits = String(data.phone || "").replace(/\D/g, "");
+            const idDigits = d.id.replace(/\D/g, "");
+            if (
+              (last10.length === 10 && storedPhoneDigits.endsWith(last10)) ||
+              (last10.length === 10 && idDigits.endsWith(last10))
+            ) {
+              convoDocs.push(d);
+            }
+          });
+
+          cursor = pageSnap.docs[pageSnap.docs.length - 1];
+          if (pageSnap.size < PAGE_SIZE) break;
+        }
+
+        scannedCount = fullScanCount;
+      }
     }
 
     if (convoDocs.length === 0) {
