@@ -6,6 +6,7 @@ import Link from "next/link";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import { nyDateKey } from "@/lib/date";
 import LoadingScreen from "../../../components/LoadingScreen";
 
 type AccountDetail = {
@@ -23,6 +24,11 @@ type LoginEntry = {
   loginAt: string;
 };
 
+type DailySentCount = {
+  date: string;
+  count: number;
+};
+
 type TabId = "logins" | "sms";
 
 function formatDateTime(value: string): string {
@@ -35,16 +41,6 @@ function formatDateTime(value: string): string {
     hour: "numeric",
     minute: "2-digit",
   });
-}
-
-// Same NY-calendar-day convention used everywhere else in the app
-// (lib/date.ts) - a "day" boundary is midnight America/New_York, not the
-// viewer's own timezone, so this always lines up with what /stats and
-// /logs mean by "today".
-function nyDateKey(date: Date): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/New_York",
-  }).format(date);
 }
 
 function nyShortLabel(date: Date): string {
@@ -81,6 +77,24 @@ function buildLoginActivity(loginHistory: LoginEntry[], lookbackDays: number) {
     });
   }
   return days;
+}
+
+// dailySentCounts already comes back from the API pre-bucketed (oldest
+// first, one entry per day, zero-filled) - this just attaches a display
+// label per day, using the same date-key -> label conversion as the login
+// chart so the two charts read consistently.
+function buildSentActivity(dailySentCounts: DailySentCount[]) {
+  return dailySentCounts.map((entry) => {
+    const [y, m, d] = entry.date.split("-").map((part) => Number(part));
+    // Noon avoids any DST-edge rollover when re-deriving the label from a
+    // pure calendar-date string that carries no time-of-day of its own.
+    const dateForLabel = new Date(Date.UTC(y, (m || 1) - 1, d || 1, 12, 0, 0));
+    return {
+      key: entry.date,
+      label: nyShortLabel(dateForLabel),
+      count: entry.count,
+    };
+  });
 }
 
 const RING_RADIUS = 66;
@@ -194,6 +208,7 @@ export default function AdminAccountDetailPage({
   const [loadError, setLoadError] = useState("");
   const [account, setAccount] = useState<AccountDetail | null>(null);
   const [loginHistory, setLoginHistory] = useState<LoginEntry[]>([]);
+  const [dailySentCounts, setDailySentCounts] = useState<DailySentCount[]>([]);
   const [lookbackDays, setLookbackDays] = useState(5);
   const [activeTab, setActiveTab] = useState<TabId>("logins");
   const [revealed, setRevealed] = useState(false);
@@ -237,6 +252,7 @@ export default function AdminAccountDetailPage({
 
         setAccount(body.account || null);
         setLoginHistory(body.loginHistory || []);
+        setDailySentCounts(body.dailySentCounts || []);
         setLookbackDays(body.lookbackDays || 5);
         setLoading(false);
 
@@ -310,6 +326,13 @@ export default function AdminAccountDetailPage({
                 revealed={revealed}
                 accent="#0f766e"
               />
+            </div>
+
+            <div style={panelStyle}>
+              <div style={panelTitleStyle}>
+                SMS sent per day - last {dailySentCounts.length || lookbackDays} days
+              </div>
+              <LoginActivityChart days={buildSentActivity(dailySentCounts)} />
             </div>
 
             <div style={panelStyle}>

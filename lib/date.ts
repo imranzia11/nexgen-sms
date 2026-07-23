@@ -48,6 +48,18 @@ export function todayNYDateString(): string {
   }).format(new Date());
 }
 
+// "YYYY-MM-DD" for an arbitrary instant, as a calendar date in
+// America/New_York — same NY-day convention as todayNYDateString above, but
+// for grouping a batch of timestamps (e.g. a week of messages) into daily
+// buckets rather than just labeling "today". Shared between server routes
+// (admin per-account SMS/day breakdown) and client pages (the matching
+// chart) so both sides bucket the exact same way.
+export function nyDateKey(date: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+  }).format(date);
+}
+
 function nyOffsetMinutes(date: Date): number {
   const utc = new Date(date.toLocaleString("en-US", { timeZone: "UTC" }));
   const ny = new Date(date.toLocaleString("en-US", { timeZone: "America/New_York" }));

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuth } from "firebase-admin/auth";
 import { adminDb } from "../../../../../lib/firebaseAdmin";
-import { getNYDayRangeUtc, todayNYDateString } from "../../../../../lib/date";
+import { getNYDayRangeUtc, nyDateKey, todayNYDateString } from "../../../../../lib/date";
 
 // Per-account detail for the superadmin dashboard: login history for the
 // past 5 days, plus the total SMS sent count for that one account. Same
@@ -72,20 +72,25 @@ export async function GET(
     // logs a sent follow-up into the conversation's messages SUBcollection,
     // never this root one, so it would otherwise be invisible here. Both
     // queries below are equality-only, so neither needs a new index.
-    // Today's count reuses the exact query shape already proven safe on
-    // /stats and /logs (ownerUid equality + createdAt range + orderBy
-    // createdAt desc) - that's the one composite index already deployed
-    // for `messages` (see firestore.indexes.json). A three-field query
-    // (ownerUid + direction + createdAt range) would need a brand-new,
-    // undeployed index instead, so `direction` is filtered in memory below
-    // rather than added to the query itself - same trade-off already made
-    // on the stats page. Capped at limit(10000): a realistic ceiling for
-    // one account's messages in one day, same cap used there.
-    const { start: todayStart, end: todayEnd } = getNYDayRangeUtc(
-      todayNYDateString()
+    // Covers the whole LOOKBACK_DAYS window in one query (today's count and
+    // the per-day breakdown both come out of this same result set - no
+    // separate query needed for "today" specifically). Reuses the exact
+    // query shape already proven safe on /stats and /logs (ownerUid
+    // equality + createdAt range + orderBy createdAt desc) - that's the one
+    // composite index already deployed for `messages` (see
+    // firestore.indexes.json). A three-field query (ownerUid + direction +
+    // createdAt range) would need a brand-new, undeployed index instead, so
+    // `direction` is filtered in memory below rather than added to the
+    // query itself - same trade-off already made on the stats page. Capped
+    // at limit(20000): a realistic ceiling for one account's messages
+    // across a 5-day window.
+    const windowStartDateStr = nyDateKey(
+      new Date(Date.now() - (LOOKBACK_DAYS - 1) * 24 * 60 * 60 * 1000)
     );
+    const { start: windowStart } = getNYDayRangeUtc(windowStartDateStr);
+    const { end: windowEnd } = getNYDayRangeUtc(todayNYDateString());
 
-    const [loginSnap, sentSnap, followUpSentSnap, todayMessagesSnap] =
+    const [loginSnap, sentSnap, followUpSentSnap, windowMessagesSnap] =
       await Promise.all([
         adminDb
           .collection("loginHistory")
@@ -107,21 +112,43 @@ export async function GET(
         adminDb
           .collection("messages")
           .where("ownerUid", "==", uid)
-          .where("createdAt", ">=", todayStart)
-          .where("createdAt", "<", todayEnd)
+          .where("createdAt", ">=", windowStart)
+          .where("createdAt", "<", windowEnd)
           .orderBy("createdAt", "desc")
-          .limit(10000)
+          .limit(20000)
           .get(),
       ]);
 
     // Same "regular sends + manual replies" definition as smsSentCount
-    // below, just narrowed to today - deliberately does not also add
-    // today's follow-up sends (those live in a different collection and
-    // would need their own new index to date-filter safely; the trade-off
-    // mirrors smsSentCount's own comment above).
-    const todaySentCount = todayMessagesSnap.docs.filter(
-      (d) => d.data()?.direction === "outbound"
-    ).length;
+    // below, just narrowed to this window - deliberately does not also add
+    // follow-up sends (those live in a different collection and would need
+    // their own new index to date-filter safely; the trade-off mirrors
+    // smsSentCount's own comment above). Bucketed by NY calendar day so the
+    // per-day breakdown lines up with the same "day" the rest of the app
+    // means everywhere else (lib/date.ts).
+    const sentCountByDay = new Map<string, number>();
+    windowMessagesSnap.docs.forEach((d) => {
+      const data = d.data();
+      if (data?.direction !== "outbound") return;
+      const createdAt = data?.createdAt;
+      const createdAtDate =
+        typeof createdAt?.toDate === "function" ? createdAt.toDate() : null;
+      if (!createdAtDate) return;
+      const key = nyDateKey(createdAtDate);
+      sentCountByDay.set(key, (sentCountByDay.get(key) || 0) + 1);
+    });
+
+    const dailySentCounts: { date: string; count: number }[] = [];
+    for (let i = LOOKBACK_DAYS - 1; i >= 0; i--) {
+      const dateStr = nyDateKey(new Date(Date.now() - i * 24 * 60 * 60 * 1000));
+      dailySentCounts.push({
+        date: dateStr,
+        count: sentCountByDay.get(dateStr) || 0,
+      });
+    }
+
+    const todaySentCount =
+      dailySentCounts[dailySentCounts.length - 1]?.count || 0;
 
     const cutoffMs = Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
 
@@ -153,6 +180,7 @@ export async function GET(
         id: entry.id,
         loginAt: new Date(entry.loginAtMs).toISOString(),
       })),
+      dailySentCounts,
       lookbackDays: LOOKBACK_DAYS,
     });
   } catch (err: unknown) {
