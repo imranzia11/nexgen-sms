@@ -80,10 +80,46 @@ export async function GET(req: NextRequest) {
       if (d.exists) byId.set(d.id, d);
     });
 
-    const convoDocs = Array.from(byId.values());
+    let convoDocs = Array.from(byId.values());
+    let scannedFallback = false;
+    let scannedCount = 0;
+
+    // LAST RESORT: both targeted strategies above came up empty even though
+    // the conversation is visibly reachable in the normal UI - meaning its
+    // stored "phone" field AND its document ID both diverge from what every
+    // other page in the app expects for this number. Rather than guess at
+    // yet another format, pull every conversation (bounded, cheap at this
+    // account count - see /admin roster showing a handful of active
+    // accounts) and match in memory on the last 10 digits, which survives
+    // any missing "+", missing country code, stray formatting, etc. This
+    // also surfaces the ACTUAL stored phone/id so we can see exactly how it
+    // diverged instead of continuing to guess blind.
+    if (convoDocs.length === 0) {
+      scannedFallback = true;
+      const last10 = phone.replace(/\D/g, "").slice(-10);
+
+      const allConvoSnap = await adminDb.collection("conversations").limit(20000).get();
+      scannedCount = allConvoSnap.size;
+
+      convoDocs = allConvoSnap.docs.filter((d) => {
+        const data = d.data() || {};
+        const storedPhoneDigits = String(data.phone || "").replace(/\D/g, "");
+        const idDigits = d.id.replace(/\D/g, "");
+        return (
+          (last10.length === 10 && storedPhoneDigits.endsWith(last10)) ||
+          (last10.length === 10 && idDigits.endsWith(last10))
+        );
+      });
+    }
 
     if (convoDocs.length === 0) {
-      return NextResponse.json({ ok: true, phone, conversations: [] });
+      return NextResponse.json({
+        ok: true,
+        phone,
+        conversations: [],
+        scannedFallback,
+        scannedCount,
+      });
     }
 
     const conversations = await Promise.all(
@@ -132,6 +168,7 @@ export async function GET(req: NextRequest) {
 
         return {
           conversationId: convoDoc.id,
+          storedPhone: String(convo.phone || ""),
           ownerUid: String(convo.ownerUid || ""),
           ownerEmail: String(ownerData.email || ""),
           ownerName: String(ownerData.name || ""),
@@ -145,7 +182,13 @@ export async function GET(req: NextRequest) {
       })
     );
 
-    return NextResponse.json({ ok: true, phone, conversations });
+    return NextResponse.json({
+      ok: true,
+      phone,
+      conversations,
+      scannedFallback,
+      scannedCount,
+    });
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : "Unexpected server error";
     return NextResponse.json({ ok: false, error: errorMessage }, { status: 500 });

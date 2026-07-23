@@ -31,6 +31,7 @@ type FollowUpRow = {
 
 type ConversationResult = {
   conversationId: string;
+  storedPhone: string;
   ownerUid: string;
   ownerEmail: string;
   ownerName: string;
@@ -63,6 +64,7 @@ export default function DiagnoseFollowUpsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [results, setResults] = useState<ConversationResult[] | null>(null);
+  const [scanInfo, setScanInfo] = useState<{ scannedFallback: boolean; scannedCount: number } | null>(null);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -124,6 +126,10 @@ export default function DiagnoseFollowUpsPage() {
       }
 
       setResults(body.conversations || []);
+      setScanInfo({
+        scannedFallback: body.scannedFallback === true,
+        scannedCount: Number(body.scannedCount || 0),
+      });
       setLoading(false);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Unexpected error.");
@@ -178,6 +184,22 @@ export default function DiagnoseFollowUpsPage() {
         {results && results.length === 0 ? (
           <div style={emptyStateStyle}>
             No conversation found for that phone number.
+            {scanInfo?.scannedFallback ? (
+              <div style={{ marginTop: 8, fontSize: 12.5 }}>
+                Scanned all {scanInfo.scannedCount} conversation docs across
+                every account for a last-10-digit match and still found
+                nothing - this number genuinely doesn&apos;t exist in the
+                conversations collection under any format.
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {results && results.length > 0 && scanInfo?.scannedFallback ? (
+          <div style={scanNoticeStyle}>
+            Found via fallback scan ({scanInfo.scannedCount} docs checked) -
+            this record didn&apos;t match the standard phone field or ID
+            format, see &quot;stored phone&quot; below for the actual value.
           </div>
         ) : null}
 
@@ -189,6 +211,9 @@ export default function DiagnoseFollowUpsPage() {
                   {convo.ownerName || "(no name)"} &middot; {convo.ownerEmail}
                 </div>
                 <div style={convoIdStyle}>{convo.conversationId}</div>
+                <div style={convoIdStyle}>
+                  stored phone: &quot;{convo.storedPhone}&quot;
+                </div>
               </div>
               <div style={badgeRowStyle}>
                 <span
@@ -382,6 +407,16 @@ const errorStateStyle: CSSProperties = {
   background: "rgba(220, 38, 38, 0.06)",
   color: "#b91c1c",
   fontSize: 14,
+};
+
+const scanNoticeStyle: CSSProperties = {
+  marginTop: 16,
+  padding: "12px 16px",
+  borderRadius: 12,
+  background: "rgba(217, 119, 6, 0.08)",
+  color: "#b45309",
+  fontSize: 12.5,
+  fontWeight: 600,
 };
 
 const emptyStateStyle: CSSProperties = {
