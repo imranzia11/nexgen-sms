@@ -13,12 +13,16 @@ import { auth, db } from "@/lib/firebase";
 // can write it - see firestore.rules), so the popup appears within a
 // second or two of it being sent, no polling needed.
 //
-// "Seen it" is tracked in localStorage (per browser, not per account) -
-// simplest thing that satisfies "they press OK and it goes away." It does
-// NOT give the superadmin a read receipt of who's acknowledged what; that
-// would need a second write path (and a rules change letting each user
-// write their own ack) and hasn't been asked for.
-const ACK_STORAGE_KEY = "nexgen_last_acked_announcement";
+// "Seen it" is tracked in localStorage, keyed by uid - scoped per SIGNED-IN
+// ACCOUNT, not just per browser. Without the uid in the key, dismissing an
+// announcement while signed in as one account would also suppress it for
+// the next account signed into that same browser (e.g. testing as
+// superadmin, then logging into a rep's account to check) - each account
+// needs its own "have I seen this one" flag. This does NOT give the
+// superadmin a read receipt of who's acknowledged what; that would need a
+// second write path (and a rules change letting each user write their own
+// ack) and hasn't been asked for.
+const ACK_STORAGE_PREFIX = "nexgen_last_acked_announcement_";
 
 type Announcement = {
   id: string;
@@ -27,13 +31,13 @@ type Announcement = {
 };
 
 export default function AnnouncementModal() {
-  const [signedIn, setSignedIn] = useState(false);
+  const [uid, setUid] = useState<string | null>(null);
   const [visible, setVisible] = useState(false);
   const [announcement, setAnnouncement] = useState<Announcement | null>(null);
 
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, (user) => {
-      setSignedIn(!!user);
+      setUid(user ? user.uid : null);
       if (!user) {
         setVisible(false);
         setAnnouncement(null);
@@ -43,7 +47,7 @@ export default function AnnouncementModal() {
   }, []);
 
   useEffect(() => {
-    if (!signedIn) return;
+    if (!uid) return;
 
     const q = query(
       collection(db, "announcements"),
@@ -69,7 +73,7 @@ export default function AnnouncementModal() {
 
         let lastAcked = "";
         try {
-          lastAcked = window.localStorage.getItem(ACK_STORAGE_KEY) || "";
+          lastAcked = window.localStorage.getItem(ACK_STORAGE_PREFIX + uid) || "";
         } catch {
           // localStorage unavailable (private browsing, etc) - just show it
           // every load in that case rather than crash.
@@ -80,19 +84,21 @@ export default function AnnouncementModal() {
           setVisible(true);
         }
       },
-      () => {
-        // Silent - a missed announcement popup is not worth surfacing an
-        // error banner over on every page in the app.
+      (error) => {
+        // Logged (not surfaced as a UI banner) - most likely cause is the
+        // `announcements` Firestore rule not being deployed yet, which
+        // shows up here as permission-denied.
+        console.error("[AnnouncementModal] listen failed:", error);
       }
     );
 
     return () => unsub();
-  }, [signedIn]);
+  }, [uid]);
 
   const handleOk = () => {
-    if (announcement) {
+    if (announcement && uid) {
       try {
-        window.localStorage.setItem(ACK_STORAGE_KEY, announcement.id);
+        window.localStorage.setItem(ACK_STORAGE_PREFIX + uid, announcement.id);
       } catch {
         // Ignore - worst case it shows again next load.
       }
