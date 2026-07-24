@@ -162,6 +162,17 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Superadmin broadcast messages ("there was an update...") - fanned out
+    // to every signed-in account, not owner-scoped like everything else in
+    // this file. Only the Admin SDK (via /api/admin/announcements, gated by
+    // a server-side superadmin check) ever writes a new one, so create/
+    // update/delete are closed to clients entirely; any signed-in user can
+    // read the list so their browser can show the latest one as a popup.
+    match /announcements/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if false;
+    }
+
     // Append-only login log, one doc per successful sign-in - written by
     // app/login/page.tsx right after the isActive check passes. Only the
     // account itself can read its own entries here; the superadmin's

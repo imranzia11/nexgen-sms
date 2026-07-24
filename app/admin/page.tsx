@@ -171,6 +171,9 @@ export default function AdminOverviewPage() {
             </p>
           </div>
           <div style={heroActionsStyle}>
+            <Link href="/admin/broadcast" style={diagnoseLinkStyle}>
+              Send Update
+            </Link>
             <Link href="/admin/diagnose" style={diagnoseLinkStyle}>
               Diagnose Follow-Ups
             </Link>

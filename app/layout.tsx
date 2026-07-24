@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import AnnouncementModal from "../components/AnnouncementModal";
 
 export const metadata: Metadata = {
   title: "Nexgen SMS Admin",
@@ -36,7 +37,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {children}
+        <AnnouncementModal />
+      </body>
     </html>
   );
 }
