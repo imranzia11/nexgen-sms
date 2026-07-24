@@ -133,24 +133,6 @@ const FAQ_ITEMS: FaqItem[] = [
       "That's expected - a follow-up is automatically skipped if the customer has replied to that conversation at all by the time it's due to send, even if the reply came in after the follow-up was originally scheduled. This check happens right at send time, so a reply that arrives an hour before the follow-up would have gone out still cancels it. It's marked \"skipped\" (not sent), and that conversation shows up under Customer Replied instead.",
   },
   {
-    id: "closed-leads",
-    question: "How do I mark a lead as resolved or closed?",
-    category: "Leads",
-    keywords: [
-      "closed lead",
-      "close lead",
-      "resolve",
-      "resolved",
-      "success",
-      "mark closed",
-      "mark success",
-      "done with lead",
-      "archive conversation",
-    ],
-    answer:
-      "Open the ⋯ menu on any conversation in Replies and choose \"Mark Success\" or \"Mark Closed,\" depending on the outcome. It moves out of your regular tabs into a dedicated Closed Leads tab, and any pending follow-up for that number is automatically cancelled. Closed Leads are kept separately so you can review them later for reporting/analysis, and you can reopen one at any time from that tab if needed (reopening doesn't restore a cancelled follow-up).",
-  },
-  {
     id: "follow-up-overdue",
     question: "Why does a follow-up show \"Overdue\" before it sends?",
     category: "Follow-ups",
