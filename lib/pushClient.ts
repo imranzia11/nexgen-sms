@@ -13,6 +13,50 @@ export type EnableNotificationsResult =
   | { ok: true }
   | { ok: false; reason: "unsupported" | "denied" | "missing-config" | "error" };
 
+// Generates a short two-tone "ding" with the Web Audio API instead of
+// shipping an audio file - no asset to host, no network request, and no
+// autoplay-policy surprise from a <audio> element with a remote src.
+// Browsers require at least one prior user gesture on the page before any
+// audio can play at all (including this); on a desktop app someone is
+// actively using, that's already satisfied by the time a reply comes in.
+function playReplyChime() {
+  try {
+    const AudioContextClass =
+      window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+
+    const ctx = new AudioContextClass();
+    const now = ctx.currentTime;
+
+    // Two quick notes (high then a touch higher) rather than one flat
+    // tone - reads as a deliberate "new message" chime instead of a beep.
+    [
+      { freq: 880, start: 0, dur: 0.12 },
+      { freq: 1108.73, start: 0.11, dur: 0.16 },
+    ].forEach(({ freq, start, dur }) => {
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.value = freq;
+      gain.gain.setValueAtTime(0, now + start);
+      gain.gain.linearRampToValueAtTime(0.22, now + start + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + start + dur);
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.start(now + start);
+      oscillator.stop(now + start + dur + 0.02);
+    });
+
+    // Tear down after the notes finish - nothing keeps this context alive
+    // between replies, so a burst of several notifications doesn't pile up
+    // AudioContexts.
+    window.setTimeout(() => ctx.close().catch(() => {}), 500);
+  } catch {
+    // Web Audio unsupported/blocked - the visual notification still shows,
+    // this is purely an enhancement on top of it.
+  }
+}
+
 async function isPushSupported() {
   if (typeof window === "undefined") return false;
   try {
@@ -112,6 +156,8 @@ export function listenForForegroundReplies(onNavigate?: (link: string) => void) 
         }
 
         if (Notification.permission === "granted") {
+          playReplyChime();
+
           const notif = new Notification(title, {
             body,
             icon: "/icons/icon-192.png",
