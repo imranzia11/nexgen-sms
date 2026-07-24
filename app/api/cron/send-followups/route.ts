@@ -143,15 +143,26 @@ export async function GET(req: NextRequest) {
     const conversationIdForCheck = String(data.conversationId || "");
     let realInboundExists = false;
 
+    // Wrapped on its own: a transient read failure here must degrade back
+    // to the pre-existing behavior (proceed to the send below, same as
+    // before this check existed) rather than throwing out of the loop and
+    // aborting every remaining follow-up in this batch until the next run.
     if (conversationIdForCheck) {
-      const inboundCheckSnap = await adminDb
-        .collection("conversations")
-        .doc(conversationIdForCheck)
-        .collection("messages")
-        .where("direction", "==", "inbound")
-        .limit(1)
-        .get();
-      realInboundExists = !inboundCheckSnap.empty;
+      try {
+        const inboundCheckSnap = await adminDb
+          .collection("conversations")
+          .doc(conversationIdForCheck)
+          .collection("messages")
+          .where("direction", "==", "inbound")
+          .limit(1)
+          .get();
+        realInboundExists = !inboundCheckSnap.empty;
+      } catch (checkError) {
+        console.error(
+          "[send-followups] inbound-message safety check failed - proceeding without it for this item",
+          { followUpId: doc.id, conversationId: conversationIdForCheck, checkError }
+        );
+      }
     }
 
     if (realInboundExists) {
