@@ -25,10 +25,27 @@ type BillingCategory = {
   count: string;
 };
 
+type DaySpend = {
+  date: string;
+  total: number;
+  carrierFees: number;
+  currency: string;
+};
+
 type Billing = {
   balance: { amount: number; currency: string };
   monthToDate: { total: number; currency: string; byCategory: BillingCategory[] };
+  today: DaySpend | null;
+  yesterday: DaySpend | null;
+  dailySpend: DaySpend[];
+  carrierNote: string;
 };
+
+function formatDayLabel(dateKey: string) {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1));
+  return dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+}
 
 function formatMoney(amount: number, currency: string) {
   try {
@@ -104,7 +121,14 @@ export default function AdminOverviewPage() {
         setLoading(false);
 
         if (billingRes.ok && billingBody.ok) {
-          setBilling({ balance: billingBody.balance, monthToDate: billingBody.monthToDate });
+          setBilling({
+            balance: billingBody.balance,
+            monthToDate: billingBody.monthToDate,
+            today: billingBody.today,
+            yesterday: billingBody.yesterday,
+            dailySpend: billingBody.dailySpend || [],
+            carrierNote: billingBody.carrierNote || "",
+          });
         } else {
           setBillingError(billingBody.error || "Failed to load Twilio billing.");
         }
@@ -221,6 +245,33 @@ export default function AdminOverviewPage() {
                     </span>
                   </div>
                 ))}
+              </div>
+            ) : null}
+
+            {billing.dailySpend.length > 0 ? (
+              <div style={dailyStripSectionStyle}>
+                <div style={dailyStripHeaderRowStyle}>
+                  <span style={dailyStripTitleStyle}>Daily SMS bill</span>
+                  <span style={dailyStripTodayValueStyle}>
+                    Today: {billing.today ? formatMoney(billing.today.total, billing.today.currency) : "$0.00"}
+                    {" · "}
+                    Yesterday: {billing.yesterday ? formatMoney(billing.yesterday.total, billing.yesterday.currency) : "$0.00"}
+                  </span>
+                </div>
+                <div style={dailyStripRowStyle}>
+                  {billing.dailySpend.map((day) => (
+                    <div key={day.date} style={dailyStripDayStyle}>
+                      <div style={dailyStripDayLabelStyle}>{formatDayLabel(day.date)}</div>
+                      <div style={dailyStripDayValueStyle}>{formatMoney(day.total, day.currency)}</div>
+                      <div style={dailyStripCarrierValueStyle}>
+                        {formatMoney(day.carrierFees, day.currency)} carrier
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {billing.carrierNote ? (
+                  <div style={carrierNoteStyle}>{billing.carrierNote}</div>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -485,6 +536,74 @@ const billingCategoryLabelStyle: CSSProperties = {
 const billingCategoryValueStyle: CSSProperties = {
   color: "#0f172a",
   fontWeight: 700,
+};
+
+const dailyStripSectionStyle: CSSProperties = {
+  marginTop: 18,
+  paddingTop: 16,
+  borderTop: "1px solid #eef2f1",
+};
+
+const dailyStripHeaderRowStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "baseline",
+  flexWrap: "wrap",
+  gap: 8,
+};
+
+const dailyStripTitleStyle: CSSProperties = {
+  fontSize: 13.5,
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const dailyStripTodayValueStyle: CSSProperties = {
+  fontSize: 12.5,
+  color: "#0f766e",
+  fontWeight: 700,
+};
+
+const dailyStripRowStyle: CSSProperties = {
+  marginTop: 12,
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+};
+
+const dailyStripDayStyle: CSSProperties = {
+  flex: "1 1 90px",
+  background: "#f4fbf9",
+  border: "1px solid #e2ede9",
+  borderRadius: 12,
+  padding: "10px 12px",
+  textAlign: "center",
+};
+
+const dailyStripDayLabelStyle: CSSProperties = {
+  fontSize: 11,
+  color: "#64748b",
+  fontWeight: 600,
+};
+
+const dailyStripDayValueStyle: CSSProperties = {
+  marginTop: 4,
+  fontSize: 15,
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const dailyStripCarrierValueStyle: CSSProperties = {
+  marginTop: 2,
+  fontSize: 10.5,
+  color: "#94a3b8",
+};
+
+const carrierNoteStyle: CSSProperties = {
+  marginTop: 14,
+  fontSize: 12,
+  color: "#94a3b8",
+  lineHeight: 1.5,
 };
 
 const rosterListStyle: CSSProperties = {
