@@ -581,9 +581,21 @@ export default function ReplyThreadPage({
       paintAndCache(buildSortedMessages());
       setLoading(false);
       setInitialLoaded(true);
-      setTimeout(() => {
-        scrollToBottom(false);
-      }, 60);
+
+      // BUG FIX: this used to run unconditionally, including on every
+      // "silent" background refresh fired by the live messages listener
+      // (which re-fires often - a new message, a reconnect, the retry loop
+      // after a transient permission error, etc.). Each firing yanked the
+      // scroll position back to the bottom no matter where someone had
+      // scrolled to read older messages, making it impossible to scroll up
+      // at all. Only the true initial paint of a conversation should force
+      // a scroll now - background syncs update the messages in place
+      // without moving the viewport.
+      if (!opts?.silent) {
+        setTimeout(() => {
+          scrollToBottom(false);
+        }, 60);
+      }
 
       await markConversationRead(currentMeta, currentProfile);
 
@@ -670,13 +682,25 @@ export default function ReplyThreadPage({
       }
     } catch (error: any) {
       console.error("[loadThreadOnce]", error);
-      setStatus(error?.message || "Failed to refresh conversation.");
-      setMessages([]);
-      setLoading(false);
-      setInitialLoaded(true);
-      setTimeout(() => {
-        scrollToBottom(false);
-      }, 60);
+
+      // BUG FIX: this used to unconditionally clear the thread and force a
+      // scroll-to-bottom on ANY error here, including a transient hiccup
+      // during a "silent" background refresh triggered by the live
+      // messages listener - which fires often (new message, reconnect,
+      // retry after a transient permission error). A momentary failure on
+      // one of those background syncs shouldn't blank out a thread that
+      // was already painted correctly a second ago, or yank the scroll
+      // position while someone's reading history. Only a real, user-facing
+      // load (not silent) should reset the view like this.
+      if (!opts?.silent) {
+        setStatus(error?.message || "Failed to refresh conversation.");
+        setMessages([]);
+        setLoading(false);
+        setInitialLoaded(true);
+        setTimeout(() => {
+          scrollToBottom(false);
+        }, 60);
+      }
     }
   }
 
