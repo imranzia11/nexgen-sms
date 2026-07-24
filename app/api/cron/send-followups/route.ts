@@ -127,6 +127,64 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
+    // 3c. SECOND, INDEPENDENT check - a real incident showed a follow-up
+    // sent to a customer who had replied over 4 hours earlier, with
+    // hasReply reading false at send time despite the inbound webhook
+    // always setting it true. No root cause was found after a full review
+    // of every write path (inbound webhook, this cron, manual replies,
+    // bulk sends all preserve/set it correctly on paper) - since a single
+    // boolean flag was wrong for a reason that couldn't be pinned down,
+    // this asks the source of truth directly instead of trusting that
+    // flag alone: does this conversation's own message thread actually
+    // contain an inbound message? Only runs for items that are ABOUT to
+    // send (already passed the cheap check above), so this doesn't add a
+    // read per item in the common case - only for the ones that would
+    // otherwise send.
+    const conversationIdForCheck = String(data.conversationId || "");
+    let realInboundExists = false;
+
+    if (conversationIdForCheck) {
+      const inboundCheckSnap = await adminDb
+        .collection("conversations")
+        .doc(conversationIdForCheck)
+        .collection("messages")
+        .where("direction", "==", "inbound")
+        .limit(1)
+        .get();
+      realInboundExists = !inboundCheckSnap.empty;
+    }
+
+    if (realInboundExists) {
+      // The cheap hasReply flag disagreed with the actual thread - log
+      // this loudly (Cloud Logging captures console.error) so a repeat of
+      // this exact failure mode is provable next time instead of having
+      // to be reconstructed after the fact like this one was.
+      console.error(
+        "[send-followups] hasReply flag said no reply, but an inbound " +
+          "message exists in the thread - skipping and self-healing",
+        {
+          followUpId: doc.id,
+          conversationId: conversationIdForCheck,
+          phone: data.phone,
+          ownerUid: data.ownerUid,
+        }
+      );
+
+      await doc.ref.update({ status: "skipped", skippedReason: "customer_replied" });
+
+      // Self-heal: the whole reason this conversation shows under
+      // "Customer Replied" on /replies is this one field - if it was
+      // wrong, fix it now rather than leaving the thread stuck wherever
+      // it was, in addition to skipping this follow-up.
+      await adminDb
+        .collection("conversations")
+        .doc(conversationIdForCheck)
+        .set({ hasReply: true, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+
+      skipped++;
+      continue;
+    }
+
     // 4. Send the follow-up SMS. Routed through the shared sendSmsForUser
     // helper so `from` is always pinned to the number stored on the
     // followUps doc, never picked from the shared Messaging Service pool.
