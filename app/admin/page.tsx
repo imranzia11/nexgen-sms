@@ -17,6 +17,30 @@ type AccountRow = {
   smsSentCount: number;
 };
 
+type BillingCategory = {
+  category: string;
+  description: string;
+  spend: number;
+  unit: string;
+  count: string;
+};
+
+type Billing = {
+  balance: { amount: number; currency: string };
+  monthToDate: { total: number; currency: string; byCategory: BillingCategory[] };
+};
+
+function formatMoney(amount: number, currency: string) {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: currency.toUpperCase() || "USD",
+    }).format(amount);
+  } catch {
+    return `$${amount.toFixed(2)}`;
+  }
+}
+
 export default function AdminOverviewPage() {
   const router = useRouter();
 
@@ -24,6 +48,8 @@ export default function AdminOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
+  const [billing, setBilling] = useState<Billing | null>(null);
+  const [billingError, setBillingError] = useState("");
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -54,10 +80,19 @@ export default function AdminOverviewPage() {
         setChecking(false);
 
         const idToken = await user.getIdToken();
-        const res = await fetch("/api/admin/overview", {
-          headers: { Authorization: `Bearer ${idToken}` },
-        });
+        const [res, billingRes] = await Promise.all([
+          fetch("/api/admin/overview", {
+            headers: { Authorization: `Bearer ${idToken}` },
+          }),
+          // Fetched alongside the roster, but kept on its own error state -
+          // a Twilio API hiccup here shouldn't block the account list from
+          // rendering, and vice versa.
+          fetch("/api/admin/twilio-billing", {
+            headers: { Authorization: `Bearer ${idToken}` },
+          }),
+        ]);
         const body = await res.json();
+        const billingBody = await billingRes.json();
 
         if (!res.ok || !body.ok) {
           setLoadError(body.error || "Failed to load account overview.");
@@ -67,6 +102,12 @@ export default function AdminOverviewPage() {
 
         setAccounts(body.accounts || []);
         setLoading(false);
+
+        if (billingRes.ok && billingBody.ok) {
+          setBilling({ balance: billingBody.balance, monthToDate: billingBody.monthToDate });
+        } else {
+          setBillingError(billingBody.error || "Failed to load Twilio billing.");
+        }
       } catch (error: unknown) {
         setLoadError(
           error instanceof Error
@@ -139,6 +180,54 @@ export default function AdminOverviewPage() {
       </div>
 
       <div style={contentStyle}>
+        {billing ? (
+          <div style={billingPanelStyle}>
+            <div style={billingHeaderRowStyle}>
+              <div>
+                <div style={billingTitleStyle}>Twilio billing</div>
+                <div style={billingSubStyle}>
+                  One shared Twilio account across every rep - not broken
+                  out per account.
+                </div>
+              </div>
+              <div style={billingSnapshotStyle}>
+                <div>
+                  <div style={statLabelStyle}>Balance</div>
+                  <div style={billingBalanceValueStyle}>
+                    {formatMoney(billing.balance.amount, billing.balance.currency)}
+                  </div>
+                </div>
+                <div>
+                  <div style={statLabelStyle}>Spent this month</div>
+                  <div style={billingBalanceValueStyle}>
+                    {formatMoney(
+                      billing.monthToDate.total,
+                      billing.monthToDate.currency
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {billing.monthToDate.byCategory.length > 0 ? (
+              <div style={billingCategoryListStyle}>
+                {billing.monthToDate.byCategory.map((row) => (
+                  <div key={row.category} style={billingCategoryRowStyle}>
+                    <span style={billingCategoryLabelStyle}>
+                      {row.description || row.category}
+                    </span>
+                    <span style={billingCategoryValueStyle}>
+                      {formatMoney(row.spend, row.unit)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : billingError ? (
+          <div style={errorStateStyle}>{billingError}</div>
+        ) : null}
+
         {loading ? (
           <div style={emptyStateStyle}>Loading accounts...</div>
         ) : loadError ? (
@@ -329,6 +418,73 @@ const contentStyle: CSSProperties = {
   maxWidth: 900,
   margin: "36px auto 0",
   padding: "0 24px",
+};
+
+const billingPanelStyle: CSSProperties = {
+  background: "#ffffff",
+  borderRadius: 20,
+  border: "1px solid #e2ede9",
+  padding: "22px 24px",
+  boxShadow: "0 12px 30px rgba(15, 118, 110, 0.06)",
+  marginBottom: 20,
+};
+
+const billingHeaderRowStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: 20,
+  flexWrap: "wrap",
+};
+
+const billingTitleStyle: CSSProperties = {
+  fontSize: 17,
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const billingSubStyle: CSSProperties = {
+  marginTop: 4,
+  fontSize: 13,
+  color: "#64748b",
+  maxWidth: 340,
+};
+
+const billingSnapshotStyle: CSSProperties = {
+  display: "flex",
+  gap: 28,
+};
+
+const billingBalanceValueStyle: CSSProperties = {
+  marginTop: 4,
+  fontSize: 24,
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const billingCategoryListStyle: CSSProperties = {
+  marginTop: 18,
+  paddingTop: 16,
+  borderTop: "1px solid #eef2f1",
+  display: "flex",
+  flexDirection: "column",
+  gap: 8,
+};
+
+const billingCategoryRowStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  fontSize: 13.5,
+};
+
+const billingCategoryLabelStyle: CSSProperties = {
+  color: "#475569",
+};
+
+const billingCategoryValueStyle: CSSProperties = {
+  color: "#0f172a",
+  fontWeight: 700,
 };
 
 const rosterListStyle: CSSProperties = {
