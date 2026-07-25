@@ -19,7 +19,7 @@ import { currentNYMonthString, getNYMonthRangeUtc, nyDateKey } from "../../lib/d
 import LoadingScreen from "../../components/LoadingScreen";
 import RepliesNavBadge from "../../components/RepliesNavBadge";
 
-// One ring per calendar day of the selected month, not a single running
+// One bar per calendar day of the selected month, not a single running
 // total - a month can only ever be picked (native <input type="month">,
 // capped at the current month), never an arbitrary date, so there's no
 // separate "which day" lookup mode to reconcile with this view.
@@ -27,6 +27,11 @@ import RepliesNavBadge from "../../components/RepliesNavBadge";
 // Every account only ever sees its own count here — same owner-scoped
 // query pattern as /logs, so it can never fail under the security rules
 // and can never show one account's numbers to another.
+//
+// "Sent" counts BOTH regular sends/replies (root `messages` collection) and
+// follow-ups (their own `followUps` collection, status "sent") - see the
+// comment on accumulateDayCounts below for why those live in two different
+// places and both have to be queried to get a true day total.
 
 type AppUser = {
   uid: string;
@@ -54,16 +59,6 @@ function formatMonthLabel(monthStr: string) {
   });
 }
 
-function formatDayLabel(monthStr: string, day: number) {
-  const [y, m] = monthStr.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, (m || 1) - 1, day));
-  return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-}
-
-const RADIUS = 34;
-const STROKE = 7;
-const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
-
 export default function StatsPage() {
   const router = useRouter();
 
@@ -75,7 +70,6 @@ export default function StatsPage() {
   const [selectedMonth, setSelectedMonth] = useState(currentNYMonthString());
   const [dayCounts, setDayCounts] = useState<Record<number, number>>({});
   const [errorText, setErrorText] = useState("");
-  const [revealed, setRevealed] = useState(false);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -136,10 +130,27 @@ export default function StatsPage() {
   // this pages through in batches of 2,000 until a short page confirms
   // there's nothing left, instead of picking a bigger-but-still-arbitrary
   // ceiling.
-  const countByDayInRange = async (uid: string, start: Date, end: Date) => {
+  //
+  // Bucketed into a shared `counts` object passed in by the caller, rather
+  // than returning its own - the root `messages` collection covers regular
+  // sends and manual replies, but the follow-up cron only ever logs a sent
+  // follow-up's OWN status onto its `followUps` doc (as "sent" + `sentAt`),
+  // never into this root collection - see the near-identical comment on
+  // /api/admin/overview's route. A follow-up-only day would otherwise show
+  // as 0 here even though real SMS went out, so this same helper is called
+  // once per collection/timestamp-field/status-check combo below and both
+  // runs add into the same day buckets.
+  const accumulateDayCounts = async (
+    counts: Record<number, number>,
+    collectionName: string,
+    timestampField: string,
+    uid: string,
+    start: Date,
+    end: Date,
+    isCounted: (status: string) => boolean
+  ) => {
     const BATCH_SIZE = 2000;
-    const SAFETY_MAX_BATCHES = 200; // 400,000 messages ceiling, just to bound a runaway loop
-    const counts: Record<number, number> = {};
+    const SAFETY_MAX_BATCHES = 200; // 400,000 docs ceiling, just to bound a runaway loop
     let cursor: Date | null = null;
 
     for (let i = 0; i < SAFETY_MAX_BATCHES; i++) {
@@ -150,45 +161,39 @@ export default function StatsPage() {
       // bookkeeping needed across the loop).
       const snap = await getDocs(
         query(
-          collection(db, "messages"),
+          collection(db, collectionName),
           where("ownerUid", "==", uid),
-          where("createdAt", ">=", cursor || start),
-          where("createdAt", "<", end),
-          orderBy("createdAt", "asc"),
+          where(timestampField, ">=", cursor || start),
+          where(timestampField, "<", end),
+          orderBy(timestampField, "asc"),
           limit(BATCH_SIZE)
         )
       );
 
       snap.docs.forEach((d) => {
         const data = d.data() as Record<string, any>;
-        if (!isSuccessfulStatus(data.status)) return;
+        if (!isCounted(normalizeStatus(data.status))) return;
 
-        const createdAt = data.createdAt;
-        const createdDate =
-          typeof createdAt?.toDate === "function" ? createdAt.toDate() : new Date(createdAt);
-        const day = Number(nyDateKey(createdDate).split("-")[2]);
+        const ts = data[timestampField];
+        const tsDate = typeof ts?.toDate === "function" ? ts.toDate() : new Date(ts);
+        const day = Number(nyDateKey(tsDate).split("-")[2]);
         counts[day] = (counts[day] || 0) + 1;
       });
 
       if (snap.docs.length < BATCH_SIZE) break;
 
       const lastDoc = snap.docs[snap.docs.length - 1];
-      const lastCreatedAt = (lastDoc.data() as Record<string, any>).createdAt;
+      const lastTs = (lastDoc.data() as Record<string, any>)[timestampField];
       const lastMillis: number =
-        typeof lastCreatedAt?.toMillis === "function"
-          ? lastCreatedAt.toMillis()
-          : new Date(lastCreatedAt).getTime();
+        typeof lastTs?.toMillis === "function" ? lastTs.toMillis() : new Date(lastTs).getTime();
       cursor = new Date(lastMillis + 1);
     }
-
-    return counts;
   };
 
   const loadStats = async (profileArg?: AppUser, monthArg?: string) => {
     try {
       setLoading(true);
       setErrorText("");
-      setRevealed(false);
 
       const currentProfile = profileArg || profile;
       if (!currentProfile) {
@@ -197,15 +202,34 @@ export default function StatsPage() {
       }
 
       const { start, end } = getNYMonthRangeUtc(monthArg || selectedMonth);
-      const counts = await countByDayInRange(currentProfile.uid, start, end);
+      const counts: Record<number, number> = {};
+
+      await accumulateDayCounts(
+        counts,
+        "messages",
+        "createdAt",
+        currentProfile.uid,
+        start,
+        end,
+        isSuccessfulStatus
+      );
+
+      // Follow-ups only ever reach "sent" on their own doc (never
+      // "delivered" - their actual delivery status lands on the conversation
+      // subcollection message instead, which the block above doesn't touch
+      // since it queries the root `messages` collection only).
+      await accumulateDayCounts(
+        counts,
+        "followUps",
+        "sentAt",
+        currentProfile.uid,
+        start,
+        end,
+        (status) => status === "sent"
+      );
 
       setDayCounts(counts);
       setLoading(false);
-
-      // Trigger the ring-draw animation on the next tick, after the DOM
-      // has painted the "empty" (0%) rings — otherwise the browser can
-      // collapse the 0 -> full transition into a single instant jump.
-      window.setTimeout(() => setRevealed(true), 60);
     } catch (error: any) {
       console.error("Failed to load stats", error);
       setErrorText(error?.message || "Failed to load stats.");
@@ -344,7 +368,7 @@ export default function StatsPage() {
           <section style={panelStyle}>
             <div style={panelHeaderStyle}>
               <h2 style={panelTitleStyle}>{formatMonthLabel(selectedMonth)}</h2>
-              <p style={panelDescStyle}>Successfully sent messages, per day</p>
+              <p style={panelDescStyle}>Successfully sent messages, per day (includes follow-ups)</p>
             </div>
 
             {loading ? (
@@ -352,52 +376,35 @@ export default function StatsPage() {
                 <div style={spinnerStyle} />
               </div>
             ) : (
-              <div style={monthGridStyle}>
-                {Array.from(
-                  { length: getNYMonthRangeUtc(selectedMonth).daysInMonth },
-                  (_, i) => i + 1
-                ).map((day) => {
-                  const count = dayCounts[day] || 0;
-                  const dashOffset = revealed ? 0 : CIRCUMFERENCE;
+              (() => {
+                const daysInMonth = getNYMonthRangeUtc(selectedMonth).daysInMonth;
+                const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+                const maxCount = Math.max(1, ...days.map((day) => dayCounts[day] || 0));
 
-                  return (
-                    <div key={day} style={dayTileStyle}>
-                      <svg width={90} height={90} viewBox="0 0 90 90">
-                        <circle
-                          cx={45}
-                          cy={45}
-                          r={RADIUS}
-                          fill="none"
-                          stroke="#e2e8f0"
-                          strokeWidth={STROKE}
-                        />
-                        <circle
-                          cx={45}
-                          cy={45}
-                          r={RADIUS}
-                          fill="none"
-                          stroke="#0d9488"
-                          strokeWidth={STROKE}
-                          strokeLinecap="round"
-                          strokeDasharray={CIRCUMFERENCE}
-                          strokeDashoffset={dashOffset}
-                          transform="rotate(-90 45 45)"
-                          style={{ transition: "stroke-dashoffset 1.1s ease-out" }}
-                        />
-                        <text
-                          x={45}
-                          y={49}
-                          textAnchor="middle"
-                          style={{ fontSize: 20, fontWeight: 900, fill: "#0f172a" }}
-                        >
-                          {count}
-                        </text>
-                      </svg>
-                      <div style={dayTileLabelStyle}>{formatDayLabel(selectedMonth, day)}</div>
-                    </div>
-                  );
-                })}
-              </div>
+                return (
+                  <div style={barChartWrapStyle}>
+                    {days.map((day) => {
+                      const count = dayCounts[day] || 0;
+                      const heightPct = (count / maxCount) * 100;
+
+                      return (
+                        <div key={day} style={barColStyle}>
+                          <div style={barCountStyle}>{count > 0 ? count : ""}</div>
+                          <div style={barTrackStyle}>
+                            <div
+                              style={{
+                                ...barFillStyle,
+                                height: `${Math.max(count > 0 ? 4 : 0, heightPct)}%`,
+                              }}
+                            />
+                          </div>
+                          <div style={barDayLabelStyle}>{day}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()
             )}
           </section>
         </section>
@@ -698,28 +705,55 @@ const ringWrapStyle: CSSProperties = {
   padding: "12px 0 4px 0",
 };
 
-const monthGridStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))",
-  gap: 14,
-  padding: "8px 0 4px 0",
+// Full-width bar chart, one bar per day of the month - big enough to read
+// at a glance across the whole panel rather than a grid of small tiles.
+const barChartWrapStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "flex-end",
+  gap: 6,
+  height: 420,
+  width: "100%",
+  padding: "12px 4px 4px 4px",
 };
 
-const dayTileStyle: CSSProperties = {
+const barColStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   alignItems: "center",
   gap: 6,
-  background: "#f8fafc",
-  border: "1px solid rgba(15,23,42,0.05)",
-  borderRadius: 18,
-  padding: "10px 6px 12px",
+  flex: 1,
+  height: "100%",
+  minWidth: 0,
 };
 
-const dayTileLabelStyle: CSSProperties = {
+const barCountStyle: CSSProperties = {
   fontSize: 12,
-  fontWeight: 700,
-  color: "#64748b",
+  fontWeight: 800,
+  color: "#0f172a",
+  height: 16,
+};
+
+const barTrackStyle: CSSProperties = {
+  flex: 1,
+  width: "100%",
+  display: "flex",
+  alignItems: "flex-end",
+  background: "#f4fbf9",
+  borderRadius: 8,
+  overflow: "hidden",
+};
+
+const barFillStyle: CSSProperties = {
+  width: "100%",
+  background: "linear-gradient(180deg, #14b8a6 0%, #0f766e 100%)",
+  borderRadius: 8,
+  transition: "height 0.8s ease-out",
+};
+
+const barDayLabelStyle: CSSProperties = {
+  fontSize: 11,
+  fontWeight: 600,
+  color: "#94a3b8",
 };
 
 const errorBoxStyle: CSSProperties = {
