@@ -15,9 +15,18 @@ import {
   where,
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
-import { getNYDayRangeUtc, todayNYDateString } from "../../lib/date";
+import { getNYDayRangeUtc, nyDateStringDaysAgo, todayNYDateString } from "../../lib/date";
 import LoadingScreen from "../../components/LoadingScreen";
 import RepliesNavBadge from "../../components/RepliesNavBadge";
+
+// Default view is a rolling 30-day total, not a single day - most days on a
+// given account are quiet, so a single-day ring was usually just a 0 or a
+// handful, telling the account owner very little at a glance. The calendar
+// is now reserved for looking further back than that: its `max` is pinned
+// to the day just before the 30-day window starts, so there's no
+// overlapping "did I mean the rolling total or the picked date" ambiguity
+// between the two views.
+const MONTH_WINDOW_DAYS = 30;
 
 // Every account only ever sees its own count here — same owner-scoped
 // query pattern as /logs, so it can never fail under the security rules
@@ -51,7 +60,10 @@ export default function StatsPage() {
   const [userName, setUserName] = useState("User");
   const [profile, setProfile] = useState<AppUser | null>(null);
 
-  const [selectedDate, setSelectedDate] = useState(() => todayNYDateString());
+  const oldestAllowedDate = nyDateStringDaysAgo(MONTH_WINDOW_DAYS + 1);
+
+  const [mode, setMode] = useState<"month" | "date">("month");
+  const [selectedDate, setSelectedDate] = useState(oldestAllowedDate);
   const [successCount, setSuccessCount] = useState(0);
   const [errorText, setErrorText] = useState("");
   const [revealed, setRevealed] = useState(false);
@@ -90,7 +102,7 @@ export default function StatsPage() {
         setUserName(safeName);
         setProfile(safeProfile);
         setChecking(false);
-        await loadStats(safeProfile, selectedDate);
+        await loadStats(safeProfile, "month", selectedDate);
       } catch (error) {
         console.error("Failed to validate user access", error);
         await signOut(auth).catch(() => {});
@@ -104,11 +116,63 @@ export default function StatsPage() {
 
   useEffect(() => {
     if (!profile) return;
-    loadStats(profile, selectedDate);
+    loadStats(profile, mode, selectedDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate]);
+  }, [mode, selectedDate]);
 
-  const loadStats = async (profileArg?: AppUser, dateStr?: string) => {
+  // Paginated count rather than one big getDocs(limit(N)) - task #122 was
+  // exactly this bug at day granularity (a 500-cap silently undercounted a
+  // ~5,000-lead bulk day). A 30-day rolling window can easily clear even a
+  // much higher single cap for an active account, so this pages through in
+  // batches of 2,000 until a short page confirms there's nothing left,
+  // instead of picking a bigger-but-still-arbitrary ceiling.
+  const countSuccessfulInRange = async (uid: string, start: Date, end: Date) => {
+    const BATCH_SIZE = 2000;
+    const SAFETY_MAX_BATCHES = 200; // 400,000 messages ceiling, just to bound a runaway loop
+    let count = 0;
+    let cursor: Date | null = null;
+
+    for (let i = 0; i < SAFETY_MAX_BATCHES; i++) {
+      // On every batch after the first, re-querying from `start` again with
+      // an inclusive >= would re-include the last doc of the prior batch -
+      // nudge the cursor forward a millisecond instead of using startAfter,
+      // so this stays a plain field-range query (no extra doc-snapshot
+      // bookkeeping needed across the loop).
+      const snap = await getDocs(
+        query(
+          collection(db, "messages"),
+          where("ownerUid", "==", uid),
+          where("createdAt", ">=", cursor || start),
+          where("createdAt", "<", end),
+          orderBy("createdAt", "asc"),
+          limit(BATCH_SIZE)
+        )
+      );
+
+      snap.docs.forEach((d) => {
+        const data = d.data() as Record<string, any>;
+        if (isSuccessfulStatus(data.status)) count += 1;
+      });
+
+      if (snap.docs.length < BATCH_SIZE) break;
+
+      const lastDoc = snap.docs[snap.docs.length - 1];
+      const lastCreatedAt = (lastDoc.data() as Record<string, any>).createdAt;
+      const lastMillis: number =
+        typeof lastCreatedAt?.toMillis === "function"
+          ? lastCreatedAt.toMillis()
+          : new Date(lastCreatedAt).getTime();
+      cursor = new Date(lastMillis + 1);
+    }
+
+    return count;
+  };
+
+  const loadStats = async (
+    profileArg?: AppUser,
+    modeArg?: "month" | "date",
+    dateStr?: string
+  ) => {
     try {
       setLoading(true);
       setErrorText("");
@@ -120,43 +184,17 @@ export default function StatsPage() {
         return;
       }
 
-      const { start, end } = getNYDayRangeUtc(dateStr || selectedDate);
+      const currentMode = modeArg || mode;
 
-      // BUG FIX: this used to cap at limit(500) - fine when a "big day" was
-      // a few dozen sends, but this account now regularly runs bulk
-      // campaigns of several thousand leads in a single day (e.g. the
-      // ~5,000-lead "july22 Abe10:46" campaign). With the old cap, Firestore
-      // only returned the 500 MOST RECENT messages for the day (orderBy
-      // createdAt desc) and the success count was computed from just that
-      // slice - so a day with ~5,000 real sends showed a few hundred here,
-      // nowhere close to the true total. Raised well above any realistic
-      // single-day volume so this always reflects the actual day, not a
-      // recent-500 slice of it.
-      //
-      // Deliberately still a getDocs() + client-side count rather than a
-      // true count() aggregation: adding a status equality filter to this
-      // query (to let Firestore count matches server-side) would need a
-      // brand-new composite index that isn't deployed yet, which would
-      // break this page with a live query error until that index finishes
-      // building. Fine for now at realistic volumes; worth revisiting with
-      // a proper count() aggregation + index deploy if daily volume keeps
-      // climbing well past this cap.
-      const snap = await getDocs(
-        query(
-          collection(db, "messages"),
-          where("ownerUid", "==", currentProfile.uid),
-          where("createdAt", ">=", start),
-          where("createdAt", "<", end),
-          orderBy("createdAt", "desc"),
-          limit(10000)
-        )
-      );
+      const { start, end } =
+        currentMode === "month"
+          ? {
+              start: getNYDayRangeUtc(nyDateStringDaysAgo(MONTH_WINDOW_DAYS - 1)).start,
+              end: getNYDayRangeUtc(todayNYDateString()).end,
+            }
+          : getNYDayRangeUtc(dateStr || selectedDate);
 
-      let count = 0;
-      snap.docs.forEach((d) => {
-        const data = d.data() as Record<string, any>;
-        if (isSuccessfulStatus(data.status)) count += 1;
-      });
+      const count = await countSuccessfulInRange(currentProfile.uid, start, end);
 
       setSuccessCount(count);
       setLoading(false);
@@ -276,25 +314,37 @@ export default function StatsPage() {
                 <div style={heroBadgeStyle}>Your Activity</div>
                 <h1 style={heroTitleStyle}>Messages Sent</h1>
                 <p style={heroTextStyle}>
-                  How many of your messages were successfully sent on a given
-                  day.
+                  {mode === "month"
+                    ? `How many of your messages were successfully sent in the last ${MONTH_WINDOW_DAYS} days.`
+                    : "How many of your messages were successfully sent on a given day."}
                 </p>
               </div>
 
               <div style={controlsRowStyle}>
-                <input
-                  type="date"
-                  value={selectedDate}
-                  max={todayNYDateString()}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  style={dateInputStyle}
-                />
+                {mode === "date" ? (
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    max={oldestAllowedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    style={dateInputStyle}
+                  />
+                ) : null}
 
                 <button
-                  onClick={() => loadStats(undefined, selectedDate)}
+                  onClick={() => loadStats(undefined, mode, selectedDate)}
                   style={heroPrimaryButtonStyle}
                 >
                   Refresh
+                </button>
+
+                <button
+                  onClick={() => setMode(mode === "month" ? "date" : "month")}
+                  style={heroSecondaryButtonStyle}
+                >
+                  {mode === "month"
+                    ? "Check an older date"
+                    : `Back to last ${MONTH_WINDOW_DAYS} days`}
                 </button>
               </div>
             </div>
@@ -305,7 +355,7 @@ export default function StatsPage() {
           <section style={panelStyle}>
             <div style={panelHeaderStyle}>
               <h2 style={panelTitleStyle}>
-                {selectedDate === todayNYDateString() ? "Today" : selectedDate}
+                {mode === "month" ? `Last ${MONTH_WINDOW_DAYS} days` : selectedDate}
               </h2>
               <p style={panelDescStyle}>Successfully sent messages</p>
             </div>
@@ -618,6 +668,17 @@ const heroPrimaryButtonStyle: CSSProperties = {
   color: "#0f766e",
   fontWeight: 900,
   fontSize: 15,
+  cursor: "pointer",
+};
+
+const heroSecondaryButtonStyle: CSSProperties = {
+  border: "1px solid rgba(255,255,255,0.28)",
+  borderRadius: 18,
+  padding: "15px 20px",
+  background: "rgba(255,255,255,0.1)",
+  color: "#ffffff",
+  fontWeight: 800,
+  fontSize: 14,
   cursor: "pointer",
 };
 

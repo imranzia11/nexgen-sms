@@ -66,6 +66,16 @@ function nyOffsetMinutes(date: Date): number {
   return (utc.getTime() - ny.getTime()) / 60000;
 }
 
+// "YYYY-MM-DD" for N calendar days before today, in America/New_York — pure
+// calendar-day arithmetic on the already-NY-resolved "today" string, so it
+// stays correct regardless of the visitor's own timezone or DST.
+export function nyDateStringDaysAgo(daysAgo: number): string {
+  const [y, m, d] = todayNYDateString().split("-").map(Number);
+  const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1));
+  dt.setUTCDate(dt.getUTCDate() - daysAgo);
+  return dt.toISOString().slice(0, 10);
+}
+
 // Given a "YYYY-MM-DD" calendar date (interpreted as a day in America/New_York),
 // returns the UTC instants for that day's midnight-to-midnight NY window —
 // used to build a Firestore createdAt range query for "show me this one day".
