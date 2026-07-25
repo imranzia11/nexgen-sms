@@ -309,18 +309,24 @@ export default function ReplyThreadPage({
   // BUG FIX: imgScreenStyle used to size itself with `position: fixed;
   // inset: 0`, which pins to the browser's LAYOUT viewport - a fixed size
   // that does NOT shrink when the browser's own address bar/toolbar is
-  // showing. Mobile Safari/Chrome show and hide that toolbar as you scroll,
-  // so the actual visible area is often smaller than what `inset: 0` sized
-  // against - the compose bar at the bottom would end up partly hidden
-  // behind the browser's own chrome, and the scrollable message area could
-  // fight with the browser's own scroll/rubber-banding for the same space
-  // (reported as "scroll feels stuck"). Tracking window.visualViewport's
-  // real height and applying it as an explicit pixel height sidesteps this
-  // entirely - it's always the ACTUAL visible height, toolbar or not.
+  // showing, or when the on-screen keyboard opens. Tracking
+  // window.visualViewport's real height fixes the toolbar case, but on iOS
+  // opening the keyboard ALSO shifts the visible area down
+  // (visualViewport.offsetTop becomes non-zero) - height alone left the
+  // fixed container pinned to the old top edge while the actually-visible
+  // area had moved, which is what produced the blank gap above the compose
+  // bar and the "everything looks shifted" mess when the keyboard was open.
+  // Tracking both height AND offsetTop, and applying offsetTop as `top`
+  // (instead of the CSS `inset: 0` top:0), keeps the container glued to
+  // whatever's actually visible in both situations.
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+  const [viewportOffsetTop, setViewportOffsetTop] = useState(0);
   useEffect(() => {
     const vv = window.visualViewport;
-    const update = () => setViewportHeight(vv ? vv.height : window.innerHeight);
+    const update = () => {
+      setViewportHeight(vv ? vv.height : window.innerHeight);
+      setViewportOffsetTop(vv ? vv.offsetTop : 0);
+    };
     update();
     if (vv) {
       vv.addEventListener("resize", update);
@@ -1144,8 +1150,13 @@ export default function ReplyThreadPage({
           ...imgScreenStyle,
           // Falls back to the inset:0/100% sizing (via CSS) until the
           // effect above has measured the real visual viewport at least
-          // once - avoids a flash of 0-height content on first paint.
-          ...(viewportHeight ? { height: viewportHeight, bottom: "auto" } : null),
+          // once - avoids a flash of 0-height content on first paint. `top`
+          // tracks visualViewport.offsetTop so the container follows the
+          // visible area even when it shifts (keyboard open), not just when
+          // it shrinks.
+          ...(viewportHeight
+            ? { height: viewportHeight, top: viewportOffsetTop, bottom: "auto" }
+            : null),
         }}
       >
         <div style={imgTopBarStyle}>
