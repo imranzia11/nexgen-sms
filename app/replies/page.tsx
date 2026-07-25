@@ -2077,41 +2077,47 @@ export default function RepliesPage() {
                   ) : null}
                 </div>
               ) : (
-                <div style={statsGridStyle}>
-                  <StatCard label="All Sent SMS" value={String(counts.all)} />
-                  <StatCard
-                    label="Customer Replied"
-                    value={String(counts.replied)}
-                    hint={
-                      counts.pinnedReplied > 0
-                        ? `Includes ${counts.pinnedReplied} pinned`
-                        : undefined
-                    }
-                  />
-                  <StatCard
-                    label="Waiting for Customer"
-                    value={String(counts.awaiting)}
-                  />
-                  <StatCard
-                    label="Never Replied"
-                    value={String(counts.neverReplied)}
-                  />
-                  <StatCard label="Pinned" value={String(counts.pinned)} />
-                  <StatCard label="Failed / Undelivered" value={String(counts.failed)} />
-                  <StatCard
-                    label="Attention Required"
-                    value={String(attentionItems.length)}
-                  />
-                  <StatCard
-                    label="Follow-Ups Pending"
-                    value={String(followUpItems.length)}
-                    hint={
-                      followUpsSkippedCount > 0
-                        ? `${followUpsSkippedCount} blocked - won't send`
-                        : undefined
-                    }
-                  />
-                </div>
+                <>
+                  <div style={statsPrimaryRowStyle}>
+                    <StatCard label="All Sent SMS" value={String(counts.all)} />
+                    <StatCard
+                      label="Customer Replied"
+                      value={String(counts.replied)}
+                      hint={
+                        counts.pinnedReplied > 0
+                          ? `Includes ${counts.pinnedReplied} pinned`
+                          : undefined
+                      }
+                      highlight
+                    />
+                    <StatCard
+                      label="Waiting for Customer"
+                      value={String(counts.awaiting)}
+                      highlight
+                    />
+                    <StatCard
+                      label="Never Replied"
+                      value={String(counts.neverReplied)}
+                    />
+                    <StatCard label="Pinned" value={String(counts.pinned)} />
+                  </div>
+                  <div style={statsSecondaryRowStyle}>
+                    <StatCard label="Failed / Undelivered" value={String(counts.failed)} />
+                    <StatCard
+                      label="Attention Required"
+                      value={String(attentionItems.length)}
+                    />
+                    <StatCard
+                      label="Follow-Ups Pending"
+                      value={String(followUpItems.length)}
+                      hint={
+                        followUpsSkippedCount > 0
+                          ? `${followUpsSkippedCount} blocked - won't send`
+                          : undefined
+                      }
+                    />
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -2561,15 +2567,17 @@ function StatCard({
   label,
   value,
   hint,
+  highlight,
 }: {
   label: string;
   value: string;
   hint?: string;
+  highlight?: boolean;
 }) {
   return (
-    <div style={statCardStyle}>
-      <div style={statLabelStyle}>{label}</div>
-      <div style={statValueStyle}>{value}</div>
+    <div style={highlight ? statCardHighlightStyle : statCardStyle}>
+      <div style={highlight ? statLabelHighlightStyle : statLabelStyle}>{label}</div>
+      <div style={highlight ? statValueHighlightStyle : statValueStyle}>{value}</div>
       {hint ? <div style={statHintStyle}>{hint}</div> : null}
     </div>
   );
@@ -2619,7 +2627,11 @@ const pageStyle: CSSProperties = {
 };
 
 const pageWrapStyle: CSSProperties = {
-  maxWidth: 1800,
+  // min(..., vw) instead of a flat pixel cap - stretches to fill very wide
+  // monitors (the flat 1800 still left big empty margins on ultra-wide
+  // screens) while keeping a hair of breathing room at the edges and still
+  // behaving sanely on smaller desktop windows.
+  maxWidth: "min(2600px, 98vw)",
   margin: "0 auto",
   display: "grid",
   gap: 24,
@@ -2870,10 +2882,21 @@ const mobileQrImageStyle: CSSProperties = {
   padding: 8,
 };
 
-const statsGridStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+// Customer Replied / Waiting for Customer are the two numbers that
+// actually drive what a rep does next, so they get their own row at ~2x
+// the size of the rest (flex: 2 vs flex: 1, plus bigger internal padding
+// and font) instead of being just another tile in a flat 5-up grid.
+const statsPrimaryRowStyle: CSSProperties = {
+  display: "flex",
   gap: 18,
+  flexWrap: "wrap",
+};
+
+const statsSecondaryRowStyle: CSSProperties = {
+  display: "flex",
+  gap: 18,
+  flexWrap: "wrap",
+  marginTop: 18,
 };
 
 const mobileStatLineStyle: CSSProperties = {
@@ -2908,6 +2931,8 @@ const statCardStyle: CSSProperties = {
   borderRadius: 22,
   padding: "24px 22px",
   backdropFilter: "blur(10px)",
+  flex: "1 1 0",
+  minWidth: 180,
 };
 
 const statLabelStyle: CSSProperties = {
@@ -2930,6 +2955,33 @@ const statHintStyle: CSSProperties = {
   color: "rgba(236, 254, 255, 0.65)",
   fontSize: 12.5,
   fontWeight: 600,
+};
+
+// Highlighted variant for Customer Replied / Waiting for Customer - the
+// two numbers that actually tell a rep what to do next. ~2x the footprint
+// (flex: 2 vs flex: 1) and ~1.5x the internal font/padding of a regular
+// stat card, plus a slightly brighter background/border so they read as
+// the priority tiles at a glance instead of blending into the row.
+const statCardHighlightStyle: CSSProperties = {
+  ...statCardStyle,
+  flex: "2 1 0",
+  minWidth: 300,
+  padding: "34px 30px",
+  background: "rgba(255,255,255,0.28)",
+  border: "1px solid rgba(255,255,255,0.4)",
+  boxShadow: "0 14px 34px rgba(15,23,42,0.12)",
+};
+
+const statLabelHighlightStyle: CSSProperties = {
+  ...statLabelStyle,
+  fontSize: 16,
+  fontWeight: 700,
+};
+
+const statValueHighlightStyle: CSSProperties = {
+  ...statValueStyle,
+  marginTop: 14,
+  fontSize: 60,
 };
 
 const panelStyle: CSSProperties = {
@@ -3054,7 +3106,7 @@ const sendFollowUpButtonStyle: CSSProperties = {
 const conversationGridStyle: CSSProperties = {
   marginTop: 20,
   display: "grid",
-  gap: 14,
+  gap: 20,
 };
 
 const loadMoreRowStyle: CSSProperties = {
@@ -3332,7 +3384,9 @@ const followUpDelayStyle: CSSProperties = {
 };
 
 const openRowStyle: CSSProperties = {
-  marginTop: 18,
+  marginTop: 20,
+  paddingTop: 16,
+  borderTop: "1px solid rgba(15,23,42,0.06)",
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
@@ -3341,12 +3395,19 @@ const openRowStyle: CSSProperties = {
 const openTextStyle: CSSProperties = {
   color: "#0d9488",
   fontWeight: 800,
-  fontSize: 14,
+  fontSize: 15,
 };
 
 const openArrowStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 32,
+  height: 32,
+  borderRadius: "50%",
+  background: "rgba(13,148,136,0.10)",
   color: "#0d9488",
-  fontSize: 22,
+  fontSize: 18,
   fontWeight: 900,
 };
 
