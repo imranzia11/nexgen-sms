@@ -2366,7 +2366,9 @@ const pageStyle: CSSProperties = {
 };
 
 const pageWrapStyle: CSSProperties = {
-  maxWidth: 1260,
+  // Same fluid cap as /replies - fills wide monitors instead of stopping
+  // at a flat pixel width.
+  maxWidth: "min(2600px, 98vw)",
   margin: "0 auto",
   display: "grid",
   gap: 20,
