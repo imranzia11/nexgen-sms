@@ -380,12 +380,22 @@ export default function StatsPage() {
                 const daysInMonth = getNYMonthRangeUtc(selectedMonth).daysInMonth;
                 const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
                 const maxCount = Math.max(1, ...days.map((day) => dayCounts[day] || 0));
+                // Square-root scale, not linear - a month that mixes a few
+                // huge bulk-send days (thousands) with many small days
+                // (single digits) made every small day an invisible sliver
+                // under a straight linear scale, even with a minimum-height
+                // floor. Square-rooting both the count and the max compresses
+                // the huge days and expands the small ones relative to each
+                // other, so a 10-message day is clearly taller than a
+                // 1-message day instead of both rounding down to "basically
+                // nothing" next to an 8,000-message day.
+                const maxSqrt = Math.sqrt(maxCount);
 
                 return (
                   <div style={barChartWrapStyle}>
                     {days.map((day) => {
                       const count = dayCounts[day] || 0;
-                      const heightPct = (count / maxCount) * 100;
+                      const heightPct = (Math.sqrt(count) / maxSqrt) * 100;
 
                       return (
                         <div key={day} style={barColStyle}>
@@ -394,7 +404,7 @@ export default function StatsPage() {
                             <div
                               style={{
                                 ...barFillStyle,
-                                height: `${Math.max(count > 0 ? 4 : 0, heightPct)}%`,
+                                height: `${Math.max(count > 0 ? 6 : 0, heightPct)}%`,
                               }}
                             />
                           </div>
@@ -710,27 +720,27 @@ const ringWrapStyle: CSSProperties = {
 const barChartWrapStyle: CSSProperties = {
   display: "flex",
   alignItems: "flex-end",
-  gap: 6,
-  height: 420,
+  gap: 8,
+  height: 520,
   width: "100%",
-  padding: "12px 4px 4px 4px",
+  padding: "16px 6px 4px 6px",
 };
 
 const barColStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   alignItems: "center",
-  gap: 6,
+  gap: 8,
   flex: 1,
   height: "100%",
   minWidth: 0,
 };
 
 const barCountStyle: CSSProperties = {
-  fontSize: 12,
-  fontWeight: 800,
+  fontSize: 16,
+  fontWeight: 900,
   color: "#0f172a",
-  height: 16,
+  height: 22,
 };
 
 const barTrackStyle: CSSProperties = {
@@ -751,9 +761,9 @@ const barFillStyle: CSSProperties = {
 };
 
 const barDayLabelStyle: CSSProperties = {
-  fontSize: 11,
-  fontWeight: 600,
-  color: "#94a3b8",
+  fontSize: 14,
+  fontWeight: 700,
+  color: "#64748b",
 };
 
 const errorBoxStyle: CSSProperties = {
