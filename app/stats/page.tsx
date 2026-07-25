@@ -15,19 +15,15 @@ import {
   where,
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
-import { getNYDayRangeUtc, nyDateStringDaysAgo, todayNYDateString } from "../../lib/date";
+import { currentNYMonthString, getNYMonthRangeUtc, nyDateKey } from "../../lib/date";
 import LoadingScreen from "../../components/LoadingScreen";
 import RepliesNavBadge from "../../components/RepliesNavBadge";
 
-// Default view is a rolling 30-day total, not a single day - most days on a
-// given account are quiet, so a single-day ring was usually just a 0 or a
-// handful, telling the account owner very little at a glance. The calendar
-// is now reserved for looking further back than that: its `max` is pinned
-// to the day just before the 30-day window starts, so there's no
-// overlapping "did I mean the rolling total or the picked date" ambiguity
-// between the two views.
-const MONTH_WINDOW_DAYS = 30;
-
+// One ring per calendar day of the selected month, not a single running
+// total - a month can only ever be picked (native <input type="month">,
+// capped at the current month), never an arbitrary date, so there's no
+// separate "which day" lookup mode to reconcile with this view.
+//
 // Every account only ever sees its own count here — same owner-scoped
 // query pattern as /logs, so it can never fail under the security rules
 // and can never show one account's numbers to another.
@@ -48,8 +44,24 @@ function isSuccessfulStatus(status?: string) {
   return value === "delivered" || value === "sent";
 }
 
-const RADIUS = 90;
-const STROKE = 18;
+function formatMonthLabel(monthStr: string) {
+  const [y, m] = monthStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, (m || 1) - 1, 1));
+  return dt.toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function formatDayLabel(monthStr: string, day: number) {
+  const [y, m] = monthStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, (m || 1) - 1, day));
+  return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+const RADIUS = 34;
+const STROKE = 7;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 export default function StatsPage() {
@@ -60,11 +72,8 @@ export default function StatsPage() {
   const [userName, setUserName] = useState("User");
   const [profile, setProfile] = useState<AppUser | null>(null);
 
-  const oldestAllowedDate = nyDateStringDaysAgo(MONTH_WINDOW_DAYS + 1);
-
-  const [mode, setMode] = useState<"month" | "date">("month");
-  const [selectedDate, setSelectedDate] = useState(oldestAllowedDate);
-  const [successCount, setSuccessCount] = useState(0);
+  const [selectedMonth, setSelectedMonth] = useState(currentNYMonthString());
+  const [dayCounts, setDayCounts] = useState<Record<number, number>>({});
   const [errorText, setErrorText] = useState("");
   const [revealed, setRevealed] = useState(false);
 
@@ -102,7 +111,7 @@ export default function StatsPage() {
         setUserName(safeName);
         setProfile(safeProfile);
         setChecking(false);
-        await loadStats(safeProfile, "month", selectedDate);
+        await loadStats(safeProfile, selectedMonth);
       } catch (error) {
         console.error("Failed to validate user access", error);
         await signOut(auth).catch(() => {});
@@ -116,20 +125,21 @@ export default function StatsPage() {
 
   useEffect(() => {
     if (!profile) return;
-    loadStats(profile, mode, selectedDate);
+    loadStats(profile, selectedMonth);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, selectedDate]);
+  }, [selectedMonth]);
 
-  // Paginated count rather than one big getDocs(limit(N)) - task #122 was
-  // exactly this bug at day granularity (a 500-cap silently undercounted a
-  // ~5,000-lead bulk day). A 30-day rolling window can easily clear even a
-  // much higher single cap for an active account, so this pages through in
-  // batches of 2,000 until a short page confirms there's nothing left,
-  // instead of picking a bigger-but-still-arbitrary ceiling.
-  const countSuccessfulInRange = async (uid: string, start: Date, end: Date) => {
+  // Paginated count, bucketed per NY calendar day, rather than one big
+  // getDocs(limit(N)) - task #122 was exactly this bug at day granularity (a
+  // 500-cap silently undercounted a ~5,000-lead bulk day). A full month can
+  // easily clear even a much higher single cap for an active account, so
+  // this pages through in batches of 2,000 until a short page confirms
+  // there's nothing left, instead of picking a bigger-but-still-arbitrary
+  // ceiling.
+  const countByDayInRange = async (uid: string, start: Date, end: Date) => {
     const BATCH_SIZE = 2000;
     const SAFETY_MAX_BATCHES = 200; // 400,000 messages ceiling, just to bound a runaway loop
-    let count = 0;
+    const counts: Record<number, number> = {};
     let cursor: Date | null = null;
 
     for (let i = 0; i < SAFETY_MAX_BATCHES; i++) {
@@ -151,7 +161,13 @@ export default function StatsPage() {
 
       snap.docs.forEach((d) => {
         const data = d.data() as Record<string, any>;
-        if (isSuccessfulStatus(data.status)) count += 1;
+        if (!isSuccessfulStatus(data.status)) return;
+
+        const createdAt = data.createdAt;
+        const createdDate =
+          typeof createdAt?.toDate === "function" ? createdAt.toDate() : new Date(createdAt);
+        const day = Number(nyDateKey(createdDate).split("-")[2]);
+        counts[day] = (counts[day] || 0) + 1;
       });
 
       if (snap.docs.length < BATCH_SIZE) break;
@@ -165,14 +181,10 @@ export default function StatsPage() {
       cursor = new Date(lastMillis + 1);
     }
 
-    return count;
+    return counts;
   };
 
-  const loadStats = async (
-    profileArg?: AppUser,
-    modeArg?: "month" | "date",
-    dateStr?: string
-  ) => {
+  const loadStats = async (profileArg?: AppUser, monthArg?: string) => {
     try {
       setLoading(true);
       setErrorText("");
@@ -180,27 +192,18 @@ export default function StatsPage() {
 
       const currentProfile = profileArg || profile;
       if (!currentProfile) {
-        setSuccessCount(0);
+        setDayCounts({});
         return;
       }
 
-      const currentMode = modeArg || mode;
+      const { start, end } = getNYMonthRangeUtc(monthArg || selectedMonth);
+      const counts = await countByDayInRange(currentProfile.uid, start, end);
 
-      const { start, end } =
-        currentMode === "month"
-          ? {
-              start: getNYDayRangeUtc(nyDateStringDaysAgo(MONTH_WINDOW_DAYS - 1)).start,
-              end: getNYDayRangeUtc(todayNYDateString()).end,
-            }
-          : getNYDayRangeUtc(dateStr || selectedDate);
-
-      const count = await countSuccessfulInRange(currentProfile.uid, start, end);
-
-      setSuccessCount(count);
+      setDayCounts(counts);
       setLoading(false);
 
       // Trigger the ring-draw animation on the next tick, after the DOM
-      // has painted the "empty" (0%) ring — otherwise the browser can
+      // has painted the "empty" (0%) rings — otherwise the browser can
       // collapse the 0 -> full transition into a single instant jump.
       window.setTimeout(() => setRevealed(true), 60);
     } catch (error: any) {
@@ -218,8 +221,6 @@ export default function StatsPage() {
   if (checking) {
     return <LoadingScreen />;
   }
-
-  const dashOffset = revealed ? 0 : CIRCUMFERENCE;
 
   return (
     <main style={pageStyle}>
@@ -314,37 +315,25 @@ export default function StatsPage() {
                 <div style={heroBadgeStyle}>Your Activity</div>
                 <h1 style={heroTitleStyle}>Messages Sent</h1>
                 <p style={heroTextStyle}>
-                  {mode === "month"
-                    ? `How many of your messages were successfully sent in the last ${MONTH_WINDOW_DAYS} days.`
-                    : "How many of your messages were successfully sent on a given day."}
+                  How many of your messages were successfully sent on each day
+                  of the month.
                 </p>
               </div>
 
               <div style={controlsRowStyle}>
-                {mode === "date" ? (
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    max={oldestAllowedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                    style={dateInputStyle}
-                  />
-                ) : null}
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  max={currentNYMonthString()}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  style={monthInputStyle}
+                />
 
                 <button
-                  onClick={() => loadStats(undefined, mode, selectedDate)}
+                  onClick={() => loadStats(undefined, selectedMonth)}
                   style={heroPrimaryButtonStyle}
                 >
                   Refresh
-                </button>
-
-                <button
-                  onClick={() => setMode(mode === "month" ? "date" : "month")}
-                  style={heroSecondaryButtonStyle}
-                >
-                  {mode === "month"
-                    ? "Check an older date"
-                    : `Back to last ${MONTH_WINDOW_DAYS} days`}
                 </button>
               </div>
             </div>
@@ -354,59 +343,62 @@ export default function StatsPage() {
 
           <section style={panelStyle}>
             <div style={panelHeaderStyle}>
-              <h2 style={panelTitleStyle}>
-                {mode === "month" ? `Last ${MONTH_WINDOW_DAYS} days` : selectedDate}
-              </h2>
-              <p style={panelDescStyle}>Successfully sent messages</p>
+              <h2 style={panelTitleStyle}>{formatMonthLabel(selectedMonth)}</h2>
+              <p style={panelDescStyle}>Successfully sent messages, per day</p>
             </div>
 
-            <div style={ringWrapStyle}>
-              {loading ? (
+            {loading ? (
+              <div style={ringWrapStyle}>
                 <div style={spinnerStyle} />
-              ) : (
-                <svg width={240} height={240} viewBox="0 0 240 240">
-                  <circle
-                    cx={120}
-                    cy={120}
-                    r={RADIUS}
-                    fill="none"
-                    stroke="#e2e8f0"
-                    strokeWidth={STROKE}
-                  />
-                  <circle
-                    cx={120}
-                    cy={120}
-                    r={RADIUS}
-                    fill="none"
-                    stroke="#0d9488"
-                    strokeWidth={STROKE}
-                    strokeLinecap="round"
-                    strokeDasharray={CIRCUMFERENCE}
-                    strokeDashoffset={dashOffset}
-                    transform="rotate(-90 120 120)"
-                    style={{
-                      transition: "stroke-dashoffset 1.1s ease-out",
-                    }}
-                  />
-                  <text
-                    x={120}
-                    y={112}
-                    textAnchor="middle"
-                    style={{ fontSize: 44, fontWeight: 900, fill: "#0f172a" }}
-                  >
-                    {successCount}
-                  </text>
-                  <text
-                    x={120}
-                    y={140}
-                    textAnchor="middle"
-                    style={{ fontSize: 14, fontWeight: 700, fill: "#64748b" }}
-                  >
-                    sent successfully
-                  </text>
-                </svg>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div style={monthGridStyle}>
+                {Array.from(
+                  { length: getNYMonthRangeUtc(selectedMonth).daysInMonth },
+                  (_, i) => i + 1
+                ).map((day) => {
+                  const count = dayCounts[day] || 0;
+                  const dashOffset = revealed ? 0 : CIRCUMFERENCE;
+
+                  return (
+                    <div key={day} style={dayTileStyle}>
+                      <svg width={90} height={90} viewBox="0 0 90 90">
+                        <circle
+                          cx={45}
+                          cy={45}
+                          r={RADIUS}
+                          fill="none"
+                          stroke="#e2e8f0"
+                          strokeWidth={STROKE}
+                        />
+                        <circle
+                          cx={45}
+                          cy={45}
+                          r={RADIUS}
+                          fill="none"
+                          stroke="#0d9488"
+                          strokeWidth={STROKE}
+                          strokeLinecap="round"
+                          strokeDasharray={CIRCUMFERENCE}
+                          strokeDashoffset={dashOffset}
+                          transform="rotate(-90 45 45)"
+                          style={{ transition: "stroke-dashoffset 1.1s ease-out" }}
+                        />
+                        <text
+                          x={45}
+                          y={49}
+                          textAnchor="middle"
+                          style={{ fontSize: 20, fontWeight: 900, fill: "#0f172a" }}
+                        >
+                          {count}
+                        </text>
+                      </svg>
+                      <div style={dayTileLabelStyle}>{formatDayLabel(selectedMonth, day)}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
         </section>
       </div>
@@ -649,7 +641,7 @@ const controlsRowStyle: CSSProperties = {
   flexWrap: "wrap",
 };
 
-const dateInputStyle: CSSProperties = {
+const monthInputStyle: CSSProperties = {
   border: "1px solid rgba(255,255,255,0.16)",
   borderRadius: 18,
   padding: "14px 16px",
@@ -671,17 +663,6 @@ const heroPrimaryButtonStyle: CSSProperties = {
   cursor: "pointer",
 };
 
-const heroSecondaryButtonStyle: CSSProperties = {
-  border: "1px solid rgba(255,255,255,0.28)",
-  borderRadius: 18,
-  padding: "15px 20px",
-  background: "rgba(255,255,255,0.1)",
-  color: "#ffffff",
-  fontWeight: 800,
-  fontSize: 14,
-  cursor: "pointer",
-};
-
 const panelStyle: CSSProperties = {
   background: "rgba(255,255,255,0.88)",
   border: "1px solid rgba(15,23,42,0.06)",
@@ -691,7 +672,6 @@ const panelStyle: CSSProperties = {
   backdropFilter: "blur(8px)",
   display: "grid",
   gap: 18,
-  justifyItems: "center",
 };
 
 const panelHeaderStyle: CSSProperties = {
@@ -716,6 +696,30 @@ const ringWrapStyle: CSSProperties = {
   display: "grid",
   placeItems: "center",
   padding: "12px 0 4px 0",
+};
+
+const monthGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))",
+  gap: 14,
+  padding: "8px 0 4px 0",
+};
+
+const dayTileStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  gap: 6,
+  background: "#f8fafc",
+  border: "1px solid rgba(15,23,42,0.05)",
+  borderRadius: 18,
+  padding: "10px 6px 12px",
+};
+
+const dayTileLabelStyle: CSSProperties = {
+  fontSize: 12,
+  fontWeight: 700,
+  color: "#64748b",
 };
 
 const errorBoxStyle: CSSProperties = {

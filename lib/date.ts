@@ -87,3 +87,27 @@ export function getNYDayRangeUtc(dateStr: string): { start: Date; end: Date } {
   const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
   return { start, end };
 }
+
+// "YYYY-MM" for the current calendar month in America/New_York — used to
+// default a <input type="month"> and to cap it so a future month can't be
+// selected.
+export function currentNYMonthString(): string {
+  return todayNYDateString().slice(0, 7);
+}
+
+// Given a "YYYY-MM" calendar month (interpreted in America/New_York), returns
+// the UTC instants spanning that whole month (first day's NY midnight
+// through the day after the last day's NY midnight) plus how many days it
+// has - used to build one Firestore createdAt range query covering the
+// entire month, and to know how many per-day tiles to render.
+export function getNYMonthRangeUtc(monthStr: string): {
+  start: Date;
+  end: Date;
+  daysInMonth: number;
+} {
+  const [y, m] = monthStr.split("-").map((part) => Number(part));
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const start = getNYDayRangeUtc(`${monthStr}-01`).start;
+  const end = getNYDayRangeUtc(`${monthStr}-${String(daysInMonth).padStart(2, "0")}`).end;
+  return { start, end, daysInMonth };
+}
