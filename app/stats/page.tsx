@@ -616,9 +616,9 @@ const heroOverlayStyle: CSSProperties = {
 const heroInnerStyle: CSSProperties = {
   position: "relative",
   zIndex: 1,
-  padding: 28,
+  padding: "18px 22px",
   display: "grid",
-  gap: 22,
+  gap: 12,
 };
 
 const heroBadgeStyle: CSSProperties = {
@@ -626,29 +626,29 @@ const heroBadgeStyle: CSSProperties = {
   alignItems: "center",
   width: "fit-content",
   borderRadius: 999,
-  padding: "8px 14px",
+  padding: "5px 12px",
   background: "rgba(255,255,255,0.14)",
   border: "1px solid rgba(255,255,255,0.18)",
   color: "#ecfeff",
-  fontSize: 12,
+  fontSize: 11,
   fontWeight: 800,
   letterSpacing: 0.3,
 };
 
 const heroTitleStyle: CSSProperties = {
-  margin: "12px 0 0 0",
+  margin: "8px 0 0 0",
   color: "#ffffff",
-  fontSize: 38,
+  fontSize: 24,
   lineHeight: 1.05,
   fontWeight: 900,
 };
 
 const heroTextStyle: CSSProperties = {
-  margin: "10px 0 0 0",
+  margin: "4px 0 0 0",
   maxWidth: 760,
   color: "rgba(236,254,255,0.86)",
-  fontSize: 16,
-  lineHeight: 1.65,
+  fontSize: 13,
+  lineHeight: 1.5,
 };
 
 const controlsRowStyle: CSSProperties = {
@@ -660,23 +660,23 @@ const controlsRowStyle: CSSProperties = {
 
 const monthInputStyle: CSSProperties = {
   border: "1px solid rgba(255,255,255,0.16)",
-  borderRadius: 18,
-  padding: "14px 16px",
+  borderRadius: 14,
+  padding: "9px 12px",
   background: "rgba(255,255,255,0.12)",
   color: "#ffffff",
-  fontSize: 15,
+  fontSize: 13,
   fontWeight: 600,
   colorScheme: "dark",
 };
 
 const heroPrimaryButtonStyle: CSSProperties = {
   border: "none",
-  borderRadius: 18,
-  padding: "15px 20px",
+  borderRadius: 14,
+  padding: "9px 16px",
   background: "#ecfeff",
   color: "#0f766e",
   fontWeight: 900,
-  fontSize: 15,
+  fontSize: 13,
   cursor: "pointer",
 };
 
@@ -720,27 +720,27 @@ const ringWrapStyle: CSSProperties = {
 const barChartWrapStyle: CSSProperties = {
   display: "flex",
   alignItems: "flex-end",
-  gap: 8,
-  height: 520,
+  gap: 10,
+  height: 640,
   width: "100%",
-  padding: "16px 6px 4px 6px",
+  padding: "20px 8px 4px 8px",
 };
 
 const barColStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   alignItems: "center",
-  gap: 8,
+  gap: 10,
   flex: 1,
   height: "100%",
   minWidth: 0,
 };
 
 const barCountStyle: CSSProperties = {
-  fontSize: 16,
+  fontSize: 24,
   fontWeight: 900,
   color: "#0f172a",
-  height: 22,
+  height: 30,
 };
 
 const barTrackStyle: CSSProperties = {
@@ -761,7 +761,7 @@ const barFillStyle: CSSProperties = {
 };
 
 const barDayLabelStyle: CSSProperties = {
-  fontSize: 14,
+  fontSize: 18,
   fontWeight: 700,
   color: "#64748b",
 };
