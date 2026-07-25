@@ -2619,10 +2619,10 @@ const pageStyle: CSSProperties = {
 };
 
 const pageWrapStyle: CSSProperties = {
-  maxWidth: 1220,
+  maxWidth: 1800,
   margin: "0 auto",
   display: "grid",
-  gap: 20,
+  gap: 24,
 };
 
 const heroStyle: CSSProperties = {
@@ -2686,9 +2686,9 @@ const enableNotifsBannerStyle: CSSProperties = {
 const heroInnerStyle: CSSProperties = {
   position: "relative",
   zIndex: 1,
-  padding: 28,
+  padding: 36,
   display: "grid",
-  gap: 22,
+  gap: 26,
 };
 
 const heroBadgeStyle: CSSProperties = {
@@ -2696,11 +2696,11 @@ const heroBadgeStyle: CSSProperties = {
   alignItems: "center",
   width: "fit-content",
   borderRadius: 999,
-  padding: "8px 14px",
+  padding: "10px 18px",
   background: "rgba(255,255,255,0.14)",
   border: "1px solid rgba(255,255,255,0.18)",
   color: "#ecfeff",
-  fontSize: 12,
+  fontSize: 13,
   fontWeight: 800,
   letterSpacing: 0.3,
 };
@@ -2708,16 +2708,16 @@ const heroBadgeStyle: CSSProperties = {
 const heroTitleStyle: CSSProperties = {
   margin: "12px 0 0 0",
   color: "#ffffff",
-  fontSize: 40,
+  fontSize: 48,
   lineHeight: 1.05,
   fontWeight: 900,
 };
 
 const heroTextStyle: CSSProperties = {
   margin: "10px 0 0 0",
-  maxWidth: 760,
+  maxWidth: 900,
   color: "rgba(236,254,255,0.86)",
-  fontSize: 16,
+  fontSize: 17.5,
   lineHeight: 1.65,
 };
 
@@ -2739,8 +2739,8 @@ const filterTabStyle: CSSProperties = {
   background: "rgba(255,255,255,0.10)",
   color: "#ecfeff",
   borderRadius: 999,
-  padding: "10px 16px",
-  fontSize: 14,
+  padding: "13px 20px",
+  fontSize: 15.5,
   fontWeight: 800,
   cursor: "pointer",
   // Without this, tabs shrink to fit their flex container instead of
@@ -2761,9 +2761,9 @@ const searchWrapStyle: CSSProperties = {
   minWidth: 260,
   display: "flex",
   alignItems: "center",
-  gap: 10,
-  padding: "14px 16px",
-  borderRadius: 18,
+  gap: 12,
+  padding: "18px 22px",
+  borderRadius: 20,
   background: "rgba(255,255,255,0.12)",
   border: "1px solid rgba(255,255,255,0.16)",
   backdropFilter: "blur(10px)",
@@ -2775,29 +2775,29 @@ const searchInputStyle: CSSProperties = {
   outline: "none",
   background: "transparent",
   color: "#ffffff",
-  fontSize: 15,
+  fontSize: 16.5,
 };
 
 const backButtonStyle: CSSProperties = {
   border: "none",
-  borderRadius: 18,
-  padding: "15px 20px",
+  borderRadius: 20,
+  padding: "18px 26px",
   background: "#ecfeff",
   color: "#0f766e",
   fontWeight: 900,
-  fontSize: 15,
+  fontSize: 16.5,
   textDecoration: "none",
   whiteSpace: "nowrap",
 };
 
 const switchToMobileButtonStyle: CSSProperties = {
   border: "1px solid rgba(255,255,255,0.3)",
-  borderRadius: 18,
-  padding: "15px 20px",
+  borderRadius: 20,
+  padding: "18px 26px",
   background: "rgba(255,255,255,0.12)",
   color: "#ffffff",
   fontWeight: 900,
-  fontSize: 15,
+  fontSize: 16.5,
   whiteSpace: "nowrap",
   cursor: "pointer",
 };
@@ -2873,7 +2873,7 @@ const mobileQrImageStyle: CSSProperties = {
 const statsGridStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
-  gap: 14,
+  gap: 18,
 };
 
 const mobileStatLineStyle: CSSProperties = {
@@ -2905,38 +2905,38 @@ const mobileStatHintStyle: CSSProperties = {
 const statCardStyle: CSSProperties = {
   background: "rgba(255,255,255,0.18)",
   border: "1px solid rgba(255,255,255,0.12)",
-  borderRadius: 20,
-  padding: "18px 18px",
+  borderRadius: 22,
+  padding: "24px 22px",
   backdropFilter: "blur(10px)",
 };
 
 const statLabelStyle: CSSProperties = {
   color: "rgba(236, 254, 255, 0.72)",
-  fontSize: 13,
+  fontSize: 14,
   fontWeight: 600,
 };
 
 const statValueStyle: CSSProperties = {
-  marginTop: 10,
+  marginTop: 12,
   color: "#ffffff",
-  fontSize: 30,
+  fontSize: 38,
   fontWeight: 800,
   lineHeight: 1.15,
   wordBreak: "break-word",
 };
 
 const statHintStyle: CSSProperties = {
-  marginTop: 4,
+  marginTop: 6,
   color: "rgba(236, 254, 255, 0.65)",
-  fontSize: 11.5,
+  fontSize: 12.5,
   fontWeight: 600,
 };
 
 const panelStyle: CSSProperties = {
   background: "rgba(255,255,255,0.88)",
   border: "1px solid rgba(15,23,42,0.06)",
-  borderRadius: 28,
-  padding: 22,
+  borderRadius: 32,
+  padding: 30,
   boxShadow: "0 16px 40px rgba(15,23,42,0.06)",
   backdropFilter: "blur(8px)",
 };
@@ -2951,7 +2951,7 @@ const panelHeaderStyle: CSSProperties = {
 
 const panelTitleStyle: CSSProperties = {
   margin: 0,
-  fontSize: 24,
+  fontSize: 28,
   fontWeight: 900,
   color: "#0f172a",
 };
@@ -2959,17 +2959,18 @@ const panelTitleStyle: CSSProperties = {
 const panelDescStyle: CSSProperties = {
   margin: "8px 0 0 0",
   color: "#64748b",
-  fontSize: 14,
+  fontSize: 15,
   lineHeight: 1.5,
 };
 
 const refreshButtonStyle: CSSProperties = {
   border: "1px solid rgba(15,23,42,0.08)",
-  borderRadius: 14,
-  padding: "12px 16px",
+  borderRadius: 16,
+  padding: "15px 20px",
   background: "#ffffff",
   color: "#0f172a",
   fontWeight: 800,
+  fontSize: 15,
   cursor: "pointer",
 };
 
@@ -2994,14 +2995,14 @@ const bulkFollowUpHeaderStyle: CSSProperties = {
 
 const bulkFollowUpTitleStyle: CSSProperties = {
   margin: 0,
-  fontSize: 18,
+  fontSize: 20,
   fontWeight: 900,
   color: "#0f172a",
 };
 
 const bulkFollowUpTextStyle: CSSProperties = {
   margin: "6px 0 0 0",
-  fontSize: 14,
+  fontSize: 15,
   lineHeight: 1.6,
   color: "#475569",
 };
@@ -3023,12 +3024,12 @@ const bulkFollowUpMetaStyle: CSSProperties = {
 
 const followUpTextareaStyle: CSSProperties = {
   width: "100%",
-  minHeight: 120,
+  minHeight: 130,
   resize: "vertical",
-  borderRadius: 16,
+  borderRadius: 18,
   border: "1px solid rgba(15,23,42,0.08)",
-  padding: 14,
-  fontSize: 15,
+  padding: 16,
+  fontSize: 16,
   lineHeight: 1.6,
   outline: "none",
   background: "#ffffff",
@@ -3042,12 +3043,12 @@ const bulkFollowUpActionsStyle: CSSProperties = {
 
 const sendFollowUpButtonStyle: CSSProperties = {
   border: "none",
-  borderRadius: 14,
-  padding: "14px 18px",
+  borderRadius: 16,
+  padding: "17px 24px",
   background: "#0d9488",
   color: "#ffffff",
   fontWeight: 800,
-  fontSize: 14,
+  fontSize: 15.5,
 };
 
 const conversationGridStyle: CSSProperties = {
@@ -3072,19 +3073,19 @@ const repliesPaginationRowStyle: CSSProperties = {
 };
 
 const repliesPaginationLabelStyle: CSSProperties = {
-  fontSize: 13,
+  fontSize: 14,
   fontWeight: 700,
   color: "#64748b",
 };
 
 const repliesPaginationButtonStyle: CSSProperties = {
   border: "1px solid rgba(15,23,42,0.08)",
-  borderRadius: 14,
-  padding: "10px 18px",
+  borderRadius: 16,
+  padding: "13px 22px",
   background: "#ffffff",
   color: "#0f172a",
   fontWeight: 800,
-  fontSize: 14,
+  fontSize: 15,
   cursor: "pointer",
 };
 
@@ -3115,9 +3116,9 @@ const conversationCardStyle: CSSProperties = {
   color: "#0f172a",
   background: "linear-gradient(180deg, #ffffff 0%, #fcfffe 100%)",
   border: "1px solid rgba(15, 23, 42, 0.06)",
-  borderRadius: 22,
-  padding: 20,
-  paddingRight: 78,
+  borderRadius: 26,
+  padding: 26,
+  paddingRight: 86,
   display: "block",
   boxShadow: "0 8px 20px rgba(15, 23, 42, 0.05)",
 };
@@ -3135,13 +3136,13 @@ const actionWrapStyle: CSSProperties = {
 };
 
 const actionButtonStyle: CSSProperties = {
-  width: 40,
-  height: 40,
-  borderRadius: 12,
+  width: 44,
+  height: 44,
+  borderRadius: 14,
   border: "1px solid rgba(15,23,42,0.08)",
   background: "#ffffff",
   color: "#0f172a",
-  fontSize: 22,
+  fontSize: 24,
   fontWeight: 900,
   lineHeight: 1,
   cursor: "pointer",
@@ -3187,7 +3188,7 @@ const conversationTopStyle: CSSProperties = {
 };
 
 const phoneStyle: CSSProperties = {
-  fontSize: 20,
+  fontSize: 22,
   fontWeight: 900,
   color: "#0f172a",
   wordBreak: "break-word",
@@ -3196,13 +3197,13 @@ const phoneStyle: CSSProperties = {
 const attentionMarkStyle: CSSProperties = {
   display: "inline-block",
   marginRight: 6,
-  fontSize: 21,
+  fontSize: 23,
 };
 
 const nameStyle: CSSProperties = {
   marginTop: 6,
   color: "#0d9488",
-  fontSize: 14,
+  fontSize: 15.5,
   fontWeight: 700,
 };
 
@@ -3212,7 +3213,7 @@ const conversationRightStyle: CSSProperties = {
 
 const timeStyle: CSSProperties = {
   color: "#64748b",
-  fontSize: 14,
+  fontSize: 15,
 };
 
 const timeStyleMobile: CSSProperties = {
@@ -3228,8 +3229,8 @@ const awaitingReplyBadgeStyle: CSSProperties = {
   color: "#b45309",
   border: "1px solid rgba(245, 158, 11, 0.25)",
   borderRadius: 999,
-  padding: "7px 11px",
-  fontSize: 12,
+  padding: "8px 14px",
+  fontSize: 13,
   fontWeight: 800,
 };
 
@@ -3240,8 +3241,8 @@ const repliedBadgeStyle: CSSProperties = {
   color: "#059669",
   border: "1px solid rgba(16, 185, 129, 0.25)",
   borderRadius: 999,
-  padding: "7px 11px",
-  fontSize: 12,
+  padding: "8px 14px",
+  fontSize: 13,
   fontWeight: 800,
 };
 
@@ -3252,8 +3253,8 @@ const failedBadgeStyle: CSSProperties = {
   color: "#b91c1c",
   border: "1px solid rgba(239, 68, 68, 0.3)",
   borderRadius: 999,
-  padding: "7px 11px",
-  fontSize: 12,
+  padding: "8px 14px",
+  fontSize: 13,
   fontWeight: 800,
 };
 
@@ -3264,15 +3265,15 @@ const manuallyBlockedBadgeStyle: CSSProperties = {
   color: "#ffffff",
   border: "1px solid #b91c1c",
   borderRadius: 999,
-  padding: "7px 11px",
-  fontSize: 12,
+  padding: "8px 14px",
+  fontSize: 13,
   fontWeight: 800,
 };
 
 const messagePreviewStyle: CSSProperties = {
   marginTop: 14,
   color: "#475569",
-  fontSize: 15,
+  fontSize: 16.5,
   lineHeight: 1.65,
 };
 
@@ -3287,8 +3288,8 @@ const followUpCardStyle: CSSProperties = {
   color: "#0f172a",
   background: "linear-gradient(180deg, #ffffff 0%, #fcfffe 100%)",
   border: "1px solid rgba(15, 23, 42, 0.06)",
-  borderRadius: 22,
-  padding: 20,
+  borderRadius: 26,
+  padding: 26,
   display: "block",
   boxShadow: "0 8px 20px rgba(15, 23, 42, 0.05)",
 };
@@ -3304,9 +3305,9 @@ const followUpTopRowStyle: CSSProperties = {
 const followUpCountdownBadgeStyle: CSSProperties = {
   background: "rgba(13,148,136,0.10)",
   color: "#0d9488",
-  fontSize: 12.5,
+  fontSize: 13.5,
   fontWeight: 800,
-  padding: "6px 12px",
+  padding: "8px 14px",
   borderRadius: 999,
   whiteSpace: "nowrap",
 };
