@@ -85,6 +85,28 @@ export async function GET(req: NextRequest) {
   );
 
   const hasReplyByConversationId = new Map<string, boolean>();
+
+  // COMPLIANCE FIX: a real incident showed a follow-up sent ~5 hours after
+  // its original message had already come back "Undelivered" (Twilio error
+  // 30005 - unknown handset). Root cause: /api/send-sms/twilio/status only
+  // cancels a pending follow-up if that followUps doc ALREADY EXISTS at the
+  // moment the status webhook is processed. Since /api/send-sms/twilio and
+  // /api/schedule-follow-up are two separate calls from the client, a fast
+  // carrier failure webhook can land and run its cancellation check BEFORE
+  // schedule-follow-up has even created the "pending" doc yet - so nothing
+  // is there to cancel, and it never gets re-checked afterward. This same
+  // gap was previously found and worked around with a one-time manual
+  // backfill script (tools/cancel-followups-for-failed-sends.ts); this adds
+  // the same check permanently, every run, right here in the cron, so it's
+  // no longer a race. lastOutboundStatus/status are read fresh from the
+  // SAME batched conversation fetch used for hasReply above (no extra
+  // reads) - by the time a follow-up is actually due (hours after the
+  // original send), the status webhook has long since landed, so this is a
+  // reliable, synchronous source of truth independent of that webhook's
+  // own (separate) cancellation attempt.
+  const deliveryFailureByConversationId = new Map<string, string>();
+  const FAILURE_STATUSES = new Set(["failed", "undelivered"]);
+
   const GETALL_CHUNK = 300;
   for (let i = 0; i < conversationIds.length; i += GETALL_CHUNK) {
     const chunkIds = conversationIds.slice(i, i + GETALL_CHUNK);
@@ -92,6 +114,17 @@ export async function GET(req: NextRequest) {
     const convoSnaps = await adminDb.getAll(...refs);
     convoSnaps.forEach((convoSnap) => {
       hasReplyByConversationId.set(convoSnap.id, convoSnap.exists && convoSnap.data()?.hasReply === true);
+
+      if (!convoSnap.exists) return;
+      const convoData = convoSnap.data() || {};
+      const lastOutboundStatus = String(convoData.lastOutboundStatus || "").toLowerCase();
+      const conversationStatus = String(convoData.status || "").toLowerCase();
+
+      if (FAILURE_STATUSES.has(lastOutboundStatus)) {
+        deliveryFailureByConversationId.set(convoSnap.id, lastOutboundStatus);
+      } else if (conversationStatus === "delivery_issue") {
+        deliveryFailureByConversationId.set(convoSnap.id, conversationStatus);
+      }
     });
   }
 
@@ -127,7 +160,26 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    // 3c. SECOND, INDEPENDENT check - a real incident showed a follow-up
+    // 3c. Skip if the ORIGINAL message this follow-up belongs to already
+    // failed/was undelivered - see the big comment above where
+    // deliveryFailureByConversationId is built. Compliance requirement:
+    // never send a follow-up after the first message to a number already
+    // bounced (wastes money and risks carrier compliance flags on a number
+    // that's confirmed unreachable).
+    const deliveryFailureStatus = deliveryFailureByConversationId.get(
+      String(data.conversationId || "")
+    );
+
+    if (deliveryFailureStatus) {
+      await doc.ref.update({
+        status: "skipped",
+        skippedReason: `original_message_${deliveryFailureStatus}`,
+      });
+      skipped++;
+      continue;
+    }
+
+    // 3d. SECOND, INDEPENDENT check - a real incident showed a follow-up
     // sent to a customer who had replied over 4 hours earlier, with
     // hasReply reading false at send time despite the inbound webhook
     // always setting it true. No root cause was found after a full review
