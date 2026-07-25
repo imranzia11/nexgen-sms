@@ -13,7 +13,13 @@ export const metadata: Metadata = {
   // iOS applies its own mask) PNG, which manifest icons don't cover.
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    // "black-translucent" (not "default") lets the page's own content
+    // render behind the iOS status bar instead of iOS drawing its own
+    // opaque white bar above it - required for the mobile thread view's
+    // dark green header to look like one continuous banner from the very
+    // top of the screen, rather than a green bar sitting under a separate
+    // white status-bar strip.
+    statusBarStyle: "black-translucent",
     title: "Nexgen Replies",
   },
   icons: {
@@ -28,6 +34,12 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // Lets the page extend into the safe areas (notch, status bar, home
+  // indicator) instead of iOS reserving that space itself - without this,
+  // every env(safe-area-inset-*) used on the mobile thread view (top bar,
+  // input bar) evaluates to 0, so the safe-area padding that code already
+  // expects to be there silently never applies.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

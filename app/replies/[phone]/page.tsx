@@ -306,6 +306,34 @@ export default function ReplyThreadPage({
     return () => window.removeEventListener("resize", check);
   }, []);
 
+  // BUG FIX: imgScreenStyle used to size itself with `position: fixed;
+  // inset: 0`, which pins to the browser's LAYOUT viewport - a fixed size
+  // that does NOT shrink when the browser's own address bar/toolbar is
+  // showing. Mobile Safari/Chrome show and hide that toolbar as you scroll,
+  // so the actual visible area is often smaller than what `inset: 0` sized
+  // against - the compose bar at the bottom would end up partly hidden
+  // behind the browser's own chrome, and the scrollable message area could
+  // fight with the browser's own scroll/rubber-banding for the same space
+  // (reported as "scroll feels stuck"). Tracking window.visualViewport's
+  // real height and applying it as an explicit pixel height sidesteps this
+  // entirely - it's always the ACTUAL visible height, toolbar or not.
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const update = () => setViewportHeight(vv ? vv.height : window.innerHeight);
+    update();
+    if (vv) {
+      vv.addEventListener("resize", update);
+      vv.addEventListener("scroll", update);
+      return () => {
+        vv.removeEventListener("resize", update);
+        vv.removeEventListener("scroll", update);
+      };
+    }
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
   // iMessage-style mobile layout: Pin/Delete/Refresh move behind a small
   // "..." menu in the compact top bar instead of three buttons competing
   // for space with the contact name, matching how a real messaging app
@@ -1111,7 +1139,15 @@ export default function ReplyThreadPage({
       : "";
 
     return (
-      <div style={imgScreenStyle}>
+      <div
+        style={{
+          ...imgScreenStyle,
+          // Falls back to the inset:0/100% sizing (via CSS) until the
+          // effect above has measured the real visual viewport at least
+          // once - avoids a flash of 0-height content on first paint.
+          ...(viewportHeight ? { height: viewportHeight, bottom: "auto" } : null),
+        }}
+      >
         <div style={imgTopBarStyle}>
           <Link href="/replies" style={imgBackButtonStyle} aria-label="Back to Replies">
             ‹
@@ -1961,41 +1997,45 @@ const imgTopBarStyle: CSSProperties = {
   flexShrink: 0,
   display: "flex",
   alignItems: "center",
-  gap: 10,
-  padding: "max(10px, env(safe-area-inset-top)) 10px 12px 8px",
-  background: "rgba(255,255,255,0.92)",
-  borderBottom: "1px solid rgba(13,148,136,0.12)",
-  backdropFilter: "blur(10px)",
-  boxShadow: "0 4px 16px rgba(15,23,42,0.06)",
+  gap: 12,
+  // Extra top padding (beyond the safe-area inset itself) plus a taller
+  // bottom padding - the previous 10/12px felt cramped and made the back
+  // button and menu button hard to tap accurately. Matches the same dark
+  // green gradient used on every desktop hero card, so the mobile thread
+  // view reads as the same app rather than a lighter, separate-feeling
+  // screen.
+  padding: "max(16px, calc(env(safe-area-inset-top) + 10px)) 14px 16px 12px",
+  background: "linear-gradient(135deg, #0f766e 0%, #0d9488 48%, #14b8a6 100%)",
+  boxShadow: "0 4px 16px rgba(15,23,42,0.18)",
 };
 
 const imgBackButtonStyle: CSSProperties = {
   flexShrink: 0,
-  width: 32,
-  height: 36,
+  width: 40,
+  height: 40,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  fontSize: 28,
+  fontSize: 30,
   lineHeight: 1,
-  color: "#0d9488",
+  color: "#ffffff",
   textDecoration: "none",
 };
 
 const imgAvatarStyle: CSSProperties = {
   flexShrink: 0,
-  width: 34,
-  height: 34,
+  width: 36,
+  height: 36,
   borderRadius: "50%",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  background: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)",
+  background: "rgba(255,255,255,0.16)",
+  border: "1px solid rgba(255,255,255,0.4)",
   color: "#ffffff",
   fontSize: 13,
   fontWeight: 800,
   letterSpacing: 0.2,
-  boxShadow: "0 2px 6px rgba(13,148,136,0.35)",
 };
 
 const imgTitleWrapStyle: CSSProperties = {
@@ -2005,9 +2045,9 @@ const imgTitleWrapStyle: CSSProperties = {
 };
 
 const imgTitleStyle: CSSProperties = {
-  fontSize: 15,
+  fontSize: 15.5,
   fontWeight: 800,
-  color: "#0f172a",
+  color: "#ffffff",
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
@@ -2016,7 +2056,7 @@ const imgTitleStyle: CSSProperties = {
 const imgSubtitleStyle: CSSProperties = {
   marginTop: 1,
   fontSize: 12,
-  color: "#64748b",
+  color: "rgba(236,254,255,0.78)",
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
@@ -2028,12 +2068,12 @@ const imgMenuWrapStyle: CSSProperties = {
 };
 
 const imgMenuButtonStyle: CSSProperties = {
-  width: 36,
-  height: 36,
+  width: 40,
+  height: 40,
   borderRadius: "50%",
   border: "none",
-  background: "rgba(13,148,136,0.08)",
-  color: "#0d9488",
+  background: "rgba(255,255,255,0.16)",
+  color: "#ffffff",
   fontSize: 15,
   fontWeight: 900,
   cursor: "pointer",
