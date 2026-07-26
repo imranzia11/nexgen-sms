@@ -1921,7 +1921,7 @@ export default function RepliesPage() {
 
               <div style={heroActionsStyle}>
                 <div style={searchWrapStyle}>
-                  <span style={{ fontSize: 16, opacity: 0.85 }}>⌕</span>
+                  <span style={{ fontSize: 26, opacity: 0.85 }}>⌕</span>
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
@@ -2742,7 +2742,7 @@ const heroActionsStyle: CSSProperties = {
 
 const filterTabsStyle: CSSProperties = {
   display: "flex",
-  gap: 10,
+  gap: 14,
   flexWrap: "wrap",
 };
 
@@ -2751,8 +2751,8 @@ const filterTabStyle: CSSProperties = {
   background: "rgba(255,255,255,0.10)",
   color: "#ecfeff",
   borderRadius: 999,
-  padding: "13px 20px",
-  fontSize: 15.5,
+  padding: "18px 28px",
+  fontSize: 30,
   fontWeight: 800,
   cursor: "pointer",
   // Without this, tabs shrink to fit their flex container instead of
@@ -2773,9 +2773,9 @@ const searchWrapStyle: CSSProperties = {
   minWidth: 260,
   display: "flex",
   alignItems: "center",
-  gap: 12,
-  padding: "18px 22px",
-  borderRadius: 20,
+  gap: 14,
+  padding: "22px 28px",
+  borderRadius: 24,
   background: "rgba(255,255,255,0.12)",
   border: "1px solid rgba(255,255,255,0.16)",
   backdropFilter: "blur(10px)",
@@ -2787,29 +2787,29 @@ const searchInputStyle: CSSProperties = {
   outline: "none",
   background: "transparent",
   color: "#ffffff",
-  fontSize: 16.5,
+  fontSize: 30,
 };
 
 const backButtonStyle: CSSProperties = {
   border: "none",
-  borderRadius: 20,
-  padding: "18px 26px",
+  borderRadius: 24,
+  padding: "22px 32px",
   background: "#ecfeff",
   color: "#0f766e",
   fontWeight: 900,
-  fontSize: 16.5,
+  fontSize: 30,
   textDecoration: "none",
   whiteSpace: "nowrap",
 };
 
 const switchToMobileButtonStyle: CSSProperties = {
   border: "1px solid rgba(255,255,255,0.3)",
-  borderRadius: 20,
-  padding: "18px 26px",
+  borderRadius: 24,
+  padding: "22px 32px",
   background: "rgba(255,255,255,0.12)",
   color: "#ffffff",
   fontWeight: 900,
-  fontSize: 16.5,
+  fontSize: 30,
   whiteSpace: "nowrap",
   cursor: "pointer",
 };
@@ -2929,16 +2929,17 @@ const statCardStyle: CSSProperties = {
   background: "rgba(255,255,255,0.18)",
   border: "1px solid rgba(255,255,255,0.12)",
   borderRadius: 22,
-  padding: "24px 22px",
+  padding: "28px 26px",
   backdropFilter: "blur(10px)",
   flex: "1 1 0",
-  minWidth: 180,
+  minWidth: 260,
 };
 
 const statLabelStyle: CSSProperties = {
   color: "rgba(236, 254, 255, 0.72)",
-  fontSize: 14,
-  fontWeight: 600,
+  fontSize: 30,
+  fontWeight: 700,
+  lineHeight: 1.2,
 };
 
 const statValueStyle: CSSProperties = {
@@ -2965,8 +2966,8 @@ const statHintStyle: CSSProperties = {
 const statCardHighlightStyle: CSSProperties = {
   ...statCardStyle,
   flex: "2 1 0",
-  minWidth: 300,
-  padding: "34px 30px",
+  minWidth: 360,
+  padding: "38px 34px",
   background: "rgba(255,255,255,0.28)",
   border: "1px solid rgba(255,255,255,0.4)",
   boxShadow: "0 14px 34px rgba(15,23,42,0.12)",
@@ -2974,8 +2975,8 @@ const statCardHighlightStyle: CSSProperties = {
 
 const statLabelHighlightStyle: CSSProperties = {
   ...statLabelStyle,
-  fontSize: 16,
-  fontWeight: 700,
+  fontSize: 32,
+  fontWeight: 800,
 };
 
 const statValueHighlightStyle: CSSProperties = {
@@ -3017,12 +3018,12 @@ const panelDescStyle: CSSProperties = {
 
 const refreshButtonStyle: CSSProperties = {
   border: "1px solid rgba(15,23,42,0.08)",
-  borderRadius: 16,
-  padding: "15px 20px",
+  borderRadius: 18,
+  padding: "18px 26px",
   background: "#ffffff",
   color: "#0f172a",
   fontWeight: 800,
-  fontSize: 15,
+  fontSize: 30,
   cursor: "pointer",
 };
 
