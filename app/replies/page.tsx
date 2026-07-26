@@ -1813,7 +1813,7 @@ export default function RepliesPage() {
               <button
                 type="button"
                 onClick={() => window.location.reload()}
-                style={refreshButtonStyle}
+                style={isMobile ? refreshButtonStyleCompact : refreshButtonStyle}
               >
                 Retry
               </button>
@@ -1874,7 +1874,7 @@ export default function RepliesPage() {
         <div style={pageWrapStyle}>
           <div style={heroStyle}>
             <div style={heroOverlayStyle} />
-            <div style={heroInnerStyle}>
+            <div style={isMobile ? heroInnerStyleCompact : heroInnerStyle}>
               {isMobile ? (
                 <>
                   <div style={mobileBrandRowStyle}>
@@ -1920,13 +1920,13 @@ export default function RepliesPage() {
               ) : null}
 
               <div style={heroActionsStyle}>
-                <div style={searchWrapStyle}>
-                  <span style={{ fontSize: 26, opacity: 0.85 }}>⌕</span>
+                <div style={isMobile ? searchWrapStyleCompact : searchWrapStyle}>
+                  <span style={{ fontSize: isMobile ? 16 : 26, opacity: 0.85 }}>⌕</span>
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search by phone number, name or message"
-                    style={searchInputStyle}
+                    style={isMobile ? searchInputStyleCompact : searchInputStyle}
                   />
                 </div>
 
@@ -1951,6 +1951,7 @@ export default function RepliesPage() {
                   isMobile
                     ? {
                         ...filterTabsStyle,
+                        gap: 10,
                         flexWrap: "nowrap",
                         overflowX: "auto",
                         WebkitOverflowScrolling: "touch",
@@ -1963,7 +1964,7 @@ export default function RepliesPage() {
                 <button
                   onClick={() => setFilterMode("all")}
                   style={{
-                    ...filterTabStyle,
+                    ...(isMobile ? filterTabStyleCompact : filterTabStyle),
                     ...(filterMode === "all" ? activeFilterTabStyle : {}),
                   }}
                 >
@@ -1973,7 +1974,7 @@ export default function RepliesPage() {
                 <button
                   onClick={() => setFilterMode("replied")}
                   style={{
-                    ...filterTabStyle,
+                    ...(isMobile ? filterTabStyleCompact : filterTabStyle),
                     ...(filterMode === "replied" ? activeFilterTabStyle : {}),
                   }}
                 >
@@ -1983,7 +1984,7 @@ export default function RepliesPage() {
                 <button
                   onClick={() => setFilterMode("awaiting")}
                   style={{
-                    ...filterTabStyle,
+                    ...(isMobile ? filterTabStyleCompact : filterTabStyle),
                     ...(filterMode === "awaiting" ? activeFilterTabStyle : {}),
                   }}
                 >
@@ -1993,7 +1994,7 @@ export default function RepliesPage() {
                 <button
                   onClick={() => setFilterMode("never_replied")}
                   style={{
-                    ...filterTabStyle,
+                    ...(isMobile ? filterTabStyleCompact : filterTabStyle),
                     ...(filterMode === "never_replied"
                       ? activeFilterTabStyle
                       : {}),
@@ -2005,7 +2006,7 @@ export default function RepliesPage() {
                 <button
                   onClick={() => setFilterMode("pinned")}
                   style={{
-                    ...filterTabStyle,
+                    ...(isMobile ? filterTabStyleCompact : filterTabStyle),
                     ...(filterMode === "pinned" ? activeFilterTabStyle : {}),
                   }}
                 >
@@ -2015,7 +2016,7 @@ export default function RepliesPage() {
                 <button
                   onClick={() => setFilterMode("failed")}
                   style={{
-                    ...filterTabStyle,
+                    ...(isMobile ? filterTabStyleCompact : filterTabStyle),
                     ...(filterMode === "failed" ? activeFilterTabStyle : {}),
                   }}
                 >
@@ -2025,7 +2026,7 @@ export default function RepliesPage() {
                 <button
                   onClick={() => setFilterMode("attention")}
                   style={{
-                    ...filterTabStyle,
+                    ...(isMobile ? filterTabStyleCompact : filterTabStyle),
                     ...(filterMode === "attention" ? activeFilterTabStyle : {}),
                   }}
                 >
@@ -2035,7 +2036,7 @@ export default function RepliesPage() {
                 <button
                   onClick={() => setFilterMode("followups")}
                   style={{
-                    ...filterTabStyle,
+                    ...(isMobile ? filterTabStyleCompact : filterTabStyle),
                     ...(filterMode === "followups" ? activeFilterTabStyle : {}),
                   }}
                 >
@@ -2125,7 +2126,7 @@ export default function RepliesPage() {
           <section style={panelStyle}>
             <div style={panelHeaderStyle}>
               <div>
-                <h2 style={panelTitleStyle}>
+                <h2 style={isMobile ? panelTitleStyleCompact : panelTitleStyle}>
                   {filterMode === "pinned"
                     ? "Pinned Messages"
                     : filterMode === "failed"
@@ -2136,7 +2137,7 @@ export default function RepliesPage() {
                     ? "Upcoming Follow-Ups"
                     : "Outbound SMS Activity"}
                 </h2>
-                <p style={panelDescStyle}>
+                <p style={isMobile ? panelDescStyleCompact : panelDescStyle}>
                   {filterMode === "pinned"
                     ? "Conversations you've pinned for quick access. Unpin to send them back to their normal tab."
                     : filterMode === "failed"
@@ -2160,7 +2161,7 @@ export default function RepliesPage() {
                   }
                   if (profile) void loadCounts(profile.uid);
                 }}
-                style={refreshButtonStyle}
+                style={isMobile ? refreshButtonStyleCompact : refreshButtonStyle}
               >
                 Refresh
               </button>
@@ -2170,10 +2171,10 @@ export default function RepliesPage() {
               <div style={bulkFollowUpPanelStyle}>
                 <div style={bulkFollowUpHeaderStyle}>
                   <div>
-                    <h3 style={bulkFollowUpTitleStyle}>
+                    <h3 style={isMobile ? bulkFollowUpTitleStyleCompact : bulkFollowUpTitleStyle}>
                       Follow up with customers who never replied
                     </h3>
-                    <p style={bulkFollowUpTextStyle}>
+                    <p style={isMobile ? bulkFollowUpTextStyleCompact : bulkFollowUpTextStyle}>
                       Select customers who did not reply at all and send one
                       follow-up message.
                     </p>
@@ -2197,7 +2198,7 @@ export default function RepliesPage() {
                   value={followUpMessage}
                   onChange={(e) => setFollowUpMessage(e.target.value)}
                   placeholder="Write your follow-up message here..."
-                  style={followUpTextareaStyle}
+                  style={isMobile ? followUpTextareaStyleCompact : followUpTextareaStyle}
                 />
 
                 <div style={bulkFollowUpActionsStyle}>
@@ -2210,7 +2211,7 @@ export default function RepliesPage() {
                       !followUpMessage.trim()
                     }
                     style={{
-                      ...sendFollowUpButtonStyle,
+                      ...(isMobile ? sendFollowUpButtonStyleCompact : sendFollowUpButtonStyle),
                       opacity:
                         sendingBulk ||
                         selectedVisibleCount === 0 ||
@@ -2253,7 +2254,7 @@ export default function RepliesPage() {
               ) : (
                 <div style={followUpListStyle}>
                   {searchedFollowUpItems.map((item) => (
-                    <FollowUpCard key={item.id} item={item} nowMs={nowMs} />
+                    <FollowUpCard key={item.id} item={item} nowMs={nowMs} isMobile={isMobile} />
                   ))}
                 </div>
               )
@@ -2276,7 +2277,7 @@ export default function RepliesPage() {
                     loadItems(undefined, { background: true });
                     if (profile) void loadCounts(profile.uid);
                   }}
-                  style={refreshButtonStyle}
+                  style={isMobile ? refreshButtonStyleCompact : refreshButtonStyle}
                 >
                   Retry
                 </button>
@@ -2300,7 +2301,7 @@ export default function RepliesPage() {
                 </div>
               </div>
             ) : (
-              <div style={conversationGridStyle}>
+              <div style={isMobile ? conversationGridStyleCompact : conversationGridStyle}>
                 {pagedItems.map((item) => (
                   <div key={item.id} style={conversationShellStyle}>
                     {filterMode === "never_replied" && !item.manuallyBlocked ? (
@@ -2318,16 +2319,22 @@ export default function RepliesPage() {
                     <Link
                       href={`/replies/${encodeURIComponent(item.phone)}`}
                       style={{
-                        ...conversationCardStyle,
-                        paddingLeft: filterMode === "never_replied" ? 64 : 20,
+                        ...(isMobile ? conversationCardStyleCompact : conversationCardStyle),
+                        paddingLeft:
+                          filterMode === "never_replied"
+                            ? isMobile ? 64 : 84
+                            : isMobile ? 20 : 40,
                         ...(item.manuallyBlocked ? manuallyBlockedCardStyle : null),
                       }}
                     >
                       <div style={conversationTopStyle}>
                         <div>
-                          <div style={phoneStyle}>
+                          <div style={isMobile ? phoneStyleCompact : phoneStyle}>
                             {item.manuallyBlocked ? (
-                              <span style={attentionMarkStyle} title="Blocked - needs attention">
+                              <span
+                                style={isMobile ? attentionMarkStyleCompact : attentionMarkStyle}
+                                title="Blocked - needs attention"
+                              >
                                 ⚠️
                               </span>
                             ) : null}
@@ -2335,7 +2342,7 @@ export default function RepliesPage() {
                             {item.phone}
                           </div>
                           {item.name ? (
-                            <div style={nameStyle}>{item.name}</div>
+                            <div style={isMobile ? nameStyleCompact : nameStyle}>{item.name}</div>
                           ) : null}
                           {isMobile ? (
                             <div style={timeStyleMobile}>{item.createdAtLabel}</div>
@@ -2347,19 +2354,17 @@ export default function RepliesPage() {
                             <div style={timeStyle}>{item.createdAtLabel}</div>
                           )}
                           <div
-                            style={
-                              // Manually blocked always wins, regardless of
-                              // reply/delivery state - it's a deliberate
-                              // staff decision, not a delivery/reply signal.
-                              item.manuallyBlocked
+                            style={{
+                              ...(item.manuallyBlocked
                                 ? manuallyBlockedBadgeStyle
                                 : isFailedOutboundStatus(item.lastOutboundStatus) &&
                                   item.lastDirection !== "inbound"
                                 ? failedBadgeStyle
                                 : item.hasReply && item.lastDirection === "inbound"
                                 ? repliedBadgeStyle
-                                : awaitingReplyBadgeStyle
-                            }
+                                : awaitingReplyBadgeStyle),
+                              ...(isMobile ? statusBadgeCompactOverride : null),
+                            }}
                           >
                             {item.manuallyBlocked
                               ? "Blocked — Unblock to continue chat"
@@ -2375,13 +2380,15 @@ export default function RepliesPage() {
                         </div>
                       </div>
 
-                      <div style={messagePreviewStyle}>
+                      <div style={isMobile ? messagePreviewStyleCompact : messagePreviewStyle}>
                         {truncateText(item.body || "-")}
                       </div>
 
-                      <div style={openRowStyle}>
-                        <span style={openTextStyle}>Open conversation</span>
-                        <span style={openArrowStyle}>→</span>
+                      <div style={isMobile ? openRowStyleCompact : openRowStyle}>
+                        <span style={isMobile ? openTextStyleCompact : openTextStyle}>
+                          Open conversation
+                        </span>
+                        <span style={isMobile ? openArrowStyleCompact : openArrowStyle}>→</span>
                       </div>
                     </Link>
 
@@ -2409,7 +2416,7 @@ export default function RepliesPage() {
                             prev === item.id ? "" : item.id
                           );
                         }}
-                        style={actionButtonStyle}
+                        style={isMobile ? actionButtonStyleCompact : actionButtonStyle}
                       >
                         ⋯
                       </button>
@@ -2504,7 +2511,7 @@ export default function RepliesPage() {
 
             {filterMode !== "followups" && filteredItems.length > REPLIES_PAGE_SIZE ? (
               <div style={repliesPaginationRowStyle}>
-                <span style={repliesPaginationLabelStyle}>
+                <span style={isMobile ? repliesPaginationLabelStyleCompact : repliesPaginationLabelStyle}>
                   Page {page} of {repliesTotalPages} &middot;{" "}
                   {filteredItems.length} total
                 </span>
@@ -2515,7 +2522,7 @@ export default function RepliesPage() {
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={page <= 1}
                     style={{
-                      ...repliesPaginationButtonStyle,
+                      ...(isMobile ? repliesPaginationButtonStyleCompact : repliesPaginationButtonStyle),
                       ...(page <= 1 ? repliesPaginationButtonDisabledStyle : null),
                     }}
                   >
@@ -2528,7 +2535,7 @@ export default function RepliesPage() {
                     }
                     disabled={page >= repliesTotalPages}
                     style={{
-                      ...repliesPaginationButtonStyle,
+                      ...(isMobile ? repliesPaginationButtonStyleCompact : repliesPaginationButtonStyle),
                       ...(page >= repliesTotalPages
                         ? repliesPaginationButtonDisabledStyle
                         : null),
@@ -2550,7 +2557,7 @@ export default function RepliesPage() {
                 <button
                   type="button"
                   onClick={() => setListLimit((prev) => prev + LIST_LIMIT_STEP)}
-                  style={refreshButtonStyle}
+                  style={isMobile ? refreshButtonStyleCompact : refreshButtonStyle}
                 >
                   Load more
                 </button>
@@ -2583,19 +2590,27 @@ function StatCard({
   );
 }
 
-function FollowUpCard({ item, nowMs }: { item: FollowUpRow; nowMs: number }) {
+function FollowUpCard({
+  item,
+  nowMs,
+  isMobile,
+}: {
+  item: FollowUpRow;
+  nowMs: number;
+  isMobile: boolean;
+}) {
   const countdown = formatFollowUpCountdown(item.dueAtMs, nowMs);
 
   return (
     <Link
       href={`/replies/${encodeURIComponent(item.phone)}`}
-      style={followUpCardStyle}
+      style={isMobile ? followUpCardStyleCompact : followUpCardStyle}
     >
       <div style={followUpTopRowStyle}>
-        <div style={phoneStyle}>{item.phone}</div>
+        <div style={isMobile ? phoneStyleCompact : phoneStyle}>{item.phone}</div>
         <div
           style={{
-            ...followUpCountdownBadgeStyle,
+            ...(isMobile ? followUpCountdownBadgeStyleCompact : followUpCountdownBadgeStyle),
             ...(countdown.overdue ? followUpCountdownOverdueStyle : null),
           }}
         >
@@ -2604,13 +2619,17 @@ function FollowUpCard({ item, nowMs }: { item: FollowUpRow; nowMs: number }) {
       </div>
 
       {item.campaignName ? (
-        <div style={followUpCampaignStyle}>{item.campaignName}</div>
+        <div style={isMobile ? followUpCampaignStyleCompact : followUpCampaignStyle}>
+          {item.campaignName}
+        </div>
       ) : null}
 
-      <div style={messagePreviewStyle}>{truncateText(item.message || "-")}</div>
+      <div style={isMobile ? messagePreviewStyleCompact : messagePreviewStyle}>
+        {truncateText(item.message || "-")}
+      </div>
 
       {item.delayHours > 0 ? (
-        <div style={followUpDelayStyle}>
+        <div style={isMobile ? followUpDelayStyleCompact : followUpDelayStyle}>
           {item.delayHours} hour{item.delayHours === 1 ? "" : "s"} after send
         </div>
       ) : null}
@@ -2703,6 +2722,12 @@ const heroInnerStyle: CSSProperties = {
   gap: 26,
 };
 
+const heroInnerStyleCompact: CSSProperties = {
+  ...heroInnerStyle,
+  padding: 28,
+  gap: 22,
+};
+
 const heroBadgeStyle: CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
@@ -2768,6 +2793,18 @@ const activeFilterTabStyle: CSSProperties = {
   color: "#0f766e",
 };
 
+// Mobile keeps its original, smaller sizing for all the "big fintech"
+// desktop bumps above - the enlarged padding/fonts blew up the mobile
+// horizontal filter strip and search bar (pills overflowing the screen,
+// giant search placeholder text). These *Compact variants restore the
+// original pre-redesign values and are applied via isMobile ternaries at
+// each render site below.
+const filterTabStyleCompact: CSSProperties = {
+  ...filterTabStyle,
+  padding: "10px 16px",
+  fontSize: 14,
+};
+
 const searchWrapStyle: CSSProperties = {
   flex: 1,
   minWidth: 260,
@@ -2781,6 +2818,13 @@ const searchWrapStyle: CSSProperties = {
   backdropFilter: "blur(10px)",
 };
 
+const searchWrapStyleCompact: CSSProperties = {
+  ...searchWrapStyle,
+  gap: 10,
+  padding: "14px 16px",
+  borderRadius: 18,
+};
+
 const searchInputStyle: CSSProperties = {
   flex: 1,
   border: "none",
@@ -2788,6 +2832,11 @@ const searchInputStyle: CSSProperties = {
   background: "transparent",
   color: "#ffffff",
   fontSize: 30,
+};
+
+const searchInputStyleCompact: CSSProperties = {
+  ...searchInputStyle,
+  fontSize: 15,
 };
 
 const backButtonStyle: CSSProperties = {
@@ -3009,11 +3058,21 @@ const panelTitleStyle: CSSProperties = {
   color: "#0f172a",
 };
 
+const panelTitleStyleCompact: CSSProperties = {
+  ...panelTitleStyle,
+  fontSize: 24,
+};
+
 const panelDescStyle: CSSProperties = {
   margin: "8px 0 0 0",
   color: "#64748b",
   fontSize: 15,
   lineHeight: 1.5,
+};
+
+const panelDescStyleCompact: CSSProperties = {
+  ...panelDescStyle,
+  fontSize: 14,
 };
 
 const refreshButtonStyle: CSSProperties = {
@@ -3025,6 +3084,13 @@ const refreshButtonStyle: CSSProperties = {
   fontWeight: 800,
   fontSize: 30,
   cursor: "pointer",
+};
+
+const refreshButtonStyleCompact: CSSProperties = {
+  ...refreshButtonStyle,
+  borderRadius: 14,
+  padding: "12px 16px",
+  fontSize: 14,
 };
 
 const bulkFollowUpPanelStyle: CSSProperties = {
@@ -3053,11 +3119,21 @@ const bulkFollowUpTitleStyle: CSSProperties = {
   color: "#0f172a",
 };
 
+const bulkFollowUpTitleStyleCompact: CSSProperties = {
+  ...bulkFollowUpTitleStyle,
+  fontSize: 18,
+};
+
 const bulkFollowUpTextStyle: CSSProperties = {
   margin: "6px 0 0 0",
   fontSize: 15,
   lineHeight: 1.6,
   color: "#475569",
+};
+
+const bulkFollowUpTextStyleCompact: CSSProperties = {
+  ...bulkFollowUpTextStyle,
+  fontSize: 14,
 };
 
 const selectAllWrapStyle: CSSProperties = {
@@ -3089,6 +3165,14 @@ const followUpTextareaStyle: CSSProperties = {
   color: "#0f172a",
 };
 
+const followUpTextareaStyleCompact: CSSProperties = {
+  ...followUpTextareaStyle,
+  minHeight: 120,
+  borderRadius: 16,
+  padding: 14,
+  fontSize: 15,
+};
+
 const bulkFollowUpActionsStyle: CSSProperties = {
   display: "flex",
   justifyContent: "flex-end",
@@ -3104,10 +3188,22 @@ const sendFollowUpButtonStyle: CSSProperties = {
   fontSize: 15.5,
 };
 
+const sendFollowUpButtonStyleCompact: CSSProperties = {
+  ...sendFollowUpButtonStyle,
+  borderRadius: 14,
+  padding: "14px 18px",
+  fontSize: 14,
+};
+
 const conversationGridStyle: CSSProperties = {
   marginTop: 20,
   display: "grid",
   gap: 26,
+};
+
+const conversationGridStyleCompact: CSSProperties = {
+  ...conversationGridStyle,
+  gap: 14,
 };
 
 const loadMoreRowStyle: CSSProperties = {
@@ -3131,6 +3227,11 @@ const repliesPaginationLabelStyle: CSSProperties = {
   color: "#64748b",
 };
 
+const repliesPaginationLabelStyleCompact: CSSProperties = {
+  ...repliesPaginationLabelStyle,
+  fontSize: 13,
+};
+
 const repliesPaginationButtonStyle: CSSProperties = {
   border: "1px solid rgba(15,23,42,0.08)",
   borderRadius: 16,
@@ -3140,6 +3241,12 @@ const repliesPaginationButtonStyle: CSSProperties = {
   fontWeight: 800,
   fontSize: 15,
   cursor: "pointer",
+};
+
+const repliesPaginationButtonStyleCompact: CSSProperties = {
+  ...repliesPaginationButtonStyle,
+  padding: "10px 18px",
+  fontSize: 14,
 };
 
 const repliesPaginationButtonDisabledStyle: CSSProperties = {
@@ -3176,6 +3283,13 @@ const conversationCardStyle: CSSProperties = {
   boxShadow: "0 8px 20px rgba(15, 23, 42, 0.05)",
 };
 
+const conversationCardStyleCompact: CSSProperties = {
+  ...conversationCardStyle,
+  borderRadius: 22,
+  padding: 20,
+  paddingRight: 78,
+};
+
 const manuallyBlockedCardStyle: CSSProperties = {
   background: "linear-gradient(180deg, #fef2f2 0%, #fee2e2 100%)",
   border: "1px solid rgba(220, 38, 38, 0.25)",
@@ -3200,6 +3314,14 @@ const actionButtonStyle: CSSProperties = {
   lineHeight: 1,
   cursor: "pointer",
   boxShadow: "0 8px 18px rgba(15,23,42,0.08)",
+};
+
+const actionButtonStyleCompact: CSSProperties = {
+  ...actionButtonStyle,
+  width: 40,
+  height: 40,
+  borderRadius: 12,
+  fontSize: 22,
 };
 
 const actionMenuStyle: CSSProperties = {
@@ -3247,10 +3369,21 @@ const phoneStyle: CSSProperties = {
   wordBreak: "break-word",
 };
 
+const phoneStyleCompact: CSSProperties = {
+  ...phoneStyle,
+  fontSize: 20,
+};
+
 const attentionMarkStyle: CSSProperties = {
   display: "inline-block",
   marginRight: 8,
   fontSize: 38,
+};
+
+const attentionMarkStyleCompact: CSSProperties = {
+  ...attentionMarkStyle,
+  marginRight: 6,
+  fontSize: 21,
 };
 
 const nameStyle: CSSProperties = {
@@ -3258,6 +3391,12 @@ const nameStyle: CSSProperties = {
   color: "#0d9488",
   fontSize: 31,
   fontWeight: 700,
+};
+
+const nameStyleCompact: CSSProperties = {
+  ...nameStyle,
+  marginTop: 6,
+  fontSize: 14,
 };
 
 const conversationRightStyle: CSSProperties = {
@@ -3323,11 +3462,26 @@ const manuallyBlockedBadgeStyle: CSSProperties = {
   fontWeight: 800,
 };
 
+// Shared compact override merged onto whichever of the four badges above
+// is chosen, so mobile keeps its small original badge size instead of the
+// desktop-scale 26px/12px-20px padding.
+const statusBadgeCompactOverride: CSSProperties = {
+  marginTop: 8,
+  padding: "7px 11px",
+  fontSize: 12,
+};
+
 const messagePreviewStyle: CSSProperties = {
   marginTop: 18,
   color: "#475569",
   fontSize: 33,
   lineHeight: 1.55,
+};
+
+const messagePreviewStyleCompact: CSSProperties = {
+  ...messagePreviewStyle,
+  marginTop: 14,
+  fontSize: 15,
 };
 
 const followUpListStyle: CSSProperties = {
@@ -3345,6 +3499,12 @@ const followUpCardStyle: CSSProperties = {
   padding: 40,
   display: "block",
   boxShadow: "0 8px 20px rgba(15, 23, 42, 0.05)",
+};
+
+const followUpCardStyleCompact: CSSProperties = {
+  ...followUpCardStyle,
+  borderRadius: 22,
+  padding: 20,
 };
 
 const followUpTopRowStyle: CSSProperties = {
@@ -3365,6 +3525,12 @@ const followUpCountdownBadgeStyle: CSSProperties = {
   whiteSpace: "nowrap",
 };
 
+const followUpCountdownBadgeStyleCompact: CSSProperties = {
+  ...followUpCountdownBadgeStyle,
+  fontSize: 13.5,
+  padding: "8px 14px",
+};
+
 const followUpCountdownOverdueStyle: CSSProperties = {
   background: "rgba(220,38,38,0.10)",
   color: "#dc2626",
@@ -3377,11 +3543,23 @@ const followUpCampaignStyle: CSSProperties = {
   fontWeight: 700,
 };
 
+const followUpCampaignStyleCompact: CSSProperties = {
+  ...followUpCampaignStyle,
+  marginTop: 8,
+  fontSize: 13,
+};
+
 const followUpDelayStyle: CSSProperties = {
   marginTop: 12,
   color: "#94a3b8",
   fontSize: 24,
   fontWeight: 600,
+};
+
+const followUpDelayStyleCompact: CSSProperties = {
+  ...followUpDelayStyle,
+  marginTop: 10,
+  fontSize: 12.5,
 };
 
 const openRowStyle: CSSProperties = {
@@ -3393,10 +3571,22 @@ const openRowStyle: CSSProperties = {
   alignItems: "center",
 };
 
+const openRowStyleCompact: CSSProperties = {
+  ...openRowStyle,
+  marginTop: 18,
+  paddingTop: 0,
+  borderTop: "none",
+};
+
 const openTextStyle: CSSProperties = {
   color: "#0d9488",
   fontWeight: 800,
   fontSize: 30,
+};
+
+const openTextStyleCompact: CSSProperties = {
+  ...openTextStyle,
+  fontSize: 14,
 };
 
 const openArrowStyle: CSSProperties = {
@@ -3409,6 +3599,16 @@ const openArrowStyle: CSSProperties = {
   background: "rgba(13,148,136,0.10)",
   color: "#0d9488",
   fontSize: 30,
+  fontWeight: 900,
+};
+
+// Original was a plain colored arrow glyph, no circular badge background -
+// restoring that exact look for mobile rather than a shrunk version of the
+// new circle (which still looked oddly boxy at small sizes in testing).
+const openArrowStyleCompact: CSSProperties = {
+  display: "inline-block",
+  color: "#0d9488",
+  fontSize: 22,
   fontWeight: 900,
 };
 
