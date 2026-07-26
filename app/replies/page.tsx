@@ -3107,7 +3107,7 @@ const sendFollowUpButtonStyle: CSSProperties = {
 const conversationGridStyle: CSSProperties = {
   marginTop: 20,
   display: "grid",
-  gap: 20,
+  gap: 26,
 };
 
 const loadMoreRowStyle: CSSProperties = {
@@ -3169,9 +3169,9 @@ const conversationCardStyle: CSSProperties = {
   color: "#0f172a",
   background: "linear-gradient(180deg, #ffffff 0%, #fcfffe 100%)",
   border: "1px solid rgba(15, 23, 42, 0.06)",
-  borderRadius: 26,
-  padding: 26,
-  paddingRight: 86,
+  borderRadius: 32,
+  padding: 40,
+  paddingRight: 120,
   display: "block",
   boxShadow: "0 8px 20px rgba(15, 23, 42, 0.05)",
 };
@@ -3189,13 +3189,13 @@ const actionWrapStyle: CSSProperties = {
 };
 
 const actionButtonStyle: CSSProperties = {
-  width: 44,
-  height: 44,
-  borderRadius: 14,
+  width: 56,
+  height: 56,
+  borderRadius: 18,
   border: "1px solid rgba(15,23,42,0.08)",
   background: "#ffffff",
   color: "#0f172a",
-  fontSize: 24,
+  fontSize: 30,
   fontWeight: 900,
   lineHeight: 1,
   cursor: "pointer",
@@ -3241,7 +3241,7 @@ const conversationTopStyle: CSSProperties = {
 };
 
 const phoneStyle: CSSProperties = {
-  fontSize: 22,
+  fontSize: 44,
   fontWeight: 900,
   color: "#0f172a",
   wordBreak: "break-word",
@@ -3249,14 +3249,14 @@ const phoneStyle: CSSProperties = {
 
 const attentionMarkStyle: CSSProperties = {
   display: "inline-block",
-  marginRight: 6,
-  fontSize: 23,
+  marginRight: 8,
+  fontSize: 38,
 };
 
 const nameStyle: CSSProperties = {
-  marginTop: 6,
+  marginTop: 8,
   color: "#0d9488",
-  fontSize: 15.5,
+  fontSize: 31,
   fontWeight: 700,
 };
 
@@ -3266,7 +3266,7 @@ const conversationRightStyle: CSSProperties = {
 
 const timeStyle: CSSProperties = {
   color: "#64748b",
-  fontSize: 15,
+  fontSize: 30,
 };
 
 const timeStyleMobile: CSSProperties = {
@@ -3276,58 +3276,58 @@ const timeStyleMobile: CSSProperties = {
 };
 
 const awaitingReplyBadgeStyle: CSSProperties = {
-  marginTop: 8,
+  marginTop: 10,
   display: "inline-block",
   background: "rgba(245, 158, 11, 0.12)",
   color: "#b45309",
   border: "1px solid rgba(245, 158, 11, 0.25)",
   borderRadius: 999,
-  padding: "8px 14px",
-  fontSize: 13,
+  padding: "12px 20px",
+  fontSize: 26,
   fontWeight: 800,
 };
 
 const repliedBadgeStyle: CSSProperties = {
-  marginTop: 8,
+  marginTop: 10,
   display: "inline-block",
   background: "rgba(16, 185, 129, 0.12)",
   color: "#059669",
   border: "1px solid rgba(16, 185, 129, 0.25)",
   borderRadius: 999,
-  padding: "8px 14px",
-  fontSize: 13,
+  padding: "12px 20px",
+  fontSize: 26,
   fontWeight: 800,
 };
 
 const failedBadgeStyle: CSSProperties = {
-  marginTop: 8,
+  marginTop: 10,
   display: "inline-block",
   background: "rgba(239, 68, 68, 0.14)",
   color: "#b91c1c",
   border: "1px solid rgba(239, 68, 68, 0.3)",
   borderRadius: 999,
-  padding: "8px 14px",
-  fontSize: 13,
+  padding: "12px 20px",
+  fontSize: 26,
   fontWeight: 800,
 };
 
 const manuallyBlockedBadgeStyle: CSSProperties = {
-  marginTop: 8,
+  marginTop: 10,
   display: "inline-block",
   background: "#dc2626",
   color: "#ffffff",
   border: "1px solid #b91c1c",
   borderRadius: 999,
-  padding: "8px 14px",
-  fontSize: 13,
+  padding: "12px 20px",
+  fontSize: 26,
   fontWeight: 800,
 };
 
 const messagePreviewStyle: CSSProperties = {
-  marginTop: 14,
+  marginTop: 18,
   color: "#475569",
-  fontSize: 16.5,
-  lineHeight: 1.65,
+  fontSize: 33,
+  lineHeight: 1.55,
 };
 
 const followUpListStyle: CSSProperties = {
@@ -3341,8 +3341,8 @@ const followUpCardStyle: CSSProperties = {
   color: "#0f172a",
   background: "linear-gradient(180deg, #ffffff 0%, #fcfffe 100%)",
   border: "1px solid rgba(15, 23, 42, 0.06)",
-  borderRadius: 26,
-  padding: 26,
+  borderRadius: 32,
+  padding: 40,
   display: "block",
   boxShadow: "0 8px 20px rgba(15, 23, 42, 0.05)",
 };
@@ -3358,9 +3358,9 @@ const followUpTopRowStyle: CSSProperties = {
 const followUpCountdownBadgeStyle: CSSProperties = {
   background: "rgba(13,148,136,0.10)",
   color: "#0d9488",
-  fontSize: 13.5,
+  fontSize: 26,
   fontWeight: 800,
-  padding: "8px 14px",
+  padding: "12px 20px",
   borderRadius: 999,
   whiteSpace: "nowrap",
 };
@@ -3371,16 +3371,16 @@ const followUpCountdownOverdueStyle: CSSProperties = {
 };
 
 const followUpCampaignStyle: CSSProperties = {
-  marginTop: 8,
+  marginTop: 10,
   color: "#0d9488",
-  fontSize: 13,
+  fontSize: 26,
   fontWeight: 700,
 };
 
 const followUpDelayStyle: CSSProperties = {
-  marginTop: 10,
+  marginTop: 12,
   color: "#94a3b8",
-  fontSize: 12.5,
+  fontSize: 24,
   fontWeight: 600,
 };
 
@@ -3396,19 +3396,19 @@ const openRowStyle: CSSProperties = {
 const openTextStyle: CSSProperties = {
   color: "#0d9488",
   fontWeight: 800,
-  fontSize: 15,
+  fontSize: 30,
 };
 
 const openArrowStyle: CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
-  width: 32,
-  height: 32,
+  width: 56,
+  height: 56,
   borderRadius: "50%",
   background: "rgba(13,148,136,0.10)",
   color: "#0d9488",
-  fontSize: 18,
+  fontSize: 30,
   fontWeight: 900,
 };
 
