@@ -628,7 +628,10 @@ const heroInnerStyle: CSSProperties = {
   position: "relative",
   zIndex: 1,
   width: "100%",
-  padding: "40px 44px",
+  // Matches the dashboard hero exactly (app/dashboard/page.tsx) - flat 28px
+  // padding instead of the taller 40/44 that was leaving extra green space
+  // below the controls once the fixed 50vh height was removed.
+  padding: 28,
   display: "grid",
   gap: 22,
 };
@@ -638,7 +641,7 @@ const heroBadgeStyle: CSSProperties = {
   alignItems: "center",
   width: "fit-content",
   borderRadius: 999,
-  padding: "7px 14px",
+  padding: "8px 14px",
   background: "rgba(255,255,255,0.14)",
   border: "1px solid rgba(255,255,255,0.18)",
   color: "#ecfeff",
@@ -648,10 +651,10 @@ const heroBadgeStyle: CSSProperties = {
 };
 
 const heroTitleStyle: CSSProperties = {
-  margin: "14px 0 0 0",
+  margin: "12px 0 0 0",
   color: "#ffffff",
-  fontSize: 42,
-  lineHeight: 1.1,
+  fontSize: 38,
+  lineHeight: 1.05,
   fontWeight: 900,
 };
 
