@@ -392,26 +392,32 @@ export default function StatsPage() {
                 const maxSqrt = Math.sqrt(maxCount);
 
                 return (
-                  <div style={barChartWrapStyle}>
-                    {days.map((day) => {
-                      const count = dayCounts[day] || 0;
-                      const heightPct = (Math.sqrt(count) / maxSqrt) * 100;
+                  <div style={chartAxisWrapStyle}>
+                    <div style={yAxisLabelStyle}>SMS Sent</div>
+                    <div style={chartMainColStyle}>
+                      <div style={barChartWrapStyle}>
+                        {days.map((day) => {
+                          const count = dayCounts[day] || 0;
+                          const heightPct = (Math.sqrt(count) / maxSqrt) * 100;
 
-                      return (
-                        <div key={day} style={barColStyle}>
-                          <div style={barCountStyle}>{count > 0 ? count : ""}</div>
-                          <div style={barTrackStyle}>
-                            <div
-                              style={{
-                                ...barFillStyle,
-                                height: `${Math.max(count > 0 ? 6 : 0, heightPct)}%`,
-                              }}
-                            />
-                          </div>
-                          <div style={barDayLabelStyle}>{day}</div>
-                        </div>
-                      );
-                    })}
+                          return (
+                            <div key={day} style={barColStyle}>
+                              <div style={barCountStyle}>{count > 0 ? count : ""}</div>
+                              <div style={barTrackStyle}>
+                                <div
+                                  style={{
+                                    ...barFillStyle,
+                                    height: `${Math.max(count > 0 ? 6 : 0, heightPct)}%`,
+                                  }}
+                                />
+                              </div>
+                              <div style={barDayLabelStyle}>{day}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div style={xAxisLabelStyle}>Day of Month</div>
+                    </div>
                   </div>
                 );
               })()
@@ -603,6 +609,12 @@ const heroCardStyle: CSSProperties = {
   borderRadius: 32,
   background: "linear-gradient(135deg, #0f766e 0%, #0d9488 48%, #14b8a6 100%)",
   boxShadow: "0 30px 80px rgba(13, 148, 136, 0.28)",
+  // Deliberately tall - roughly half the viewport - so the green header
+  // reads as its own major section of the page instead of a thin strip
+  // above the chart.
+  minHeight: "50vh",
+  display: "flex",
+  alignItems: "center",
 };
 
 const heroOverlayStyle: CSSProperties = {
@@ -616,9 +628,10 @@ const heroOverlayStyle: CSSProperties = {
 const heroInnerStyle: CSSProperties = {
   position: "relative",
   zIndex: 1,
-  padding: "18px 22px",
+  width: "100%",
+  padding: "40px 44px",
   display: "grid",
-  gap: 12,
+  gap: 22,
 };
 
 const heroBadgeStyle: CSSProperties = {
@@ -626,32 +639,33 @@ const heroBadgeStyle: CSSProperties = {
   alignItems: "center",
   width: "fit-content",
   borderRadius: 999,
-  padding: "5px 12px",
+  padding: "7px 14px",
   background: "rgba(255,255,255,0.14)",
   border: "1px solid rgba(255,255,255,0.18)",
   color: "#ecfeff",
-  fontSize: 11,
+  fontSize: 13,
   fontWeight: 800,
   letterSpacing: 0.3,
 };
 
 const heroTitleStyle: CSSProperties = {
-  margin: "8px 0 0 0",
+  margin: "14px 0 0 0",
   color: "#ffffff",
-  fontSize: 24,
-  lineHeight: 1.05,
+  fontSize: 42,
+  lineHeight: 1.1,
   fontWeight: 900,
 };
 
 const heroTextStyle: CSSProperties = {
-  margin: "4px 0 0 0",
+  margin: "10px 0 0 0",
   maxWidth: 760,
-  color: "rgba(236,254,255,0.86)",
-  fontSize: 13,
-  lineHeight: 1.5,
+  color: "rgba(236,254,255,0.92)",
+  fontSize: 16,
+  lineHeight: 1.6,
 };
 
 const controlsRowStyle: CSSProperties = {
+  marginTop: 8,
   display: "flex",
   gap: 14,
   alignItems: "center",
@@ -661,10 +675,10 @@ const controlsRowStyle: CSSProperties = {
 const monthInputStyle: CSSProperties = {
   border: "1px solid rgba(255,255,255,0.16)",
   borderRadius: 14,
-  padding: "9px 12px",
+  padding: "12px 16px",
   background: "rgba(255,255,255,0.12)",
   color: "#ffffff",
-  fontSize: 13,
+  fontSize: 15,
   fontWeight: 600,
   colorScheme: "dark",
 };
@@ -672,11 +686,11 @@ const monthInputStyle: CSSProperties = {
 const heroPrimaryButtonStyle: CSSProperties = {
   border: "none",
   borderRadius: 14,
-  padding: "9px 16px",
+  padding: "12px 20px",
   background: "#ecfeff",
   color: "#0f766e",
   fontWeight: 900,
-  fontSize: 13,
+  fontSize: 15,
   cursor: "pointer",
 };
 
@@ -764,6 +778,46 @@ const barDayLabelStyle: CSSProperties = {
   fontSize: 18,
   fontWeight: 700,
   color: "#64748b",
+};
+
+// Clear axis labels around the chart - "SMS Sent" running vertically along
+// the left (the y-axis: what the bar heights/numbers represent) and "Day
+// of Month" centered under the day numbers (the x-axis) - so the chart
+// reads correctly at a glance instead of relying on the panel description
+// text alone.
+const chartAxisWrapStyle: CSSProperties = {
+  display: "flex",
+  gap: 16,
+  alignItems: "stretch",
+};
+
+const yAxisLabelStyle: CSSProperties = {
+  writingMode: "vertical-rl",
+  transform: "rotate(180deg)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  color: "#0f172a",
+  fontSize: 16,
+  fontWeight: 800,
+  letterSpacing: 0.4,
+  whiteSpace: "nowrap",
+  flexShrink: 0,
+};
+
+const chartMainColStyle: CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  display: "grid",
+};
+
+const xAxisLabelStyle: CSSProperties = {
+  textAlign: "center",
+  marginTop: 10,
+  color: "#0f172a",
+  fontSize: 16,
+  fontWeight: 800,
+  letterSpacing: 0.4,
 };
 
 const errorBoxStyle: CSSProperties = {
