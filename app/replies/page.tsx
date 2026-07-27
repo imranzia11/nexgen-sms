@@ -1921,7 +1921,7 @@ export default function RepliesPage() {
 
               <div style={heroActionsStyle}>
                 <div style={isMobile ? searchWrapStyleCompact : searchWrapStyle}>
-                  <span style={{ fontSize: isMobile ? 16 : 26, opacity: 0.85 }}>⌕</span>
+                  <span style={{ fontSize: 16, opacity: 0.85 }}>⌕</span>
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
@@ -2322,8 +2322,8 @@ export default function RepliesPage() {
                         ...(isMobile ? conversationCardStyleCompact : conversationCardStyle),
                         paddingLeft:
                           filterMode === "never_replied"
-                            ? isMobile ? 64 : 84
-                            : isMobile ? 20 : 40,
+                            ? isMobile ? 64 : 68
+                            : isMobile ? 20 : 22,
                         ...(item.manuallyBlocked ? manuallyBlockedCardStyle : null),
                       }}
                     >
@@ -2717,9 +2717,9 @@ const enableNotifsBannerStyle: CSSProperties = {
 const heroInnerStyle: CSSProperties = {
   position: "relative",
   zIndex: 1,
-  padding: 36,
+  padding: 28,
   display: "grid",
-  gap: 26,
+  gap: 20,
 };
 
 const heroInnerStyleCompact: CSSProperties = {
@@ -2733,11 +2733,11 @@ const heroBadgeStyle: CSSProperties = {
   alignItems: "center",
   width: "fit-content",
   borderRadius: 999,
-  padding: "10px 18px",
+  padding: "7px 13px",
   background: "rgba(255,255,255,0.14)",
   border: "1px solid rgba(255,255,255,0.18)",
   color: "#ecfeff",
-  fontSize: 13,
+  fontSize: 12,
   fontWeight: 800,
   letterSpacing: 0.3,
 };
@@ -2745,8 +2745,8 @@ const heroBadgeStyle: CSSProperties = {
 const heroTitleStyle: CSSProperties = {
   margin: "12px 0 0 0",
   color: "#ffffff",
-  fontSize: 48,
-  lineHeight: 1.05,
+  fontSize: 32,
+  lineHeight: 1.1,
   fontWeight: 900,
 };
 
@@ -2754,8 +2754,8 @@ const heroTextStyle: CSSProperties = {
   margin: "10px 0 0 0",
   maxWidth: 900,
   color: "rgba(236,254,255,0.86)",
-  fontSize: 17.5,
-  lineHeight: 1.65,
+  fontSize: 15,
+  lineHeight: 1.6,
 };
 
 const heroActionsStyle: CSSProperties = {
@@ -2776,8 +2776,8 @@ const filterTabStyle: CSSProperties = {
   background: "rgba(255,255,255,0.10)",
   color: "#ecfeff",
   borderRadius: 999,
-  padding: "18px 28px",
-  fontSize: 30,
+  padding: "11px 18px",
+  fontSize: 15,
   fontWeight: 800,
   cursor: "pointer",
   // Without this, tabs shrink to fit their flex container instead of
@@ -2810,9 +2810,9 @@ const searchWrapStyle: CSSProperties = {
   minWidth: 260,
   display: "flex",
   alignItems: "center",
-  gap: 14,
-  padding: "22px 28px",
-  borderRadius: 24,
+  gap: 12,
+  padding: "13px 16px",
+  borderRadius: 16,
   background: "rgba(255,255,255,0.12)",
   border: "1px solid rgba(255,255,255,0.16)",
   backdropFilter: "blur(10px)",
@@ -2831,7 +2831,7 @@ const searchInputStyle: CSSProperties = {
   outline: "none",
   background: "transparent",
   color: "#ffffff",
-  fontSize: 30,
+  fontSize: 15,
 };
 
 const searchInputStyleCompact: CSSProperties = {
@@ -2841,24 +2841,24 @@ const searchInputStyleCompact: CSSProperties = {
 
 const backButtonStyle: CSSProperties = {
   border: "none",
-  borderRadius: 24,
-  padding: "22px 32px",
+  borderRadius: 14,
+  padding: "12px 18px",
   background: "#ecfeff",
   color: "#0f766e",
   fontWeight: 900,
-  fontSize: 30,
+  fontSize: 14,
   textDecoration: "none",
   whiteSpace: "nowrap",
 };
 
 const switchToMobileButtonStyle: CSSProperties = {
   border: "1px solid rgba(255,255,255,0.3)",
-  borderRadius: 24,
-  padding: "22px 32px",
+  borderRadius: 14,
+  padding: "12px 18px",
   background: "rgba(255,255,255,0.12)",
   color: "#ffffff",
   fontWeight: 900,
-  fontSize: 30,
+  fontSize: 14,
   whiteSpace: "nowrap",
   cursor: "pointer",
 };
@@ -2977,46 +2977,46 @@ const mobileStatHintStyle: CSSProperties = {
 const statCardStyle: CSSProperties = {
   background: "rgba(255,255,255,0.18)",
   border: "1px solid rgba(255,255,255,0.12)",
-  borderRadius: 22,
-  padding: "28px 26px",
+  borderRadius: 16,
+  padding: "16px 18px",
   backdropFilter: "blur(10px)",
   flex: "1 1 0",
-  minWidth: 260,
+  minWidth: 200,
 };
 
 const statLabelStyle: CSSProperties = {
   color: "rgba(236, 254, 255, 0.72)",
-  fontSize: 30,
+  fontSize: 13,
   fontWeight: 700,
   lineHeight: 1.2,
 };
 
 const statValueStyle: CSSProperties = {
-  marginTop: 12,
+  marginTop: 8,
   color: "#ffffff",
-  fontSize: 38,
+  fontSize: 24,
   fontWeight: 800,
   lineHeight: 1.15,
   wordBreak: "break-word",
 };
 
 const statHintStyle: CSSProperties = {
-  marginTop: 6,
+  marginTop: 4,
   color: "rgba(236, 254, 255, 0.65)",
-  fontSize: 12.5,
+  fontSize: 11.5,
   fontWeight: 600,
 };
 
 // Highlighted variant for Customer Replied / Waiting for Customer - the
-// two numbers that actually tell a rep what to do next. ~2x the footprint
-// (flex: 2 vs flex: 1) and ~1.5x the internal font/padding of a regular
-// stat card, plus a slightly brighter background/border so they read as
-// the priority tiles at a glance instead of blending into the row.
+// two numbers that actually tell a rep what to do next. Wider (flex: 2 vs
+// flex: 1) with a slightly bigger number and a brighter background/border
+// so they read as the priority tiles at a glance without dominating the
+// whole row the way the earlier oversized version did.
 const statCardHighlightStyle: CSSProperties = {
   ...statCardStyle,
   flex: "2 1 0",
-  minWidth: 360,
-  padding: "38px 34px",
+  minWidth: 260,
+  padding: "18px 20px",
   background: "rgba(255,255,255,0.28)",
   border: "1px solid rgba(255,255,255,0.4)",
   boxShadow: "0 14px 34px rgba(15,23,42,0.12)",
@@ -3024,21 +3024,21 @@ const statCardHighlightStyle: CSSProperties = {
 
 const statLabelHighlightStyle: CSSProperties = {
   ...statLabelStyle,
-  fontSize: 32,
+  fontSize: 14,
   fontWeight: 800,
 };
 
 const statValueHighlightStyle: CSSProperties = {
   ...statValueStyle,
-  marginTop: 14,
-  fontSize: 60,
+  marginTop: 8,
+  fontSize: 30,
 };
 
 const panelStyle: CSSProperties = {
   background: "rgba(255,255,255,0.88)",
   border: "1px solid rgba(15,23,42,0.06)",
-  borderRadius: 32,
-  padding: 30,
+  borderRadius: 22,
+  padding: 20,
   boxShadow: "0 16px 40px rgba(15,23,42,0.06)",
   backdropFilter: "blur(8px)",
 };
@@ -3053,44 +3053,44 @@ const panelHeaderStyle: CSSProperties = {
 
 const panelTitleStyle: CSSProperties = {
   margin: 0,
-  fontSize: 28,
+  fontSize: 20,
   fontWeight: 900,
   color: "#0f172a",
 };
 
 const panelTitleStyleCompact: CSSProperties = {
   ...panelTitleStyle,
-  fontSize: 24,
+  fontSize: 18,
 };
 
 const panelDescStyle: CSSProperties = {
   margin: "8px 0 0 0",
   color: "#64748b",
-  fontSize: 15,
+  fontSize: 13.5,
   lineHeight: 1.5,
 };
 
 const panelDescStyleCompact: CSSProperties = {
   ...panelDescStyle,
-  fontSize: 14,
+  fontSize: 13,
 };
 
 const refreshButtonStyle: CSSProperties = {
   border: "1px solid rgba(15,23,42,0.08)",
-  borderRadius: 18,
-  padding: "18px 26px",
+  borderRadius: 14,
+  padding: "10px 15px",
   background: "#ffffff",
   color: "#0f172a",
   fontWeight: 800,
-  fontSize: 30,
+  fontSize: 13.5,
   cursor: "pointer",
 };
 
 const refreshButtonStyleCompact: CSSProperties = {
   ...refreshButtonStyle,
   borderRadius: 14,
-  padding: "12px 16px",
-  fontSize: 14,
+  padding: "10px 15px",
+  fontSize: 13,
 };
 
 const bulkFollowUpPanelStyle: CSSProperties = {
@@ -3114,26 +3114,26 @@ const bulkFollowUpHeaderStyle: CSSProperties = {
 
 const bulkFollowUpTitleStyle: CSSProperties = {
   margin: 0,
-  fontSize: 20,
+  fontSize: 17,
   fontWeight: 900,
   color: "#0f172a",
 };
 
 const bulkFollowUpTitleStyleCompact: CSSProperties = {
   ...bulkFollowUpTitleStyle,
-  fontSize: 18,
+  fontSize: 16,
 };
 
 const bulkFollowUpTextStyle: CSSProperties = {
   margin: "6px 0 0 0",
-  fontSize: 15,
+  fontSize: 14,
   lineHeight: 1.6,
   color: "#475569",
 };
 
 const bulkFollowUpTextStyleCompact: CSSProperties = {
   ...bulkFollowUpTextStyle,
-  fontSize: 14,
+  fontSize: 13.5,
 };
 
 const selectAllWrapStyle: CSSProperties = {
@@ -3153,12 +3153,12 @@ const bulkFollowUpMetaStyle: CSSProperties = {
 
 const followUpTextareaStyle: CSSProperties = {
   width: "100%",
-  minHeight: 130,
+  minHeight: 110,
   resize: "vertical",
-  borderRadius: 18,
+  borderRadius: 14,
   border: "1px solid rgba(15,23,42,0.08)",
-  padding: 16,
-  fontSize: 16,
+  padding: 12,
+  fontSize: 14,
   lineHeight: 1.6,
   outline: "none",
   background: "#ffffff",
@@ -3167,10 +3167,8 @@ const followUpTextareaStyle: CSSProperties = {
 
 const followUpTextareaStyleCompact: CSSProperties = {
   ...followUpTextareaStyle,
-  minHeight: 120,
-  borderRadius: 16,
-  padding: 14,
-  fontSize: 15,
+  minHeight: 100,
+  fontSize: 13.5,
 };
 
 const bulkFollowUpActionsStyle: CSSProperties = {
@@ -3180,25 +3178,25 @@ const bulkFollowUpActionsStyle: CSSProperties = {
 
 const sendFollowUpButtonStyle: CSSProperties = {
   border: "none",
-  borderRadius: 16,
-  padding: "17px 24px",
+  borderRadius: 14,
+  padding: "12px 18px",
   background: "#0d9488",
   color: "#ffffff",
   fontWeight: 800,
-  fontSize: 15.5,
+  fontSize: 14,
 };
 
 const sendFollowUpButtonStyleCompact: CSSProperties = {
   ...sendFollowUpButtonStyle,
   borderRadius: 14,
-  padding: "14px 18px",
-  fontSize: 14,
+  padding: "11px 16px",
+  fontSize: 13.5,
 };
 
 const conversationGridStyle: CSSProperties = {
   marginTop: 20,
   display: "grid",
-  gap: 26,
+  gap: 16,
 };
 
 const conversationGridStyleCompact: CSSProperties = {
@@ -3276,18 +3274,18 @@ const conversationCardStyle: CSSProperties = {
   color: "#0f172a",
   background: "linear-gradient(180deg, #ffffff 0%, #fcfffe 100%)",
   border: "1px solid rgba(15, 23, 42, 0.06)",
-  borderRadius: 32,
-  padding: 40,
-  paddingRight: 120,
+  borderRadius: 20,
+  padding: 22,
+  paddingRight: 74,
   display: "block",
   boxShadow: "0 8px 20px rgba(15, 23, 42, 0.05)",
 };
 
 const conversationCardStyleCompact: CSSProperties = {
   ...conversationCardStyle,
-  borderRadius: 22,
-  padding: 20,
-  paddingRight: 78,
+  borderRadius: 18,
+  padding: 18,
+  paddingRight: 70,
 };
 
 const manuallyBlockedCardStyle: CSSProperties = {
@@ -3303,13 +3301,13 @@ const actionWrapStyle: CSSProperties = {
 };
 
 const actionButtonStyle: CSSProperties = {
-  width: 56,
-  height: 56,
-  borderRadius: 18,
+  width: 40,
+  height: 40,
+  borderRadius: 12,
   border: "1px solid rgba(15,23,42,0.08)",
   background: "#ffffff",
   color: "#0f172a",
-  fontSize: 30,
+  fontSize: 22,
   fontWeight: 900,
   lineHeight: 1,
   cursor: "pointer",
@@ -3318,10 +3316,10 @@ const actionButtonStyle: CSSProperties = {
 
 const actionButtonStyleCompact: CSSProperties = {
   ...actionButtonStyle,
-  width: 40,
-  height: 40,
-  borderRadius: 12,
-  fontSize: 22,
+  width: 36,
+  height: 36,
+  borderRadius: 11,
+  fontSize: 20,
 };
 
 const actionMenuStyle: CSSProperties = {
@@ -3363,7 +3361,7 @@ const conversationTopStyle: CSSProperties = {
 };
 
 const phoneStyle: CSSProperties = {
-  fontSize: 44,
+  fontSize: 19,
   fontWeight: 900,
   color: "#0f172a",
   wordBreak: "break-word",
@@ -3371,32 +3369,30 @@ const phoneStyle: CSSProperties = {
 
 const phoneStyleCompact: CSSProperties = {
   ...phoneStyle,
-  fontSize: 20,
+  fontSize: 18,
 };
 
 const attentionMarkStyle: CSSProperties = {
   display: "inline-block",
-  marginRight: 8,
-  fontSize: 38,
+  marginRight: 6,
+  fontSize: 19,
 };
 
 const attentionMarkStyleCompact: CSSProperties = {
   ...attentionMarkStyle,
-  marginRight: 6,
-  fontSize: 21,
+  fontSize: 18,
 };
 
 const nameStyle: CSSProperties = {
-  marginTop: 8,
+  marginTop: 6,
   color: "#0d9488",
-  fontSize: 31,
+  fontSize: 13.5,
   fontWeight: 700,
 };
 
 const nameStyleCompact: CSSProperties = {
   ...nameStyle,
-  marginTop: 6,
-  fontSize: 14,
+  fontSize: 13,
 };
 
 const conversationRightStyle: CSSProperties = {
@@ -3405,7 +3401,7 @@ const conversationRightStyle: CSSProperties = {
 
 const timeStyle: CSSProperties = {
   color: "#64748b",
-  fontSize: 30,
+  fontSize: 13,
 };
 
 const timeStyleMobile: CSSProperties = {
@@ -3421,8 +3417,8 @@ const awaitingReplyBadgeStyle: CSSProperties = {
   color: "#b45309",
   border: "1px solid rgba(245, 158, 11, 0.25)",
   borderRadius: 999,
-  padding: "12px 20px",
-  fontSize: 26,
+  padding: "6px 11px",
+  fontSize: 12,
   fontWeight: 800,
 };
 
@@ -3433,8 +3429,8 @@ const repliedBadgeStyle: CSSProperties = {
   color: "#059669",
   border: "1px solid rgba(16, 185, 129, 0.25)",
   borderRadius: 999,
-  padding: "12px 20px",
-  fontSize: 26,
+  padding: "6px 11px",
+  fontSize: 12,
   fontWeight: 800,
 };
 
@@ -3445,8 +3441,8 @@ const failedBadgeStyle: CSSProperties = {
   color: "#b91c1c",
   border: "1px solid rgba(239, 68, 68, 0.3)",
   borderRadius: 999,
-  padding: "12px 20px",
-  fontSize: 26,
+  padding: "6px 11px",
+  fontSize: 12,
   fontWeight: 800,
 };
 
@@ -3457,8 +3453,8 @@ const manuallyBlockedBadgeStyle: CSSProperties = {
   color: "#ffffff",
   border: "1px solid #b91c1c",
   borderRadius: 999,
-  padding: "12px 20px",
-  fontSize: 26,
+  padding: "6px 11px",
+  fontSize: 12,
   fontWeight: 800,
 };
 
@@ -3472,16 +3468,15 @@ const statusBadgeCompactOverride: CSSProperties = {
 };
 
 const messagePreviewStyle: CSSProperties = {
-  marginTop: 18,
+  marginTop: 14,
   color: "#475569",
-  fontSize: 33,
+  fontSize: 14.5,
   lineHeight: 1.55,
 };
 
 const messagePreviewStyleCompact: CSSProperties = {
   ...messagePreviewStyle,
-  marginTop: 14,
-  fontSize: 15,
+  fontSize: 14,
 };
 
 const followUpListStyle: CSSProperties = {
@@ -3495,16 +3490,16 @@ const followUpCardStyle: CSSProperties = {
   color: "#0f172a",
   background: "linear-gradient(180deg, #ffffff 0%, #fcfffe 100%)",
   border: "1px solid rgba(15, 23, 42, 0.06)",
-  borderRadius: 32,
-  padding: 40,
+  borderRadius: 20,
+  padding: 22,
   display: "block",
   boxShadow: "0 8px 20px rgba(15, 23, 42, 0.05)",
 };
 
 const followUpCardStyleCompact: CSSProperties = {
   ...followUpCardStyle,
-  borderRadius: 22,
-  padding: 20,
+  borderRadius: 18,
+  padding: 18,
 };
 
 const followUpTopRowStyle: CSSProperties = {
@@ -3518,17 +3513,17 @@ const followUpTopRowStyle: CSSProperties = {
 const followUpCountdownBadgeStyle: CSSProperties = {
   background: "rgba(13,148,136,0.10)",
   color: "#0d9488",
-  fontSize: 26,
+  fontSize: 13,
   fontWeight: 800,
-  padding: "12px 20px",
+  padding: "7px 13px",
   borderRadius: 999,
   whiteSpace: "nowrap",
 };
 
 const followUpCountdownBadgeStyleCompact: CSSProperties = {
   ...followUpCountdownBadgeStyle,
-  fontSize: 13.5,
-  padding: "8px 14px",
+  fontSize: 12.5,
+  padding: "7px 12px",
 };
 
 const followUpCountdownOverdueStyle: CSSProperties = {
@@ -3537,34 +3532,32 @@ const followUpCountdownOverdueStyle: CSSProperties = {
 };
 
 const followUpCampaignStyle: CSSProperties = {
-  marginTop: 10,
+  marginTop: 8,
   color: "#0d9488",
-  fontSize: 26,
+  fontSize: 13.5,
   fontWeight: 700,
 };
 
 const followUpCampaignStyleCompact: CSSProperties = {
   ...followUpCampaignStyle,
-  marginTop: 8,
   fontSize: 13,
 };
 
 const followUpDelayStyle: CSSProperties = {
-  marginTop: 12,
+  marginTop: 10,
   color: "#94a3b8",
-  fontSize: 24,
+  fontSize: 12.5,
   fontWeight: 600,
 };
 
 const followUpDelayStyleCompact: CSSProperties = {
   ...followUpDelayStyle,
-  marginTop: 10,
-  fontSize: 12.5,
+  fontSize: 12,
 };
 
 const openRowStyle: CSSProperties = {
-  marginTop: 20,
-  paddingTop: 16,
+  marginTop: 16,
+  paddingTop: 14,
   borderTop: "1px solid rgba(15,23,42,0.06)",
   display: "flex",
   justifyContent: "space-between",
@@ -3581,7 +3574,7 @@ const openRowStyleCompact: CSSProperties = {
 const openTextStyle: CSSProperties = {
   color: "#0d9488",
   fontWeight: 800,
-  fontSize: 30,
+  fontSize: 14,
 };
 
 const openTextStyleCompact: CSSProperties = {
@@ -3593,12 +3586,12 @@ const openArrowStyle: CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
-  width: 56,
-  height: 56,
+  width: 30,
+  height: 30,
   borderRadius: "50%",
   background: "rgba(13,148,136,0.10)",
   color: "#0d9488",
-  fontSize: 30,
+  fontSize: 16,
   fontWeight: 900,
 };
 
