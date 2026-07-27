@@ -21,6 +21,7 @@ import {
   todayNYDateString,
 } from "../../lib/date";
 import LoadingScreen from "../../components/LoadingScreen";
+import TwilioBalanceCard from "../../components/TwilioBalanceCard";
 import RepliesNavBadge from "../../components/RepliesNavBadge";
 
 // This page is intentionally simple: every account only ever sees its own
@@ -328,6 +329,10 @@ export default function LogsPage() {
                 <div style={sidebarSmallLabelStyle}>Signed in as</div>
                 <div style={sidebarAdminNameStyle}>{userName}</div>
               </div>
+            </div>
+
+            <div style={sidebarRepliesWrapStyle}>
+              <TwilioBalanceCard />
             </div>
 
             <div style={sidebarRepliesWrapStyle}>

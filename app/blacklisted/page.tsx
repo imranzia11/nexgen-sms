@@ -16,6 +16,7 @@ import {
 import { auth, db } from "../../lib/firebase";
 import { formatFirestoreDateNY } from "../../lib/date";
 import LoadingScreen from "../../components/LoadingScreen";
+import TwilioBalanceCard from "../../components/TwilioBalanceCard";
 import RepliesNavBadge from "../../components/RepliesNavBadge";
 
 type ToastType = "success" | "error" | "info";
@@ -334,6 +335,10 @@ export default function BlacklistedPage() {
                   <div style={sidebarSmallLabelStyle}>Signed in as</div>
                   <div style={sidebarAdminNameStyle}>{adminName}</div>
                 </div>
+              </div>
+
+              <div style={sidebarRepliesWrapStyle}>
+                <TwilioBalanceCard />
               </div>
 
               <div style={sidebarRepliesWrapStyle}>

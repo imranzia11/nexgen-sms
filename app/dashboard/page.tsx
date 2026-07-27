@@ -29,6 +29,7 @@ import { formatFirestoreDateNY } from "../../lib/date";
 import { logDeletion } from "../../lib/deletionLog";
 import LoadingScreen from "../../components/LoadingScreen";
 import RepliesNavBadge from "../../components/RepliesNavBadge";
+import TwilioBalanceCard from "../../components/TwilioBalanceCard";
 
 type RowData = Record<string, string>;
 
@@ -1562,6 +1563,10 @@ export default function DashboardPage() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              <div style={sidebarRepliesWrapStyle}>
+                <TwilioBalanceCard />
               </div>
 
               <div style={sidebarRepliesWrapStyle}>

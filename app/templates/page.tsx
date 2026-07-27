@@ -16,6 +16,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
 import LoadingScreen from "../../components/LoadingScreen";
+import TwilioBalanceCard from "../../components/TwilioBalanceCard";
 
 type ToastType = "success" | "error" | "info";
 
@@ -333,6 +334,10 @@ export default function TemplatesPage() {
                   <div style={sidebarSmallLabelStyle}>Signed in as</div>
                   <div style={sidebarAdminNameStyle}>{userName}</div>
                 </div>
+              </div>
+
+              <div style={sidebarLinkWrapStyle}>
+                <TwilioBalanceCard />
               </div>
 
               <div style={sidebarLinkWrapStyle}>

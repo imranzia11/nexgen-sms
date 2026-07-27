@@ -7,6 +7,7 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
 import LoadingScreen from "../../components/LoadingScreen";
+import TwilioBalanceCard from "../../components/TwilioBalanceCard";
 
 // A simple, deterministic FAQ matcher rather than a live LLM call - this
 // answers instantly, costs nothing, can't hallucinate a wrong SMS limit or
@@ -452,6 +453,10 @@ export default function HelpPage() {
                 <div style={sidebarSmallLabelStyle}>Signed in as</div>
                 <div style={sidebarAdminNameStyle}>{userName}</div>
               </div>
+            </div>
+
+            <div style={sidebarRepliesWrapStyle}>
+              <TwilioBalanceCard />
             </div>
 
             <div style={sidebarRepliesWrapStyle}>

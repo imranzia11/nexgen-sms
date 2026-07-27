@@ -18,6 +18,7 @@ import { auth, db } from "../../lib/firebase";
 import { currentNYMonthString, getNYMonthRangeUtc, nyDateKey } from "../../lib/date";
 import LoadingScreen from "../../components/LoadingScreen";
 import RepliesNavBadge from "../../components/RepliesNavBadge";
+import TwilioBalanceCard from "../../components/TwilioBalanceCard";
 
 // One bar per calendar day of the selected month, not a single running
 // total - a month can only ever be picked (native <input type="month">,
@@ -267,6 +268,10 @@ export default function StatsPage() {
                 <div style={sidebarSmallLabelStyle}>Signed in as</div>
                 <div style={sidebarAdminNameStyle}>{userName}</div>
               </div>
+            </div>
+
+            <div style={sidebarRepliesWrapStyle}>
+              <TwilioBalanceCard />
             </div>
 
             <div style={sidebarRepliesWrapStyle}>
