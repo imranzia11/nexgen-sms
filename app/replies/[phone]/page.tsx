@@ -2366,9 +2366,7 @@ const pageStyle: CSSProperties = {
 };
 
 const pageWrapStyle: CSSProperties = {
-  // Same fluid cap as /replies - fills wide monitors instead of stopping
-  // at a flat pixel width.
-  maxWidth: "min(2600px, 98vw)",
+  maxWidth: 1260,
   margin: "0 auto",
   display: "grid",
   gap: 20,
@@ -2403,11 +2401,11 @@ const heroBadgeStyle: CSSProperties = {
   alignItems: "center",
   width: "fit-content",
   borderRadius: 999,
-  padding: "10px 18px",
+  padding: "8px 14px",
   background: "rgba(255,255,255,0.14)",
   border: "1px solid rgba(255,255,255,0.18)",
   color: "#ecfeff",
-  fontSize: 13,
+  fontSize: 12,
   fontWeight: 800,
   letterSpacing: 0.3,
 };
@@ -2415,17 +2413,17 @@ const heroBadgeStyle: CSSProperties = {
 const heroTitleStyle: CSSProperties = {
   margin: "12px 0 0 0",
   color: "#ffffff",
-  fontSize: 36,
-  lineHeight: 1.15,
+  fontSize: 40,
+  lineHeight: 1.05,
   fontWeight: 900,
   wordBreak: "break-word",
 };
 
 const heroTextStyle: CSSProperties = {
   margin: "10px 0 0 0",
-  maxWidth: 900,
-  color: "rgba(236,254,255,0.95)",
-  fontSize: 16.5,
+  maxWidth: 760,
+  color: "rgba(236,254,255,0.86)",
+  fontSize: 16,
   lineHeight: 1.65,
 };
 
@@ -2439,8 +2437,8 @@ const heroActionsStyle: CSSProperties = {
 const heroInfoChipStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 14,
-  padding: "16px 20px",
+  gap: 12,
+  padding: "14px 16px",
   borderRadius: 18,
   background: "rgba(255,255,255,0.12)",
   border: "1px solid rgba(255,255,255,0.16)",
@@ -2449,22 +2447,22 @@ const heroInfoChipStyle: CSSProperties = {
 };
 
 const heroInfoLabelStyle: CSSProperties = {
-  color: "rgba(236,254,255,0.85)",
-  fontSize: 14,
+  color: "rgba(236,254,255,0.7)",
+  fontSize: 13,
   fontWeight: 700,
 };
 
 const heroInfoValueStyle: CSSProperties = {
   color: "#ffffff",
-  fontSize: 17,
+  fontSize: 15,
   fontWeight: 900,
   wordBreak: "break-word",
 };
 
 const backButtonStyle: CSSProperties = {
   border: "none",
-  borderRadius: 14,
-  padding: "12px 19px",
+  borderRadius: 18,
+  padding: "15px 20px",
   background: "#ecfeff",
   color: "#0f766e",
   fontWeight: 900,
@@ -2483,7 +2481,7 @@ const mainGridStyle: CSSProperties = {
 const threadPanelStyle: CSSProperties = {
   background: "rgba(255,255,255,0.88)",
   border: "1px solid rgba(15,23,42,0.06)",
-  borderRadius: 26,
+  borderRadius: 28,
   padding: 22,
   boxShadow: "0 16px 40px rgba(15,23,42,0.06)",
   backdropFilter: "blur(8px)",
@@ -2493,7 +2491,7 @@ const threadPanelStyle: CSSProperties = {
 const composerPanelStyle: CSSProperties = {
   background: "rgba(255,255,255,0.88)",
   border: "1px solid rgba(15,23,42,0.06)",
-  borderRadius: 26,
+  borderRadius: 28,
   padding: 22,
   boxShadow: "0 16px 40px rgba(15,23,42,0.06)",
   backdropFilter: "blur(8px)",
@@ -2511,16 +2509,16 @@ const panelHeaderStyle: CSSProperties = {
 
 const panelTitleStyle: CSSProperties = {
   margin: 0,
-  fontSize: 23,
+  fontSize: 24,
   fontWeight: 900,
   color: "#0f172a",
 };
 
 const panelDescStyle: CSSProperties = {
   margin: "8px 0 0 0",
-  color: "#475569",
-  fontSize: 15,
-  lineHeight: 1.6,
+  color: "#64748b",
+  fontSize: 14,
+  lineHeight: 1.5,
 };
 
 const panelHeaderActionsStyle: CSSProperties = {
@@ -2532,49 +2530,46 @@ const panelHeaderActionsStyle: CSSProperties = {
 const pinButtonStyle: CSSProperties = {
   border: "1px solid rgba(13,148,136,0.25)",
   borderRadius: 14,
-  padding: "11px 16px",
+  padding: "12px 16px",
   background: "rgba(13,148,136,0.08)",
   color: "#0f766e",
   fontWeight: 800,
-  fontSize: 15,
   cursor: "pointer",
 };
 
 const deleteThreadButtonStyle: CSSProperties = {
   border: "1px solid rgba(220,38,38,0.2)",
   borderRadius: 14,
-  padding: "11px 16px",
+  padding: "12px 16px",
   background: "rgba(220,38,38,0.06)",
   color: "#b91c1c",
   fontWeight: 800,
-  fontSize: 15,
   cursor: "pointer",
 };
 
 const refreshButtonStyle: CSSProperties = {
   border: "1px solid rgba(15,23,42,0.08)",
   borderRadius: 14,
-  padding: "11px 16px",
+  padding: "12px 16px",
   background: "#ffffff",
   color: "#0f172a",
   fontWeight: 800,
-  fontSize: 15,
   cursor: "pointer",
 };
 
 const threadWrapStyle: CSSProperties = {
   marginTop: 20,
   display: "grid",
-  gap: 18,
-  maxHeight: 780,
+  gap: 14,
+  maxHeight: 650,
   overflowY: "auto",
   paddingRight: 4,
 };
 
 const messageBubbleStyle: CSSProperties = {
   maxWidth: "80%",
-  borderRadius: 22,
-  padding: 18,
+  borderRadius: 24,
+  padding: 16,
   boxShadow: "0 10px 24px rgba(15,23,42,0.06)",
 };
 
@@ -2603,8 +2598,8 @@ const bubbleTopStyle: CSSProperties = {
 
 const bubbleDirectionStyle: CSSProperties = {
   borderRadius: 999,
-  padding: "7px 13px",
-  fontSize: 13.5,
+  padding: "6px 10px",
+  fontSize: 11,
   fontWeight: 900,
   textTransform: "capitalize",
   letterSpacing: 0.2,
@@ -2623,32 +2618,32 @@ const outboundDirectionStyle: CSSProperties = {
 };
 
 const bubbleStatusStyle: CSSProperties = {
-  fontSize: 13.5,
+  fontSize: 12,
   fontWeight: 700,
   textTransform: "capitalize",
 };
 
 const bubbleBodyStyle: CSSProperties = {
-  marginTop: 14,
-  fontSize: 16.5,
-  lineHeight: 1.6,
+  marginTop: 12,
+  fontSize: 15,
+  lineHeight: 1.7,
   whiteSpace: "pre-wrap",
 };
 
 const bubbleTimeStyle: CSSProperties = {
-  marginTop: 14,
-  fontSize: 13,
+  marginTop: 12,
+  fontSize: 12,
   opacity: 0.82,
 };
 
 const bubbleErrorStyle: CSSProperties = {
-  marginTop: 12,
-  padding: "12px 14px",
-  borderRadius: 14,
+  marginTop: 10,
+  padding: "8px 10px",
+  borderRadius: 10,
   background: "rgba(0,0,0,0.16)",
   border: "1px solid rgba(255,255,255,0.25)",
-  fontSize: 13.5,
-  lineHeight: 1.55,
+  fontSize: 12.5,
+  lineHeight: 1.5,
   color: "#fff5f5",
 };
 
@@ -2716,20 +2711,20 @@ const miniInfoGridStyle: CSSProperties = {
 const miniInfoCardStyle: CSSProperties = {
   borderRadius: 18,
   background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
-  padding: 20,
+  padding: 16,
   border: "1px solid #eef2f7",
 };
 
 const miniInfoLabelStyle: CSSProperties = {
   color: "#64748b",
-  fontSize: 13.5,
+  fontSize: 12,
   fontWeight: 800,
 };
 
 const miniInfoValueStyle: CSSProperties = {
   marginTop: 10,
   color: "#0f172a",
-  fontSize: 18,
+  fontSize: 16,
   fontWeight: 900,
   wordBreak: "break-word",
 };
@@ -2737,15 +2732,15 @@ const miniInfoValueStyle: CSSProperties = {
 const textareaStyle: CSSProperties = {
   width: "100%",
   marginTop: 18,
-  borderRadius: 16,
+  borderRadius: 18,
   border: "1px solid #dbe3ed",
   padding: "14px 16px",
   background: "#ffffff",
   color: "#0f172a",
-  fontSize: 16,
+  fontSize: 15,
   resize: "vertical",
   outline: "none",
-  minHeight: 140,
+  minHeight: 180,
 };
 
 const disabledFieldStyle: CSSProperties = {
@@ -2776,11 +2771,11 @@ const uploadActionRowStyle: CSSProperties = {
 const uploadButtonStyle: CSSProperties = {
   border: "1px solid rgba(15,23,42,0.08)",
   borderRadius: 14,
-  padding: "11px 16px",
+  padding: "12px 16px",
   background: "#ffffff",
   color: "#0f172a",
   fontWeight: 800,
-  fontSize: 14.5,
+  fontSize: 14,
 };
 
 const uploadedMediaWrapStyle: CSSProperties = {
@@ -2837,7 +2832,7 @@ const replyMetaStyle: CSSProperties = {
   justifyContent: "space-between",
   alignItems: "center",
   color: "#64748b",
-  fontSize: 14,
+  fontSize: 13,
 };
 
 const buttonRowStyle: CSSProperties = {
@@ -2849,8 +2844,8 @@ const buttonRowStyle: CSSProperties = {
 const sendButtonStyle: CSSProperties = {
   width: "100%",
   border: "none",
-  borderRadius: 16,
-  padding: "14px 18px",
+  borderRadius: 18,
+  padding: "16px 18px",
   background: "linear-gradient(135deg, #0f766e 0%, #0d9488 100%)",
   color: "#ffffff",
   fontWeight: 900,
@@ -2861,8 +2856,8 @@ const sendButtonStyle: CSSProperties = {
 const secondaryButtonStyle: CSSProperties = {
   width: "100%",
   border: "1px solid rgba(15,23,42,0.08)",
-  borderRadius: 14,
-  padding: "12px 16px",
+  borderRadius: 16,
+  padding: "14px 18px",
   background: "#ffffff",
   color: "#0f172a",
   fontWeight: 800,
