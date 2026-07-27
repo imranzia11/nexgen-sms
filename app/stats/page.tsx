@@ -628,12 +628,12 @@ const heroInnerStyle: CSSProperties = {
   position: "relative",
   zIndex: 1,
   width: "100%",
-  // Matches the dashboard hero exactly (app/dashboard/page.tsx) - flat 28px
-  // padding instead of the taller 40/44 that was leaving extra green space
-  // below the controls once the fixed 50vh height was removed.
-  padding: 28,
+  // Roughly half the previous padding/gap - the dashboard-matched version
+  // was still a tall green block for a page whose hero only ever holds a
+  // title, one line of text, and a month picker.
+  padding: 16,
   display: "grid",
-  gap: 22,
+  gap: 11,
 };
 
 const heroBadgeStyle: CSSProperties = {
@@ -641,58 +641,58 @@ const heroBadgeStyle: CSSProperties = {
   alignItems: "center",
   width: "fit-content",
   borderRadius: 999,
-  padding: "8px 14px",
+  padding: "5px 11px",
   background: "rgba(255,255,255,0.14)",
   border: "1px solid rgba(255,255,255,0.18)",
   color: "#ecfeff",
-  fontSize: 13,
+  fontSize: 11,
   fontWeight: 800,
   letterSpacing: 0.3,
 };
 
 const heroTitleStyle: CSSProperties = {
-  margin: "12px 0 0 0",
+  margin: "6px 0 0 0",
   color: "#ffffff",
-  fontSize: 38,
-  lineHeight: 1.05,
+  fontSize: 22,
+  lineHeight: 1.1,
   fontWeight: 900,
 };
 
 const heroTextStyle: CSSProperties = {
-  margin: "10px 0 0 0",
+  margin: "5px 0 0 0",
   maxWidth: 760,
   color: "rgba(236,254,255,0.92)",
-  fontSize: 16,
-  lineHeight: 1.6,
+  fontSize: 13,
+  lineHeight: 1.5,
 };
 
 const controlsRowStyle: CSSProperties = {
-  marginTop: 8,
+  marginTop: 4,
   display: "flex",
-  gap: 14,
+  gap: 10,
   alignItems: "center",
   flexWrap: "wrap",
 };
 
 const monthInputStyle: CSSProperties = {
   border: "1px solid rgba(255,255,255,0.16)",
-  borderRadius: 14,
-  padding: "12px 16px",
+  borderRadius: 12,
+  padding: "8px 12px",
   background: "rgba(255,255,255,0.12)",
   color: "#ffffff",
-  fontSize: 15,
+  fontSize: 13,
   fontWeight: 600,
   colorScheme: "dark",
 };
 
 const heroPrimaryButtonStyle: CSSProperties = {
   border: "none",
-  borderRadius: 14,
-  padding: "12px 20px",
+  borderRadius: 12,
+  padding: "8px 14px",
   background: "#ecfeff",
   color: "#0f766e",
   fontWeight: 900,
-  fontSize: 15,
+  fontSize: 13,
   cursor: "pointer",
 };
 
