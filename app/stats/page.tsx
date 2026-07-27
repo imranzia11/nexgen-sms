@@ -609,10 +609,9 @@ const heroCardStyle: CSSProperties = {
   borderRadius: 32,
   background: "linear-gradient(135deg, #0f766e 0%, #0d9488 48%, #14b8a6 100%)",
   boxShadow: "0 30px 80px rgba(13, 148, 136, 0.28)",
-  // Deliberately tall - roughly half the viewport - so the green header
-  // reads as its own major section of the page instead of a thin strip
-  // above the chart.
-  minHeight: "50vh",
+  // Sized to its content, not a fixed viewport fraction - the 50vh version
+  // left a huge slab of empty green above the actual title/controls, which
+  // read as wasted space rather than a "bigger" header.
   display: "flex",
   alignItems: "center",
 };
