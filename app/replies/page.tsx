@@ -157,6 +157,25 @@ const repliesCache = new Map<
   { items: SmsRow[]; blocked: string[]; ts: number }
 >();
 
+// Separate, short-lived cache for the full-account fetch that powers
+// search (see the isSearching branch of the live-listener effect below).
+// Deliberately NOT the same cache as repliesCache above - that one holds
+// the current tab's already-filtered rows; this one holds the raw,
+// unfiltered docs for every conversation the account has, which is a much
+// bigger payload and only relevant while actively searching. A short TTL
+// (rather than "forever, until invalidated") means even if an
+// invalidation call site is ever missed, the cache heals itself within a
+// minute instead of silently going stale forever.
+const SEARCH_CACHE_TTL_MS = 60000;
+const searchConversationsCache = new Map<
+  string,
+  { docs: Array<{ id: string; data: Record<string, any> }>; ts: number }
+>();
+
+function invalidateSearchCache(ownerUid: string) {
+  searchConversationsCache.delete(ownerUid);
+}
+
 // --- Persisted (localStorage) cache -----------------------------------
 // The module-level Map above only survives client-side navigation. A hard
 // refresh of the browser tab wipes it, which is exactly when the old
@@ -397,6 +416,33 @@ function getSortSeconds(value: any) {
 
 function phoneKey(value: unknown) {
   return String(value || "").replace(/[^\d+]/g, "").trim();
+}
+
+// True only when the search box has nothing in it but digits and typical
+// phone punctuation (spaces, dashes, parens, +) - i.e. someone is clearly
+// searching by phone number, not by name or message text. Anything with a
+// letter in it (a name, a word from a message) falls through to the
+// regular full-account scan instead.
+function isPhoneLikeSearch(term: string): boolean {
+  const trimmed = term.trim();
+  if (!trimmed) return false;
+  if (!/^[\d\s\-()+]+$/.test(trimmed)) return false;
+  return trimmed.replace(/\D/g, "").length >= 3;
+}
+
+// Builds the lower end of a Firestore range query anchored to how `phone`
+// is actually stored (see tools/audit-conversation-phone-format.ts - a
+// live audit confirmed 99.96% of conversations are exactly "+1" followed
+// by a 10-digit US number). NANP area codes never start with 0 or 1, so a
+// typed digit string that starts with "1" is virtually always the start
+// of the country code being typed (e.g. "19122...") rather than the start
+// of a local number - and one that doesn't start with "1" is the start of
+// a bare local number, which is stored with "+1" prepended. Either way,
+// this reconstructs the same "+1XXXXXXXXXX" shape the data is actually in.
+function buildPhoneSearchAnchor(term: string): string {
+  const digits = term.replace(/\D/g, "");
+  const withCountryCode = digits.startsWith("1") ? digits : `1${digits}`;
+  return `+${withCountryCode}`;
 }
 
 function normalizeDirection(value: unknown) {
@@ -1050,7 +1096,10 @@ export default function RepliesPage() {
       if (isSearching) {
         await loadItems(undefined, { background: true });
       }
-      if (profile) void loadCounts(profile.uid);
+      if (profile) {
+        void loadCounts(profile.uid);
+        invalidateSearchCache(profile.uid);
+      }
     } catch (error: any) {
       console.error("Failed to send follow-up", error);
       alert(error?.message || "Failed to send follow-up messages.");
@@ -1084,6 +1133,7 @@ export default function RepliesPage() {
         if (profileRef.current) {
           const cached = getCache(profileRef.current.uid);
           setCache(profileRef.current.uid, next, cached?.blocked || blockedPhones);
+          invalidateSearchCache(profileRef.current.uid);
         }
         return next;
       });
@@ -1169,6 +1219,7 @@ export default function RepliesPage() {
         if (profileRef.current) {
           const cached = getCache(profileRef.current.uid);
           setCache(profileRef.current.uid, next, cached?.blocked || blockedPhones);
+          invalidateSearchCache(profileRef.current.uid);
         }
         return next;
       });
@@ -1228,6 +1279,7 @@ export default function RepliesPage() {
         if (profileRef.current) {
           const cached = getCache(profileRef.current.uid);
           setCache(profileRef.current.uid, next, cached?.blocked || blockedPhones);
+          invalidateSearchCache(profileRef.current.uid);
         }
         return next;
       });
@@ -1262,6 +1314,7 @@ export default function RepliesPage() {
         if (profileRef.current) {
           const cached = getCache(profileRef.current.uid);
           setCache(profileRef.current.uid, next, cached?.blocked || blockedPhones);
+          invalidateSearchCache(profileRef.current.uid);
         }
         return next;
       });
@@ -1433,7 +1486,40 @@ export default function RepliesPage() {
     // when searching, since that branch does a one-time read instead.
     let unsubConversations = () => {};
 
-    if (isSearching || !SCOPED_LIST_ENABLED) {
+    if (isSearching && isPhoneLikeSearch(debouncedSearch)) {
+      // Fast path: the search box has nothing but a phone number in it -
+      // by far the most common case (it's the first thing the placeholder
+      // text mentions). Instead of downloading every conversation the
+      // account has, run one indexed range query directly against the
+      // `phone` field - confirmed safe by
+      // tools/audit-conversation-phone-format.ts (99.96% of conversations
+      // are exactly "+1XXXXXXXXXX"). Needs the composite index added to
+      // firestore.indexes.json (ownerUid + phone).
+      const anchor = buildPhoneSearchAnchor(debouncedSearch);
+      getDocs(
+        query(
+          collection(db, "conversations"),
+          where("ownerUid", "==", ownerUid),
+          where("phone", ">=", anchor),
+          where("phone", "<=", `${anchor}`)
+        )
+      )
+        .then((snap) => {
+          if (cancelled) return;
+          latestDocs = snap.docs.map((d) => ({
+            id: d.id,
+            data: d.data() as Record<string, any>,
+          }));
+          gotConversations = true;
+          recompute();
+        })
+        .catch((error) => {
+          console.error("Phone search fetch failed", error);
+          if (cancelled) return;
+          setLoading(false);
+          if (!getCache(ownerUid)) setLoadError(true);
+        });
+    } else if (isSearching || !SCOPED_LIST_ENABLED) {
       // Searching still means reading every conversation the account has
       // ever had - Firestore has no native substring/full-text search, so
       // there's no way around that without a dedicated search index (see
@@ -1445,22 +1531,41 @@ export default function RepliesPage() {
       // searching - which is what made search feel like it hangs rather
       // than just taking a moment once. A plain one-time getDocs() pays the
       // same initial read cost but doesn't keep paying it afterward.
-      getDocs(query(collection(db, "conversations"), where("ownerUid", "==", ownerUid)))
-        .then((snap) => {
-          if (cancelled) return;
-          latestDocs = snap.docs.map((d) => ({
-            id: d.id,
-            data: d.data() as Record<string, any>,
-          }));
-          gotConversations = true;
-          recompute();
-        })
-        .catch((error) => {
-          console.error("Search fetch failed", error);
-          if (cancelled) return;
-          setLoading(false);
-          if (!getCache(ownerUid)) setLoadError(true);
-        });
+      //
+      // Also check searchConversationsCache first - clearing the search box
+      // and typing again (very common: someone searches, clears it to look
+      // at the normal tab, then searches something else a moment later)
+      // used to re-download the entire account every single time. Reusing
+      // a same-session fetch that's still under SEARCH_CACHE_TTL_MS old
+      // skips that re-download entirely.
+      const cachedSearch = searchConversationsCache.get(ownerUid);
+      const cacheIsFresh =
+        cachedSearch && Date.now() - cachedSearch.ts < SEARCH_CACHE_TTL_MS;
+
+      if (cacheIsFresh) {
+        latestDocs = cachedSearch.docs;
+        gotConversations = true;
+        recompute();
+      } else {
+        getDocs(query(collection(db, "conversations"), where("ownerUid", "==", ownerUid)))
+          .then((snap) => {
+            if (cancelled) return;
+            const docs = snap.docs.map((d) => ({
+              id: d.id,
+              data: d.data() as Record<string, any>,
+            }));
+            searchConversationsCache.set(ownerUid, { docs, ts: Date.now() });
+            latestDocs = docs;
+            gotConversations = true;
+            recompute();
+          })
+          .catch((error) => {
+            console.error("Search fetch failed", error);
+            if (cancelled) return;
+            setLoading(false);
+            if (!getCache(ownerUid)) setLoadError(true);
+          });
+      }
     } else {
       const conversationsQuery = buildScopedConversationsQuery(ownerUid, filterMode, listLimit);
 
@@ -1515,7 +1620,7 @@ export default function RepliesPage() {
       unsubConversations();
       unsubBlacklist();
     };
-  }, [profile, filterMode, listLimit, isSearching]);
+  }, [profile, filterMode, listLimit, isSearching, debouncedSearch]);
 
   // Dedicated live source for the "Attention Required" tab - independent
   // of the scoped per-tab listener above, which now excludes every
