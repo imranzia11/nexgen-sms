@@ -572,10 +572,25 @@ export default function RepliesPage() {
   const [authTimedOut, setAuthTimedOut] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [search, setSearch] = useState("");
-  // Anything non-empty in the search box switches the list from the fast,
+
+  // Debounced copy of `search` - only updates ~300ms after typing pauses.
+  // Typing itself still filters instantly against whatever's already
+  // loaded (searchedItems below reads the live `search` value, not this),
+  // but switching the underlying data source (see isSearching / the
+  // live-listener effect further down) only happens once the person stops
+  // typing, instead of on every single keystroke. Was the main cause of
+  // search feeling like it "hangs": a fast typist used to tear down and
+  // re-fetch the full-account query multiple times in the span of one word.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Anything non-empty (after debounce) switches the list from the fast,
   // tab-scoped live query back to a one-time full-history fetch - see the
   // live-listener effect further down for exactly how that's used.
-  const isSearching = search.trim().length > 0;
+  const isSearching = debouncedSearch.trim().length > 0;
   // Staff checking replies from their phone (via the installed home-screen
   // app - see app/manifest.ts) never need a way back to the full desktop
   // dashboard; hiding it keeps that experience feeling like a dedicated
@@ -1394,6 +1409,7 @@ export default function RepliesPage() {
   useEffect(() => {
     if (!profile) return;
     const ownerUid = profile.uid;
+    let cancelled = false;
 
     let latestDocs: Array<{ id: string; data: Record<string, any> }> = [];
     let latestBlocked: string[] = [];
@@ -1402,6 +1418,7 @@ export default function RepliesPage() {
     let gotBlacklist = false;
 
     function recompute() {
+      if (cancelled) return;
       if (!gotConversations || !gotBlacklist) return;
 
       const rows = buildRows(latestDocs, latestBlocked, latestManuallyBlocked);
@@ -1412,27 +1429,58 @@ export default function RepliesPage() {
       setLoadError(false);
     }
 
-    const conversationsQuery =
-      isSearching || !SCOPED_LIST_ENABLED
-        ? query(collection(db, "conversations"), where("ownerUid", "==", ownerUid))
-        : buildScopedConversationsQuery(ownerUid, filterMode, listLimit);
+    // Unsubscribe handle for the scoped/live branch below - stays a no-op
+    // when searching, since that branch does a one-time read instead.
+    let unsubConversations = () => {};
 
-    const unsubConversations = onSnapshot(
-      conversationsQuery,
-      (snap) => {
-        latestDocs = snap.docs.map((d) => ({
-          id: d.id,
-          data: d.data() as Record<string, any>,
-        }));
-        gotConversations = true;
-        recompute();
-      },
-      (error) => {
-        console.error("Live conversations listener failed", error);
-        setLoading(false);
-        if (!getCache(profile.uid)) setLoadError(true);
-      }
-    );
+    if (isSearching || !SCOPED_LIST_ENABLED) {
+      // Searching still means reading every conversation the account has
+      // ever had - Firestore has no native substring/full-text search, so
+      // there's no way around that without a dedicated search index (see
+      // the Algolia discussion for the real fix). But there's no reason to
+      // ALSO keep that full result set live-subscribed for as long as the
+      // search box has text in it: with onSnapshot, any unrelated write
+      // anywhere else in the account (a send, a reply, a pin) used to
+      // re-trigger a full recompute/re-sort of the entire fetched set while
+      // searching - which is what made search feel like it hangs rather
+      // than just taking a moment once. A plain one-time getDocs() pays the
+      // same initial read cost but doesn't keep paying it afterward.
+      getDocs(query(collection(db, "conversations"), where("ownerUid", "==", ownerUid)))
+        .then((snap) => {
+          if (cancelled) return;
+          latestDocs = snap.docs.map((d) => ({
+            id: d.id,
+            data: d.data() as Record<string, any>,
+          }));
+          gotConversations = true;
+          recompute();
+        })
+        .catch((error) => {
+          console.error("Search fetch failed", error);
+          if (cancelled) return;
+          setLoading(false);
+          if (!getCache(ownerUid)) setLoadError(true);
+        });
+    } else {
+      const conversationsQuery = buildScopedConversationsQuery(ownerUid, filterMode, listLimit);
+
+      unsubConversations = onSnapshot(
+        conversationsQuery,
+        (snap) => {
+          latestDocs = snap.docs.map((d) => ({
+            id: d.id,
+            data: d.data() as Record<string, any>,
+          }));
+          gotConversations = true;
+          recompute();
+        },
+        (error) => {
+          console.error("Live conversations listener failed", error);
+          setLoading(false);
+          if (!getCache(profile.uid)) setLoadError(true);
+        }
+      );
+    }
 
     const unsubBlacklist = onSnapshot(
       query(collection(db, "blacklisted_numbers"), where("ownerUid", "==", profile.uid)),
@@ -1463,6 +1511,7 @@ export default function RepliesPage() {
     );
 
     return () => {
+      cancelled = true;
       unsubConversations();
       unsubBlacklist();
     };
