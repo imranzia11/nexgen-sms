@@ -5,7 +5,7 @@ import { getDownloadURL } from "firebase-admin/storage";
 import { adminDb, adminStorage } from "../../../../../lib/firebaseAdmin";
 import { upsertGlobalBlocklist } from "../../../../../lib/globalBlocklist";
 import { notifyOwnerOfReply } from "../../../../../lib/pushNotify";
-import { toE164, phoneDocId } from "../../../../../lib/phone";
+import { toE164, phoneDocId, reversePhone } from "../../../../../lib/phone";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -638,6 +638,7 @@ export async function POST(req: NextRequest) {
       ownerName: String(user.name || ""),
       ownerRole: String(user.role || "user"),
       phone: from,
+      phoneReversed: reversePhone(from),
       name: existingName,
       twilioNumber,
       assignedTwilioNumber: twilioNumber,

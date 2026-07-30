@@ -3,7 +3,7 @@ import { getAuth } from "firebase-admin/auth";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../../../lib/firebaseAdmin";
 import { sendSmsForUser, BlockedNumberError } from "../../../lib/twilioSend";
-import { toE164, phoneDocId } from "../../../lib/phone";
+import { toE164, phoneDocId, reversePhone } from "../../../lib/phone";
 
 function normalizeMediaUrls(value: unknown) {
   if (!Array.isArray(value)) return [];
@@ -220,6 +220,7 @@ const msg = await sendSmsForUser({
         ownerName: String(userData.name || ""),
         ownerRole: String(userData.role || "user"),
         phone: to,
+        phoneReversed: reversePhone(to),
         name: existingName,
         twilioNumber,
         assignedTwilioNumber: twilioNumber,
@@ -336,6 +337,7 @@ const msg = await sendSmsForUser({
           {
             ownerUid: uid,
             phone: to,
+            phoneReversed: reversePhone(to),
             twilioNumber,
             assignedTwilioNumber: twilioNumber,
             lastMessage: messageBody || (mediaUrls.length > 0 ? "Sent media" : ""),

@@ -3,7 +3,7 @@ import { getAuth } from "firebase-admin/auth";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../../../../lib/firebaseAdmin";
 import { sendSmsForUser } from "../../../../lib/twilioSend";
-import { toE164, phoneDocId } from "../../../../lib/phone";
+import { toE164, phoneDocId, reversePhone } from "../../../../lib/phone";
 
 type LeadInput = {
   name?: string;
@@ -282,6 +282,7 @@ export async function POST(req: NextRequest) {
             ownerName: String(userData.name || ""),
             ownerRole: String(userData.role || "user"),
             phone: formattedPhone,
+            phoneReversed: reversePhone(formattedPhone),
             name: formatLeadName(lead.name || ""),
             twilioNumber,
             assignedTwilioNumber: twilioNumber,

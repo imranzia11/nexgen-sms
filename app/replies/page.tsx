@@ -445,6 +445,18 @@ function buildPhoneSearchAnchor(term: string): string {
   return `+${withCountryCode}`;
 }
 
+// Anchor for the `phoneReversed` prefix query (see reversePhone() in
+// lib/phone.ts) - deliberately does NOT reuse buildPhoneSearchAnchor's
+// "assume a missing leading 1 is the country code" logic above. That
+// heuristic only makes sense when reading digits in the order someone
+// would naturally type a number (area code first). A reversed field reads
+// back to front - "+12073142955" is stored reversed as "55924137021+" -
+// so the anchor for it is just the typed digits reversed, no "+" prefix
+// and no country-code guessing.
+function buildReversedPhoneSearchAnchor(term: string): string {
+  return term.replace(/\D/g, "").split("").reverse().join("");
+}
+
 function normalizeDirection(value: unknown) {
   return String(value || "").trim().toLowerCase();
 }
@@ -1490,26 +1502,49 @@ export default function RepliesPage() {
       // Fast path: the search box has nothing but a phone number in it -
       // by far the most common case (it's the first thing the placeholder
       // text mentions). Instead of downloading every conversation the
-      // account has, run one indexed range query directly against the
-      // `phone` field - confirmed safe by
-      // tools/audit-conversation-phone-format.ts (99.96% of conversations
-      // are exactly "+1XXXXXXXXXX"). Needs the composite index added to
-      // firestore.indexes.json (ownerUid + phone).
+      // account has, run two indexed range queries in parallel and merge
+      // them:
+      //   1) a prefix match against `phone` - covers typing the number
+      //      from the start (the full number, or the start of it).
+      //   2) a prefix match against `phoneReversed` (using the typed
+      //      digits reversed too) - covers typing the END of a number,
+      //      e.g. "last 4 digits: 2955", which a plain prefix query on
+      //      `phone` can never match no matter how that field is indexed.
+      // Confirmed safe by tools/audit-conversation-phone-format.ts (99.96%
+      // of conversations are exactly "+1XXXXXXXXXX"). Needs the two
+      // composite indexes in firestore.indexes.json (ownerUid+phone,
+      // ownerUid+phoneReversed), and every conversation to have a
+      // phoneReversed field - new writes set it automatically (see
+      // reversePhone() in lib/phone.ts); tools/backfill-phone-reversed.ts
+      // catches up every conversation that existed before that shipped.
       const anchor = buildPhoneSearchAnchor(debouncedSearch);
-      getDocs(
-        query(
-          collection(db, "conversations"),
-          where("ownerUid", "==", ownerUid),
-          where("phone", ">=", anchor),
-          where("phone", "<=", `${anchor}`)
-        )
-      )
-        .then((snap) => {
+      const reversedAnchor = buildReversedPhoneSearchAnchor(debouncedSearch);
+
+      Promise.all([
+        getDocs(
+          query(
+            collection(db, "conversations"),
+            where("ownerUid", "==", ownerUid),
+            where("phone", ">=", anchor),
+            where("phone", "<=", `${anchor}`)
+          )
+        ),
+        getDocs(
+          query(
+            collection(db, "conversations"),
+            where("ownerUid", "==", ownerUid),
+            where("phoneReversed", ">=", reversedAnchor),
+            where("phoneReversed", "<=", `${reversedAnchor}`)
+          )
+        ),
+      ])
+        .then(([forwardSnap, reversedSnap]) => {
           if (cancelled) return;
-          latestDocs = snap.docs.map((d) => ({
-            id: d.id,
-            data: d.data() as Record<string, any>,
-          }));
+          const byId = new Map<string, Record<string, any>>();
+          forwardSnap.docs.forEach((d) => byId.set(d.id, d.data()));
+          reversedSnap.docs.forEach((d) => byId.set(d.id, d.data()));
+
+          latestDocs = Array.from(byId.entries()).map(([id, data]) => ({ id, data }));
           gotConversations = true;
           recompute();
         })
