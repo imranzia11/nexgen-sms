@@ -1866,7 +1866,15 @@ export default function RepliesPage() {
 
   const searchedItems = useMemo(() => {
     const source = filterMode === "attention" ? attentionItems : items;
-    const term = search.trim().toLowerCase();
+    // Filters against debouncedSearch, not the raw search value - typing
+    // updates the input instantly either way (it's a plain controlled
+    // input), but this filter runs at most once per debounce pause instead
+    // of on every keystroke. Matters because `items` can hold thousands of
+    // rows right after a full-account search - re-filtering that entire
+    // array synchronously on every character was the actual cause of
+    // search feeling like it "hangs" while typing, separate from (and in
+    // addition to) the network-side debouncing above.
+    const term = debouncedSearch.trim().toLowerCase();
     if (!term) return source;
 
     return source.filter((item) => {
@@ -1876,7 +1884,7 @@ export default function RepliesPage() {
         item.body.toLowerCase().includes(term)
       );
     });
-  }, [items, attentionItems, filterMode, search]);
+  }, [items, attentionItems, filterMode, debouncedSearch]);
 
   // BUG FIX: the Follow-Ups tab renders straight from followUpItems (its
   // own dedicated listener - see the onSnapshot above), never from `items`,
@@ -1886,7 +1894,7 @@ export default function RepliesPage() {
   // on screen the whole time. Mirrors the same phone/campaign-name/message
   // matching used for every other tab.
   const searchedFollowUpItems = useMemo(() => {
-    const term = search.trim().toLowerCase();
+    const term = debouncedSearch.trim().toLowerCase();
     if (!term) return followUpItems;
 
     return followUpItems.filter((item) => {
@@ -1896,7 +1904,7 @@ export default function RepliesPage() {
         item.message.toLowerCase().includes(term)
       );
     });
-  }, [followUpItems, search]);
+  }, [followUpItems, debouncedSearch]);
 
   const filteredItems = useMemo(() => {
     // Attention Required is already its own dedicated, pre-filtered source
