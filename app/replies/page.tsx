@@ -617,6 +617,43 @@ function makeRow(id: string, data: Record<string, any>): SmsRow {
   };
 }
 
+// Owns the search box's own keystroke-by-keystroke state, completely
+// separate from RepliesPage's state. Before this, `search` lived on the
+// parent - meaning every single keystroke re-rendered the ENTIRE page
+// (every stat card, every conversation row, every tab), even though the
+// actual filtering/network logic was already debounced. A page with a big
+// list re-rendering on every keystroke is what "typing feels stuck" was
+// actually coming from once the heavier per-keystroke computations were
+// already fixed. Isolating the input into its own tiny component means a
+// keystroke only ever re-renders THIS component (trivial), and the parent
+// (with everything else) only re-renders once, ~300ms after typing
+// actually pauses - exactly when onDebouncedChange fires.
+function SearchBox({
+  placeholder,
+  style,
+  onDebouncedChange,
+}: {
+  placeholder: string;
+  style: CSSProperties;
+  onDebouncedChange: (value: string) => void;
+}) {
+  const [value, setValue] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => onDebouncedChange(value), 300);
+    return () => clearTimeout(timer);
+  }, [value, onDebouncedChange]);
+
+  return (
+    <input
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      placeholder={placeholder}
+      style={style}
+    />
+  );
+}
+
 export default function RepliesPage() {
   const router = useRouter();
 
@@ -629,21 +666,11 @@ export default function RepliesPage() {
   const [checking, setChecking] = useState<boolean>(() => !getInitialCache());
   const [authTimedOut, setAuthTimedOut] = useState(false);
   const [loadError, setLoadError] = useState(false);
-  const [search, setSearch] = useState("");
-
-  // Debounced copy of `search` - only updates ~300ms after typing pauses.
-  // Typing itself still filters instantly against whatever's already
-  // loaded (searchedItems below reads the live `search` value, not this),
-  // but switching the underlying data source (see isSearching / the
-  // live-listener effect further down) only happens once the person stops
-  // typing, instead of on every single keystroke. Was the main cause of
-  // search feeling like it "hangs": a fast typist used to tear down and
-  // re-fetch the full-account query multiple times in the span of one word.
+  // Set directly by SearchBox above, already debounced (~300ms after
+  // typing pauses) - RepliesPage itself never sees a raw per-keystroke
+  // value, so nothing in this component's tree re-renders while someone is
+  // actively typing, only once they pause.
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 300);
-    return () => clearTimeout(timer);
-  }, [search]);
 
   // Anything non-empty (after debounce) switches the list from the fast,
   // tab-scoped live query back to a one-time full-history fetch - see the
@@ -1855,7 +1882,7 @@ export default function RepliesPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [filterMode, search]);
+  }, [filterMode, debouncedSearch]);
 
   useEffect(() => {
     if (filterMode !== "never_replied") {
@@ -2119,9 +2146,8 @@ export default function RepliesPage() {
               <div style={heroActionsStyle}>
                 <div style={searchWrapStyle}>
                   <span style={{ fontSize: 16, opacity: 0.85 }}>⌕</span>
-                  <input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                  <SearchBox
+                    onDebouncedChange={setDebouncedSearch}
                     placeholder="Search by phone number, name or message"
                     style={searchInputStyle}
                   />
