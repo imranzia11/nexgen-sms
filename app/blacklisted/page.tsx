@@ -90,6 +90,11 @@ export default function BlacklistedPage() {
   const [toastMessage, setToastMessage] = useState("");
   const [toastType, setToastType] = useState<ToastType>("info");
 
+  // Placeholder for the not-yet-built Email Marketing feature - clicking
+  // the sidebar card just opens this "coming soon" popup instead of
+  // navigating anywhere. No backend behind this yet.
+  const [showEmailComingSoon, setShowEmailComingSoon] = useState(false);
+
   const showToast = (msg: string, type: ToastType = "info") => {
     setToastMessage(msg);
     setToastType(type);
@@ -315,6 +320,32 @@ export default function BlacklistedPage() {
         </div>
       ) : null}
 
+      {showEmailComingSoon ? (
+        <div
+          style={comingSoonOverlayStyle}
+          onClick={() => setShowEmailComingSoon(false)}
+        >
+          <div
+            style={comingSoonCardStyle}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={comingSoonIconStyle}>📧</div>
+            <h3 style={comingSoonTitleStyle}>Email Marketing</h3>
+            <p style={comingSoonTextStyle}>
+              This is in progress - we&apos;re building it now and expect to
+              have it ready within the next few days. Stay tuned!
+            </p>
+            <button
+              onClick={() => setShowEmailComingSoon(false)}
+              style={comingSoonCloseButtonStyle}
+              type="button"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <main style={pageStyle}>
         <div style={pageShellStyle}>
           <aside style={sidebarStyle}>
@@ -363,6 +394,20 @@ export default function BlacklistedPage() {
                     <div style={sidebarRepliesTextStyle}>Open incoming messages</div>
                   </div>
                 </Link>
+              </div>
+
+              <div style={sidebarRepliesWrapStyle}>
+                <button
+                  onClick={() => setShowEmailComingSoon(true)}
+                  style={sidebarSupportCardStyle}
+                  type="button"
+                >
+                  <div style={sidebarSupportIconStyle}>📧</div>
+                  <div style={{ textAlign: "left" }}>
+                    <div style={sidebarRepliesTitleStyle}>Email Marketing</div>
+                    <div style={sidebarRepliesTextStyle}>Coming soon</div>
+                  </div>
+                </button>
               </div>
 
               <div style={sidebarRepliesWrapStyle}>
@@ -779,6 +824,67 @@ const avatarStyle: CSSProperties = {
   fontWeight: 800,
   fontSize: 18,
   flexShrink: 0,
+};
+
+const comingSoonOverlayStyle: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 9998,
+  background: "rgba(3, 7, 18, 0.52)",
+  backdropFilter: "blur(8px)",
+  display: "grid",
+  placeItems: "center",
+  padding: 24,
+};
+
+const comingSoonCardStyle: CSSProperties = {
+  width: "100%",
+  maxWidth: 440,
+  borderRadius: 30,
+  padding: "34px 28px",
+  background: "linear-gradient(135deg, #0f2027 0%, #134e4a 100%)",
+  boxShadow: "0 30px 100px rgba(2, 8, 23, 0.45)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  textAlign: "center",
+};
+
+const comingSoonIconStyle: CSSProperties = {
+  width: 64,
+  height: 64,
+  margin: "0 auto 16px auto",
+  borderRadius: "50%",
+  background: "#ccfbf1",
+  display: "grid",
+  placeItems: "center",
+  fontSize: 30,
+};
+
+const comingSoonTitleStyle: CSSProperties = {
+  margin: 0,
+  color: "#ffffff",
+  fontSize: 24,
+  fontWeight: 900,
+  lineHeight: 1.15,
+};
+
+const comingSoonTextStyle: CSSProperties = {
+  margin: "12px 0 0 0",
+  color: "rgba(226, 232, 240, 0.92)",
+  fontSize: 15,
+  lineHeight: 1.6,
+};
+
+const comingSoonCloseButtonStyle: CSSProperties = {
+  marginTop: 22,
+  width: "100%",
+  border: "none",
+  borderRadius: 16,
+  padding: "14px 16px",
+  background: "#2dd4bf",
+  color: "#022c22",
+  fontSize: 15,
+  fontWeight: 800,
+  cursor: "pointer",
 };
 
 const sidebarSmallLabelStyle: CSSProperties = {
