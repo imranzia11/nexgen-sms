@@ -1634,20 +1634,6 @@ export default function DashboardPage() {
 
               <div style={sidebarRepliesWrapStyle}>
                 <button
-                  onClick={() => setShowEmailComingSoon(true)}
-                  style={sidebarSupportCardStyle}
-                  type="button"
-                >
-                  <div style={sidebarSupportIconStyle}>📧</div>
-                  <div style={{ textAlign: "left" }}>
-                    <div style={sidebarRepliesTitleStyle}>Email Marketing</div>
-                    <div style={sidebarRepliesTextStyle}>Coming soon</div>
-                  </div>
-                </button>
-              </div>
-
-              <div style={sidebarRepliesWrapStyle}>
-                <button
                   onClick={handleBlacklistedNumbers}
                   style={sidebarSupportCardStyle}
                   type="button"
@@ -1690,6 +1676,20 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 </Link>
+              </div>
+
+              <div style={sidebarRepliesWrapStyle}>
+                <button
+                  onClick={() => setShowEmailComingSoon(true)}
+                  style={sidebarSupportCardStyle}
+                  type="button"
+                >
+                  <div style={sidebarSupportIconStyle}>📧</div>
+                  <div style={{ textAlign: "left" }}>
+                    <div style={sidebarRepliesTitleStyle}>Email Marketing</div>
+                    <div style={sidebarRepliesTextStyle}>Coming soon</div>
+                  </div>
+                </button>
               </div>
             </div>
 

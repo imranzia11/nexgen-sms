@@ -397,20 +397,6 @@ export default function BlacklistedPage() {
               </div>
 
               <div style={sidebarRepliesWrapStyle}>
-                <button
-                  onClick={() => setShowEmailComingSoon(true)}
-                  style={sidebarSupportCardStyle}
-                  type="button"
-                >
-                  <div style={sidebarSupportIconStyle}>📧</div>
-                  <div style={{ textAlign: "left" }}>
-                    <div style={sidebarRepliesTitleStyle}>Email Marketing</div>
-                    <div style={sidebarRepliesTextStyle}>Coming soon</div>
-                  </div>
-                </button>
-              </div>
-
-              <div style={sidebarRepliesWrapStyle}>
                 <div style={sidebarSupportCardStyle}>
                   <div style={sidebarSupportIconStyle}>⛔</div>
                   <div style={{ textAlign: "left" }}>
@@ -442,6 +428,20 @@ export default function BlacklistedPage() {
                     <div style={sidebarRepliesTextStyle}>Ask a question, get instant help</div>
                   </div>
                 </Link>
+              </div>
+
+              <div style={sidebarRepliesWrapStyle}>
+                <button
+                  onClick={() => setShowEmailComingSoon(true)}
+                  style={sidebarSupportCardStyle}
+                  type="button"
+                >
+                  <div style={sidebarSupportIconStyle}>📧</div>
+                  <div style={{ textAlign: "left" }}>
+                    <div style={sidebarRepliesTitleStyle}>Email Marketing</div>
+                    <div style={sidebarRepliesTextStyle}>Coming soon</div>
+                  </div>
+                </button>
               </div>
             </div>
 

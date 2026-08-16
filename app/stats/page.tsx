@@ -330,20 +330,6 @@ export default function StatsPage() {
             </div>
 
             <div style={sidebarRepliesWrapStyle}>
-              <button
-                onClick={() => setShowEmailComingSoon(true)}
-                style={{ ...sidebarRepliesCardStyle, cursor: "pointer" }}
-                type="button"
-              >
-                <div style={sidebarRepliesIconStyle}>📧</div>
-                <div style={{ textAlign: "left" }}>
-                  <div style={sidebarRepliesTitleStyle}>Email Marketing</div>
-                  <div style={sidebarRepliesTextStyle}>Coming soon</div>
-                </div>
-              </button>
-            </div>
-
-            <div style={sidebarRepliesWrapStyle}>
               <Link href="/blacklisted" style={sidebarRepliesCardStyle}>
                 <div style={sidebarRepliesIconStyle}>⛔</div>
                 <div>
@@ -361,6 +347,20 @@ export default function StatsPage() {
                   <div style={sidebarRepliesTextStyle}>Ask a question, get instant help</div>
                 </div>
               </Link>
+            </div>
+
+            <div style={sidebarRepliesWrapStyle}>
+              <button
+                onClick={() => setShowEmailComingSoon(true)}
+                style={{ ...sidebarRepliesCardStyle, cursor: "pointer" }}
+                type="button"
+              >
+                <div style={sidebarRepliesIconStyle}>📧</div>
+                <div style={{ textAlign: "left" }}>
+                  <div style={sidebarRepliesTitleStyle}>Email Marketing</div>
+                  <div style={sidebarRepliesTextStyle}>Coming soon</div>
+                </div>
+              </button>
             </div>
           </div>
 
