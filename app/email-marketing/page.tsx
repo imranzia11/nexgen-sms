@@ -14,6 +14,7 @@ import { doc, getDoc } from "firebase/firestore";
 import Papa from "papaparse";
 import { auth, db } from "../../lib/firebase";
 import LoadingScreen from "../../components/LoadingScreen";
+import TwilioBalanceCard from "../../components/TwilioBalanceCard";
 
 type RowData = Record<string, string>;
 
@@ -484,6 +485,10 @@ export default function EmailMarketingPage() {
             </div>
 
             <div style={sidebarRepliesWrapStyle}>
+              <TwilioBalanceCard />
+            </div>
+
+            <div style={sidebarRepliesWrapStyle}>
               <Link href="/dashboard" style={sidebarRepliesCardStyle}>
                 <div style={sidebarRepliesIconStyle}>⌂</div>
                 <div>
@@ -541,6 +546,7 @@ export default function EmailMarketingPage() {
         </aside>
 
         <section style={contentStyle}>
+          <div style={contentInnerStyle}>
           <div style={headerStyle}>
             <div style={headerAvatarStyle}>📧</div>
             <div>
@@ -659,13 +665,26 @@ export default function EmailMarketingPage() {
               </div>
 
               <div style={cardStyle}>
-                <h3 style={cardTitleStyle}>1. Upload leads</h3>
-                <p style={cardHintStyle}>
-                  Upload a .csv with a header row containing at least an Email
-                  column (Name is optional but recommended).
-                </p>
+                <div style={sectionHeaderRowStyle}>
+                  <div style={sectionBadgeStyle}>1</div>
+                  <h3 style={cardTitleStyle}>Upload leads</h3>
+                </div>
 
-                <div style={uploadRowStyle}>
+                <div style={csvFormatBoxStyle}>
+                  <div style={csvFormatTitleStyle}>Your CSV needs a header row with these columns</div>
+                  <div style={csvFormatTableStyle}>
+                    <div style={csvFormatHeaderCellStyle}>Name</div>
+                    <div style={csvFormatHeaderCellStyle}>Email</div>
+                    <div style={csvFormatExampleCellStyle}>imran</div>
+                    <div style={csvFormatExampleCellStyle}>imran.zia@hotmail.com</div>
+                  </div>
+                  <div style={csvFormatHintStyle}>
+                    Name is optional but used to personalize each email (&quot;Hello
+                    [Name],&quot;). Only Email is strictly required.
+                  </div>
+                </div>
+
+                <div style={dropzoneStyle} onClick={() => fileInputRef.current?.click()}>
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -673,21 +692,27 @@ export default function EmailMarketingPage() {
                     onChange={handleCsvUpload}
                     style={{ display: "none" }}
                   />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    style={uploadButtonStyle}
-                  >
-                    Choose CSV file
-                  </button>
+                  <div style={dropzoneIconStyle}>⬆</div>
                   {uploadedFileName ? (
                     <>
-                      <span style={uploadedFileNameStyle}>{uploadedFileName}</span>
-                      <button type="button" onClick={clearUpload} style={clearButtonStyle}>
-                        Clear
+                      <div style={dropzoneTitleStyle}>{uploadedFileName}</div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          clearUpload();
+                        }}
+                        style={clearButtonStyle}
+                      >
+                        Clear and choose a different file
                       </button>
                     </>
-                  ) : null}
+                  ) : (
+                    <>
+                      <div style={dropzoneTitleStyle}>Click to choose a CSV file</div>
+                      <div style={dropzoneHintStyle}>.csv with a Name and Email header row</div>
+                    </>
+                  )}
                 </div>
 
                 {csvError ? <div style={gateErrorStyle}>{csvError}</div> : null}
@@ -745,7 +770,10 @@ export default function EmailMarketingPage() {
               </div>
 
               <div style={cardStyle}>
-                <h3 style={cardTitleStyle}>2. Compose</h3>
+                <div style={sectionHeaderRowStyle}>
+                  <div style={sectionBadgeStyle}>2</div>
+                  <h3 style={cardTitleStyle}>Compose</h3>
+                </div>
 
                 <label style={fieldLabelStyle}>Campaign name (optional)</label>
                 <input
@@ -835,6 +863,7 @@ export default function EmailMarketingPage() {
               </div>
             </div>
           )}
+          </div>
         </section>
       </div>
     </main>
@@ -1010,12 +1039,17 @@ const sidebarLogoutButtonStyle: CSSProperties = {
 };
 
 const contentStyle: CSSProperties = {
-  padding: 24,
-  display: "grid",
-  gap: 16,
-  gridTemplateRows: "auto 1fr",
+  padding: "28px 32px",
   minHeight: "100vh",
   overflowY: "auto",
+};
+
+const contentInnerStyle: CSSProperties = {
+  width: "100%",
+  maxWidth: 1040,
+  margin: "0 auto",
+  display: "grid",
+  gap: 16,
 };
 
 const headerStyle: CSSProperties = {
@@ -1174,18 +1208,117 @@ const gateNoteStyle: CSSProperties = {
 };
 
 const cardStyle: CSSProperties = {
-  background: "rgba(255,255,255,0.94)",
+  background: "rgba(255,255,255,0.97)",
   border: "1px solid rgba(15,23,42,0.06)",
-  borderRadius: 24,
-  boxShadow: "0 16px 40px rgba(15,23,42,0.06)",
-  padding: "22px 24px",
+  borderRadius: 20,
+  boxShadow: "0 1px 2px rgba(15,23,42,0.04), 0 12px 32px rgba(15,23,42,0.05)",
+  padding: "26px 28px",
+};
+
+const sectionHeaderRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 12,
+  marginBottom: 18,
+};
+
+const sectionBadgeStyle: CSSProperties = {
+  width: 28,
+  height: 28,
+  borderRadius: "50%",
+  background: "#0d9488",
+  color: "#ffffff",
+  fontSize: 13,
+  fontWeight: 800,
+  display: "grid",
+  placeItems: "center",
+  flexShrink: 0,
 };
 
 const cardTitleStyle: CSSProperties = {
   margin: 0,
   fontSize: 17,
-  fontWeight: 900,
+  fontWeight: 800,
   color: "#0f172a",
+};
+
+const csvFormatBoxStyle: CSSProperties = {
+  marginBottom: 18,
+  borderRadius: 14,
+  border: "1px solid #e2e8f0",
+  background: "#f8fafc",
+  padding: "16px 18px",
+};
+
+const csvFormatTitleStyle: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 800,
+  color: "#0f172a",
+  marginBottom: 10,
+};
+
+const csvFormatTableStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 2fr",
+  border: "1px solid #e2e8f0",
+  borderRadius: 10,
+  overflow: "hidden",
+  background: "#ffffff",
+};
+
+const csvFormatHeaderCellStyle: CSSProperties = {
+  padding: "8px 12px",
+  fontSize: 12.5,
+  fontWeight: 800,
+  color: "#0f766e",
+  background: "#f0fdfa",
+  borderBottom: "1px solid #e2e8f0",
+};
+
+const csvFormatExampleCellStyle: CSSProperties = {
+  padding: "8px 12px",
+  fontSize: 12.5,
+  color: "#334155",
+};
+
+const csvFormatHintStyle: CSSProperties = {
+  marginTop: 10,
+  fontSize: 12,
+  color: "#64748b",
+  lineHeight: 1.5,
+};
+
+const dropzoneStyle: CSSProperties = {
+  borderRadius: 14,
+  border: "1.5px dashed #cbd5e1",
+  background: "#f8fafc",
+  padding: "28px 20px",
+  textAlign: "center",
+  cursor: "pointer",
+};
+
+const dropzoneIconStyle: CSSProperties = {
+  width: 40,
+  height: 40,
+  margin: "0 auto 10px auto",
+  borderRadius: "50%",
+  background: "#e2e8f0",
+  color: "#475569",
+  fontSize: 18,
+  display: "grid",
+  placeItems: "center",
+};
+
+const dropzoneTitleStyle: CSSProperties = {
+  fontSize: 14,
+  fontWeight: 700,
+  color: "#0f172a",
+};
+
+const dropzoneHintStyle: CSSProperties = {
+  marginTop: 4,
+  fontSize: 12.5,
+  color: "#64748b",
 };
 
 const cardHintStyle: CSSProperties = {
