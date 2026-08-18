@@ -148,13 +148,26 @@ export async function POST(req: NextRequest) {
       }
       seenEmails.add(emailKey);
 
+      // Every send is personalized with a "Hello {Name}," greeting pulled
+      // from the lead's Name column - falls back to a plain "Hello," when
+      // the CSV didn't have a name for that row. Done per-recipient here
+      // (not once for the whole chunk) since each lead gets their own name.
+      const greetingName = name || "";
+      const greeting = greetingName ? `Hello ${greetingName},` : "Hello,";
+      const personalizedText = text?.trim()
+        ? `${greeting}\n\n${text.trim()}`
+        : undefined;
+      const personalizedHtml = html?.trim()
+        ? `<p>${greeting}</p>${html.trim()}`
+        : undefined;
+
       try {
         await sendEmailForUser({
           userData: { senderEmail, senderName: userData.senderName || "" },
           to: email,
           subject: subject.trim(),
-          html: html?.trim(),
-          text: text?.trim(),
+          html: personalizedHtml,
+          text: personalizedText,
         });
         results.push({ name, email, status: "sent" });
         sentCount++;

@@ -14,8 +14,6 @@ import { doc, getDoc } from "firebase/firestore";
 import Papa from "papaparse";
 import { auth, db } from "../../lib/firebase";
 import LoadingScreen from "../../components/LoadingScreen";
-import RepliesNavBadge from "../../components/RepliesNavBadge";
-import TwilioBalanceCard from "../../components/TwilioBalanceCard";
 
 type RowData = Record<string, string>;
 
@@ -387,8 +385,8 @@ export default function EmailMarketingPage() {
             <div style={brandWrapStyle}>
               <div style={brandIconStyle}>N</div>
               <div>
-                <div style={brandTitleStyle}>Nexgen SMS</div>
-                <div style={brandSubStyle}>User Portal</div>
+                <div style={brandTitleStyle}>Nexgen</div>
+                <div style={brandSubStyle}>Email Campaigns</div>
               </div>
             </div>
 
@@ -401,39 +399,11 @@ export default function EmailMarketingPage() {
             </div>
 
             <div style={sidebarRepliesWrapStyle}>
-              <TwilioBalanceCard />
-            </div>
-
-            <div style={sidebarRepliesWrapStyle}>
               <Link href="/dashboard" style={sidebarRepliesCardStyle}>
                 <div style={sidebarRepliesIconStyle}>⌂</div>
                 <div>
                   <div style={sidebarRepliesTitleStyle}>Dashboard</div>
                   <div style={sidebarRepliesTextStyle}>Back to SMS control center</div>
-                </div>
-              </Link>
-            </div>
-
-            <div style={sidebarRepliesWrapStyle}>
-              <Link
-                href="/replies"
-                style={{ ...sidebarRepliesCardStyle, position: "relative" }}
-              >
-                <RepliesNavBadge />
-                <div style={sidebarRepliesIconStyle}>↩</div>
-                <div>
-                  <div style={sidebarRepliesTitleStyle}>Replies</div>
-                  <div style={sidebarRepliesTextStyle}>Open incoming messages</div>
-                </div>
-              </Link>
-            </div>
-
-            <div style={sidebarRepliesWrapStyle}>
-              <Link href="/blacklisted" style={sidebarRepliesCardStyle}>
-                <div style={sidebarRepliesIconStyle}>⛔</div>
-                <div>
-                  <div style={sidebarRepliesTitleStyle}>Blacklisted</div>
-                  <div style={sidebarRepliesTextStyle}>View blocked numbers</div>
                 </div>
               </Link>
             </div>
@@ -528,6 +498,29 @@ export default function EmailMarketingPage() {
             </div>
           ) : (
             <div style={panelStyle}>
+              <div style={metricsRowStyle}>
+                <div style={metricCardStyle}>
+                  <div style={metricLabelStyle}>Valid leads</div>
+                  <div style={metricValueStyle}>{validLeads.length}</div>
+                </div>
+                <div style={metricCardStyle}>
+                  <div style={metricLabelStyle}>Skipped rows</div>
+                  <div style={metricValueStyle}>{invalidCount}</div>
+                </div>
+                <div style={metricCardStyle}>
+                  <div style={metricLabelStyle}>Sent this session</div>
+                  <div style={{ ...metricValueStyle, color: "var(--text-success, #166534)" }}>
+                    {sendSummary?.sent ?? 0}
+                  </div>
+                </div>
+                <div style={metricCardStyle}>
+                  <div style={metricLabelStyle}>Failed this session</div>
+                  <div style={{ ...metricValueStyle, color: sendSummary?.failed ? "#b91c1c" : undefined }}>
+                    {sendSummary?.failed ?? 0}
+                  </div>
+                </div>
+              </div>
+
               <div style={cardStyle}>
                 <h3 style={cardTitleStyle}>1. Upload leads</h3>
                 <p style={cardHintStyle}>
@@ -643,6 +636,14 @@ export default function EmailMarketingPage() {
                   style={fieldTextareaStyle}
                   rows={10}
                 />
+
+                <div style={noteBoxStyle}>
+                  Every email opens with &quot;Hello [Name],&quot; using the Name column
+                  from your uploaded CSV - you don&apos;t need to type a greeting yourself.
+                  If a lead replies, it lands in your own email inbox (the address you log
+                  into for nexgenmerchant.io) - not in this app - so check that inbox
+                  directly to see and respond to replies.
+                </div>
 
                 {sendError ? <div style={gateErrorStyle}>{sendError}</div> : null}
 
@@ -917,6 +918,46 @@ const panelStyle: CSSProperties = {
   display: "grid",
   gap: 16,
   alignContent: "start",
+};
+
+const metricsRowStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  gap: 12,
+};
+
+const metricCardStyle: CSSProperties = {
+  background: "rgba(255,255,255,0.94)",
+  border: "1px solid rgba(15,23,42,0.06)",
+  borderRadius: 18,
+  boxShadow: "0 10px 24px rgba(15,23,42,0.05)",
+  padding: "16px 18px",
+};
+
+const metricLabelStyle: CSSProperties = {
+  fontSize: 12,
+  fontWeight: 700,
+  color: "#64748b",
+  textTransform: "uppercase",
+  letterSpacing: 0.4,
+};
+
+const metricValueStyle: CSSProperties = {
+  marginTop: 6,
+  fontSize: 28,
+  fontWeight: 900,
+  color: "#0f172a",
+};
+
+const noteBoxStyle: CSSProperties = {
+  marginTop: 14,
+  borderRadius: 12,
+  padding: "12px 14px",
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  color: "#475569",
+  fontSize: 12.5,
+  lineHeight: 1.6,
 };
 
 const gateCardStyle: CSSProperties = {
