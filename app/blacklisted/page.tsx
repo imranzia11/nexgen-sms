@@ -431,17 +431,16 @@ export default function BlacklistedPage() {
               </div>
 
               <div style={sidebarRepliesWrapStyle}>
-                <button
-                  onClick={() => setShowEmailComingSoon(true)}
-                  style={sidebarSupportCardStyle}
-                  type="button"
+                <Link
+                  href="/email-marketing"
+                  style={{ ...sidebarSupportCardStyle, textDecoration: "none" }}
                 >
                   <div style={sidebarSupportIconStyle}>📧</div>
                   <div style={{ textAlign: "left" }}>
                     <div style={sidebarRepliesTitleStyle}>Email Marketing</div>
-                    <div style={sidebarRepliesTextStyle}>Coming soon</div>
+                    <div style={sidebarRepliesTextStyle}>Send campaigns</div>
                   </div>
-                </button>
+                </Link>
               </div>
             </div>
 
