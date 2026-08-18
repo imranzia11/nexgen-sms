@@ -71,16 +71,30 @@ export default function EmailMarketingPage() {
   const [checking, setChecking] = useState(true);
   const [userName, setUserName] = useState("User");
 
-  // Gate: user re-confirms the sending email address for this account
-  // before the compose/upload UI unlocks. See
-  // app/api/email-marketing/verify-sender/route.ts for what this actually
-  // checks - it's a confirmation step, not a second password.
-  const [unlocked, setUnlocked] = useState(false);
-  const [gateEmail, setGateEmail] = useState("");
-  const [gateError, setGateError] = useState("");
-  const [gateLoading, setGateLoading] = useState(false);
+  // Sender status is tied to the account (Firestore), not the browser - see
+  // app/api/email-marketing/sender-status/route.ts. "none" shows the
+  // self-serve create-sender form, "pending" shows a waiting screen until
+  // SendGrid sees the confirmation click, "verified" unlocks the page. A
+  // returning user never has to re-enter anything once verified, on any
+  // device.
+  const [senderStatus, setSenderStatus] = useState<
+    "loading" | "none" | "pending" | "verified"
+  >("loading");
   const [senderEmail, setSenderEmail] = useState("");
   const [senderName, setSenderName] = useState("");
+
+  const unlocked = senderStatus === "verified";
+
+  // Create-sender form (shown when senderStatus === "none").
+  const [createEmail, setCreateEmail] = useState("");
+  const [createName, setCreateName] = useState("");
+  const [createError, setCreateError] = useState("");
+  const [createLoading, setCreateLoading] = useState(false);
+
+  // Pending-verification screen (shown when senderStatus === "pending").
+  const [pendingMessage, setPendingMessage] = useState("");
+  const [refreshingStatus, setRefreshingStatus] = useState(false);
+  const [resendingVerification, setResendingVerification] = useState(false);
 
   // Uploaded leads (Name + Email columns).
   const [leads, setLeads] = useState<EmailLeadItem[]>([]);
@@ -110,6 +124,37 @@ export default function EmailMarketingPage() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const refreshSenderStatus = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    setRefreshingStatus(true);
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch("/api/email-marketing/sender-status", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.ok) {
+        console.error("sender-status request failed", data.error);
+        return;
+      }
+
+      setSenderStatus(data.status);
+      setSenderEmail(data.senderEmail || "");
+      setSenderName(data.senderName || "");
+    } catch (err) {
+      console.error("sender-status request failed", err);
+    } finally {
+      setRefreshingStatus(false);
+    }
+  };
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) {
@@ -135,6 +180,7 @@ export default function EmailMarketingPage() {
 
         setUserName(safeName);
         setChecking(false);
+        await refreshSenderStatus();
       } catch (error) {
         console.error("Failed to validate user access", error);
         await signOut(auth).catch(() => {});
@@ -143,6 +189,7 @@ export default function EmailMarketingPage() {
     });
 
     return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   // Warn before closing/refreshing mid-blast, same as the dashboard's
@@ -165,13 +212,23 @@ export default function EmailMarketingPage() {
     router.push("/login");
   };
 
-  const handleGateSubmit = async (e: React.FormEvent) => {
+  const handleCreateSender = async (e: React.FormEvent) => {
     e.preventDefault();
-    setGateError("");
+    setCreateError("");
 
-    const trimmed = gateEmail.trim();
-    if (!trimmed) {
-      setGateError("Enter your sending email address.");
+    const trimmedEmail = createEmail.trim();
+    const trimmedName = createName.trim();
+
+    if (!trimmedEmail) {
+      setCreateError("Enter your company email address.");
+      return;
+    }
+    if (!trimmedEmail.toLowerCase().endsWith("@nexgenmerchant.io")) {
+      setCreateError("Sending email must be a @nexgenmerchant.io company address.");
+      return;
+    }
+    if (!trimmedName) {
+      setCreateError("Enter your display name.");
       return;
     }
 
@@ -181,33 +238,61 @@ export default function EmailMarketingPage() {
       return;
     }
 
-    setGateLoading(true);
+    setCreateLoading(true);
     try {
       const idToken = await user.getIdToken();
-      const res = await fetch("/api/email-marketing/verify-sender", {
+      const res = await fetch("/api/email-marketing/create-sender", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${idToken}`,
         },
-        body: JSON.stringify({ email: trimmed }),
+        body: JSON.stringify({ email: trimmedEmail, name: trimmedName }),
       });
       const data = await res.json();
 
       if (!res.ok || !data.ok) {
-        setGateError(data.error || "Could not verify that email.");
-        setGateLoading(false);
+        setCreateError(data.error || "Could not create that sender.");
+        setCreateLoading(false);
         return;
       }
 
-      setSenderEmail(data.senderEmail || trimmed);
-      setSenderName(data.senderName || "");
-      setUnlocked(true);
+      setSenderEmail(data.senderEmail || trimmedEmail);
+      setSenderName(data.senderName || trimmedName);
+      setSenderStatus(data.verified ? "verified" : "pending");
+      setPendingMessage(`We sent a verification email to ${data.senderEmail}.`);
     } catch (err) {
-      console.error("verify-sender request failed", err);
-      setGateError("Something went wrong verifying that email. Try again.");
+      console.error("create-sender request failed", err);
+      setCreateError("Something went wrong setting that up. Try again.");
     } finally {
-      setGateLoading(false);
+      setCreateLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    setResendingVerification(true);
+    setPendingMessage("");
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch("/api/email-marketing/resend-verification", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      const data = await res.json();
+
+      setPendingMessage(
+        res.ok && data.ok
+          ? `Verification email resent to ${senderEmail}.`
+          : data.error || "Couldn't resend that email."
+      );
+    } catch (err) {
+      console.error("resend-verification request failed", err);
+      setPendingMessage("Couldn't resend that email. Try again.");
+    } finally {
+      setResendingVerification(false);
     }
   };
 
@@ -461,39 +546,91 @@ export default function EmailMarketingPage() {
             <div>
               <div style={headerTitleStyle}>Email Marketing</div>
               <div style={headerSubStyle}>
-                {unlocked
+                {senderStatus === "verified"
                   ? `Sending as ${senderName ? `${senderName} · ` : ""}${senderEmail}`
-                  : "Confirm your sending email to continue"}
+                  : senderStatus === "pending"
+                  ? `Waiting on email verification for ${senderEmail}`
+                  : senderStatus === "none"
+                  ? "Set up your sending email to continue"
+                  : "Checking your account..."}
               </div>
             </div>
           </div>
 
-          {!unlocked ? (
+          {senderStatus === "loading" ? (
+            <div style={panelStyle}>
+              <div style={gateCardStyle}>
+                <p style={gateTextStyle}>Checking your sending email...</p>
+              </div>
+            </div>
+          ) : senderStatus === "none" ? (
             <div style={panelStyle}>
               <div style={gateCardStyle}>
                 <div style={gateIconStyle}>✉️</div>
-                <h2 style={gateTitleStyle}>Confirm your sending email</h2>
+                <h2 style={gateTitleStyle}>Set up your sending email</h2>
                 <p style={gateTextStyle}>
-                  Enter the official company email address assigned to your account.
-                  We&apos;ll check it against what&apos;s on file before opening the
-                  campaign tools.
+                  Enter your own @nexgenmerchant.io company email. We&apos;ll register
+                  it with SendGrid and send you a one-time verification email -
+                  click the link in that email and you&apos;re set up for good on
+                  this account, on any device.
                 </p>
 
-                <form onSubmit={handleGateSubmit} style={gateFormStyle}>
+                <form onSubmit={handleCreateSender} style={gateFormStyle}>
                   <input
                     type="email"
-                    value={gateEmail}
-                    onChange={(e) => setGateEmail(e.target.value)}
+                    value={createEmail}
+                    onChange={(e) => setCreateEmail(e.target.value)}
                     placeholder="you@nexgenmerchant.io"
                     style={gateInputStyle}
                     autoComplete="email"
                   />
-                  <button type="submit" style={gateButtonStyle} disabled={gateLoading}>
-                    {gateLoading ? "Checking..." : "Continue"}
+                  <input
+                    type="text"
+                    value={createName}
+                    onChange={(e) => setCreateName(e.target.value)}
+                    placeholder="Display name (e.g. Charles @ Nexgen)"
+                    style={gateInputStyle}
+                  />
+                  <button type="submit" style={gateButtonStyle} disabled={createLoading}>
+                    {createLoading ? "Setting up..." : "Create sending email"}
                   </button>
                 </form>
 
-                {gateError ? <div style={gateErrorStyle}>{gateError}</div> : null}
+                {createError ? <div style={gateErrorStyle}>{createError}</div> : null}
+              </div>
+            </div>
+          ) : senderStatus === "pending" ? (
+            <div style={panelStyle}>
+              <div style={gateCardStyle}>
+                <div style={gateIconStyle}>📬</div>
+                <h2 style={gateTitleStyle}>Check your inbox</h2>
+                <p style={gateTextStyle}>
+                  We sent a verification email to <strong>{senderEmail}</strong>. Open
+                  it and click the confirmation link, then hit refresh below - this
+                  page will unlock automatically, and you won&apos;t need to do this
+                  again on any device.
+                </p>
+
+                <div style={gateFormStyle}>
+                  <button
+                    type="button"
+                    onClick={refreshSenderStatus}
+                    style={gateButtonStyle}
+                    disabled={refreshingStatus}
+                  >
+                    {refreshingStatus ? "Checking..." : "I've verified it - refresh"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResendVerification}
+                    style={{ ...gateButtonStyle, background: "transparent", color: "#0f766e", border: "1px solid #0d9488" }}
+                    disabled={resendingVerification}
+                  >
+                    {resendingVerification ? "Resending..." : "Resend verification email"}
+                  </button>
+                </div>
+
+                {pendingMessage ? <div style={gateNoteStyle}>{pendingMessage}</div> : null}
               </div>
             </div>
           ) : (
@@ -1025,6 +1162,13 @@ const gateButtonStyle: CSSProperties = {
 const gateErrorStyle: CSSProperties = {
   marginTop: 6,
   color: "#b91c1c",
+  fontSize: 13.5,
+  textAlign: "left",
+};
+
+const gateNoteStyle: CSSProperties = {
+  marginTop: 6,
+  color: "#0f766e",
   fontSize: 13.5,
   textAlign: "left",
 };
