@@ -675,8 +675,8 @@ export default function EmailMarketingPage() {
                   <div style={csvFormatTableStyle}>
                     <div style={csvFormatHeaderCellStyle}>Name</div>
                     <div style={csvFormatHeaderCellStyle}>Email</div>
-                    <div style={csvFormatExampleCellStyle}>imran</div>
-                    <div style={csvFormatExampleCellStyle}>imran.zia@hotmail.com</div>
+                    <div style={csvFormatExampleCellStyle}>XYZ</div>
+                    <div style={csvFormatExampleCellStyle}>xyz@hotmail.com</div>
                   </div>
                   <div style={csvFormatHintStyle}>
                     Name is optional but used to personalize each email (&quot;Hello
@@ -873,7 +873,7 @@ export default function EmailMarketingPage() {
 const pageStyle: CSSProperties = {
   minHeight: "100vh",
   background:
-    "radial-gradient(circle at top left, rgba(20,184,166,0.18), transparent 28%), linear-gradient(180deg, #ecfeff 0%, #f8fafc 46%, #f8fafc 100%)",
+    "radial-gradient(circle at top left, rgba(20,184,166,0.28), transparent 40%), radial-gradient(circle at bottom right, rgba(45,212,191,0.22), transparent 45%), linear-gradient(180deg, #ecfeff 0%, #f0fdfa 50%, #ecfeff 100%)",
   color: "#0f172a",
 };
 
@@ -1098,10 +1098,12 @@ const metricsRowStyle: CSSProperties = {
 };
 
 const metricCardStyle: CSSProperties = {
-  background: "rgba(255,255,255,0.94)",
-  border: "1px solid rgba(15,23,42,0.06)",
+  background: "rgba(255,255,255,0.5)",
+  backdropFilter: "blur(16px) saturate(160%)",
+  WebkitBackdropFilter: "blur(16px) saturate(160%)",
+  border: "1px solid rgba(255,255,255,0.6)",
   borderRadius: 18,
-  boxShadow: "0 10px 24px rgba(15,23,42,0.05)",
+  boxShadow: "0 10px 24px rgba(13,148,136,0.06)",
   padding: "16px 18px",
 };
 
@@ -1124,8 +1126,10 @@ const noteBoxStyle: CSSProperties = {
   marginTop: 14,
   borderRadius: 12,
   padding: "12px 14px",
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
+  background: "rgba(255,255,255,0.5)",
+  backdropFilter: "blur(10px)",
+  WebkitBackdropFilter: "blur(10px)",
+  border: "1px solid rgba(15,23,42,0.06)",
   color: "#475569",
   fontSize: 12.5,
   lineHeight: 1.6,
@@ -1134,10 +1138,12 @@ const noteBoxStyle: CSSProperties = {
 const gateCardStyle: CSSProperties = {
   maxWidth: 480,
   margin: "40px auto",
-  background: "rgba(255,255,255,0.94)",
-  border: "1px solid rgba(15,23,42,0.06)",
+  background: "rgba(255,255,255,0.55)",
+  backdropFilter: "blur(20px) saturate(160%)",
+  WebkitBackdropFilter: "blur(20px) saturate(160%)",
+  border: "1px solid rgba(255,255,255,0.6)",
   borderRadius: 28,
-  boxShadow: "0 16px 40px rgba(15,23,42,0.06)",
+  boxShadow: "0 1px 2px rgba(15,23,42,0.03), 0 16px 40px rgba(13,148,136,0.08)",
   padding: "34px 30px",
   textAlign: "center",
 };
@@ -1208,10 +1214,12 @@ const gateNoteStyle: CSSProperties = {
 };
 
 const cardStyle: CSSProperties = {
-  background: "rgba(255,255,255,0.97)",
-  border: "1px solid rgba(15,23,42,0.06)",
-  borderRadius: 20,
-  boxShadow: "0 1px 2px rgba(15,23,42,0.04), 0 12px 32px rgba(15,23,42,0.05)",
+  background: "rgba(255,255,255,0.55)",
+  backdropFilter: "blur(20px) saturate(160%)",
+  WebkitBackdropFilter: "blur(20px) saturate(160%)",
+  border: "1px solid rgba(255,255,255,0.6)",
+  borderRadius: 22,
+  boxShadow: "0 1px 2px rgba(15,23,42,0.03), 0 16px 40px rgba(13,148,136,0.08)",
   padding: "26px 28px",
 };
 
@@ -1245,8 +1253,10 @@ const cardTitleStyle: CSSProperties = {
 const csvFormatBoxStyle: CSSProperties = {
   marginBottom: 18,
   borderRadius: 14,
-  border: "1px solid #e2e8f0",
-  background: "#f8fafc",
+  border: "1px solid rgba(15,23,42,0.06)",
+  background: "rgba(255,255,255,0.5)",
+  backdropFilter: "blur(10px)",
+  WebkitBackdropFilter: "blur(10px)",
   padding: "16px 18px",
 };
 
@@ -1260,10 +1270,10 @@ const csvFormatTitleStyle: CSSProperties = {
 const csvFormatTableStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "1fr 2fr",
-  border: "1px solid #e2e8f0",
+  border: "1px solid rgba(15,23,42,0.06)",
   borderRadius: 10,
   overflow: "hidden",
-  background: "#ffffff",
+  background: "rgba(255,255,255,0.7)",
 };
 
 const csvFormatHeaderCellStyle: CSSProperties = {
@@ -1271,8 +1281,8 @@ const csvFormatHeaderCellStyle: CSSProperties = {
   fontSize: 12.5,
   fontWeight: 800,
   color: "#0f766e",
-  background: "#f0fdfa",
-  borderBottom: "1px solid #e2e8f0",
+  background: "rgba(13,148,136,0.1)",
+  borderBottom: "1px solid rgba(15,23,42,0.06)",
 };
 
 const csvFormatExampleCellStyle: CSSProperties = {
@@ -1290,8 +1300,10 @@ const csvFormatHintStyle: CSSProperties = {
 
 const dropzoneStyle: CSSProperties = {
   borderRadius: 14,
-  border: "1.5px dashed #cbd5e1",
-  background: "#f8fafc",
+  border: "1.5px dashed rgba(13,148,136,0.35)",
+  background: "rgba(255,255,255,0.4)",
+  backdropFilter: "blur(10px)",
+  WebkitBackdropFilter: "blur(10px)",
   padding: "28px 20px",
   textAlign: "center",
   cursor: "pointer",
