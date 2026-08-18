@@ -3,6 +3,14 @@ env:
     secret: CRON_SECRET
     availability:
       - RUNTIME
+  # Needed at RUNTIME only (never BUILD) - lib/emailSend.ts reads this
+  # lazily the first time an email is actually sent, same pattern as the
+  # Twilio credentials. Without this declared here, .env.local values never
+  # reach the deployed app - that file only applies to local dev.
+  - variable: SENDGRID_API_KEY
+    secret: SENDGRID_API_KEY
+    availability:
+      - RUNTIME
   # Public Web Push key (not secret - safe to commit, same as the Firebase
   # web config already hardcoded in lib/firebase.ts). Needed at BUILD time
   # since NEXT_PUBLIC_ vars get baked into the client bundle by Next.js.
