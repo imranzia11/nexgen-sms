@@ -33,6 +33,18 @@ function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
+function escapeHtml(value: string): string {
+  // The Name column comes straight from a user-uploaded CSV - escape it
+  // before it goes into the email HTML so a poisoned lead list can't inject
+  // markup/scripts into an outgoing email.
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export async function POST(req: NextRequest) {
   let uid: string | undefined;
 
@@ -71,6 +83,20 @@ export async function POST(req: NextRequest) {
         {
           ok: false,
           error: "No sending email is set up for this account.",
+        },
+        { status: 403 }
+      );
+    }
+
+    // Legacy accounts set up via tools/set-sender-email.ts have no senderId
+    // and were confirmed working manually - trust those. Everyone else must
+    // have actually clicked SendGrid's confirmation link before they're
+    // allowed to send anything.
+    if (typeof userData.senderId === "number" && userData.senderVerified !== true) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Your sending email hasn't been verified yet.",
         },
         { status: 403 }
       );
@@ -154,11 +180,14 @@ export async function POST(req: NextRequest) {
       // (not once for the whole chunk) since each lead gets their own name.
       const greetingName = name || "";
       const greeting = greetingName ? `Hello ${greetingName},` : "Hello,";
+      const htmlGreeting = greetingName
+        ? `Hello ${escapeHtml(greetingName)},`
+        : "Hello,";
       const personalizedText = text?.trim()
         ? `${greeting}\n\n${text.trim()}`
         : undefined;
       const personalizedHtml = html?.trim()
-        ? `<p>${greeting}</p>${html.trim()}`
+        ? `<p>${htmlGreeting}</p>${html.trim()}`
         : undefined;
 
       try {

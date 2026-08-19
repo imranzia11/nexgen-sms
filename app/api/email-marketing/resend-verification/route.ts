@@ -23,6 +23,14 @@ export async function POST(req: NextRequest) {
 
     const userSnap = await adminDb.collection("users").doc(uid).get();
     const userData = userSnap.data() || {};
+
+    if (userData.isActive !== true) {
+      return NextResponse.json(
+        { ok: false, error: "This account is not active." },
+        { status: 403 }
+      );
+    }
+
     const senderId = userData.senderId;
 
     if (typeof senderId !== "number") {

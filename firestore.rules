@@ -32,7 +32,18 @@ service cloud.firestore {
         // trusted server-side path (e.g. an admin API route using the
         // Firebase Admin SDK, which bypasses these rules entirely).
         && request.resource.data.role == resource.data.role
-        && request.resource.data.isActive == resource.data.isActive;
+        && request.resource.data.isActive == resource.data.isActive
+        // Same reasoning for the Email Marketing sender identity fields -
+        // these are only ever written by app/api/email-marketing/create-sender
+        // (via the Admin SDK) after SendGrid confirms ownership of the
+        // inbox. A direct client write here would let someone claim to be
+        // sending as an email address they never actually verified.
+        // .get(field, null) is used instead of dot access so this doesn't
+        // error out on accounts that don't have these fields set yet.
+        && request.resource.data.get('senderEmail', null) == resource.data.get('senderEmail', null)
+        && request.resource.data.get('senderName', null) == resource.data.get('senderName', null)
+        && request.resource.data.get('senderId', null) == resource.data.get('senderId', null)
+        && request.resource.data.get('senderVerified', null) == resource.data.get('senderVerified', null);
 
       allow delete: if false;
     }

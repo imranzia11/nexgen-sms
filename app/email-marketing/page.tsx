@@ -84,7 +84,28 @@ export default function EmailMarketingPage() {
   const [senderEmail, setSenderEmail] = useState("");
   const [senderName, setSenderName] = useState("");
 
-  const unlocked = senderStatus === "verified";
+  // On top of the account-tied verified status above, every visit still has
+  // to retype their sending email before the page unlocks - a lightweight
+  // UX check (not a security boundary; the real boundary is the Firestore
+  // rules locking senderEmail/senderId/senderVerified to server-only
+  // writes). Resets every page load/session, never persisted.
+  const [emailConfirmed, setEmailConfirmed] = useState(false);
+  const [confirmEmailInput, setConfirmEmailInput] = useState("");
+  const [confirmError, setConfirmError] = useState("");
+
+  const unlocked = senderStatus === "verified" && emailConfirmed;
+
+  const handleConfirmEmail = (e: React.FormEvent) => {
+    e.preventDefault();
+    setConfirmError("");
+
+    if (confirmEmailInput.trim().toLowerCase() !== senderEmail.trim().toLowerCase()) {
+      setConfirmError("That doesn't match the sending email on this account. Try again.");
+      return;
+    }
+
+    setEmailConfirmed(true);
+  };
 
   // Create-sender form (shown when senderStatus === "none").
   const [createEmail, setCreateEmail] = useState("");
@@ -637,6 +658,35 @@ export default function EmailMarketingPage() {
                 </div>
 
                 {pendingMessage ? <div style={gateNoteStyle}>{pendingMessage}</div> : null}
+              </div>
+            </div>
+          ) : !emailConfirmed ? (
+            <div style={panelStyle}>
+              <div style={gateCardStyle}>
+                <div style={gateIconStyle}>🔒</div>
+                <h2 style={gateTitleStyle}>Confirm your sending email</h2>
+                <p style={gateTextStyle}>
+                  Type <strong>{senderEmail}</strong> below to unlock the page for this
+                  visit. This is a quick check each time you come here, on top of the
+                  one-time SendGrid verification.
+                </p>
+
+                <form onSubmit={handleConfirmEmail} style={gateFormStyle}>
+                  <input
+                    type="email"
+                    value={confirmEmailInput}
+                    onChange={(e) => setConfirmEmailInput(e.target.value)}
+                    placeholder={senderEmail}
+                    style={gateInputStyle}
+                    autoComplete="email"
+                    autoFocus
+                  />
+                  <button type="submit" style={gateButtonStyle}>
+                    Unlock
+                  </button>
+                </form>
+
+                {confirmError ? <div style={gateErrorStyle}>{confirmError}</div> : null}
               </div>
             </div>
           ) : (
