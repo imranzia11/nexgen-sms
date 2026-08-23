@@ -584,6 +584,15 @@ export default function EmailMarketingPage() {
             </div>
           </div>
 
+          <div style={rollbackNoticeStyle}>
+            <span style={rollbackNoticeIconStyle}>⚠️</span>
+            <span>
+              <strong>Heads up:</strong> Stakeholders are evaluating a move to a
+              different portal for marketing emails, so this feature may be rolled
+              back. Avoid relying on it for anything long-term until that&apos;s decided.
+            </span>
+          </div>
+
           {senderStatus === "loading" ? (
             <div style={panelStyle}>
               <div style={gateCardStyle}>
@@ -1133,6 +1142,25 @@ const headerSubStyle: CSSProperties = {
   marginTop: 4,
   color: "rgba(236,254,255,0.85)",
   fontSize: 13,
+};
+
+const rollbackNoticeStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "flex-start",
+  gap: 10,
+  borderRadius: 16,
+  padding: "14px 18px",
+  background: "rgba(220,38,38,0.12)",
+  border: "1px solid rgba(220,38,38,0.35)",
+  color: "#991b1b",
+  fontSize: 13.5,
+  fontWeight: 700,
+  lineHeight: 1.6,
+};
+
+const rollbackNoticeIconStyle: CSSProperties = {
+  fontSize: 16,
+  flexShrink: 0,
 };
 
 const panelStyle: CSSProperties = {
