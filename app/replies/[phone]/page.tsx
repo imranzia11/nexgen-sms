@@ -2005,7 +2005,7 @@ const imgTopBarStyle: CSSProperties = {
   // view reads as the same app rather than a lighter, separate-feeling
   // screen.
   padding: "max(16px, calc(env(safe-area-inset-top) + 10px)) 14px 16px 12px",
-  background: "linear-gradient(135deg, #0f766e 0%, #0d9488 48%, #14b8a6 100%)",
+  background: "radial-gradient(circle at 85% 75%, rgba(20,184,166,0.38), transparent 55%), radial-gradient(circle at 10% 15%, rgba(13,148,136,0.18), transparent 45%), linear-gradient(165deg, #050f0d 0%, #0a2320 45%, #0d332e 100%)",
   boxShadow: "0 4px 16px rgba(15,23,42,0.18)",
 };
 
@@ -2365,7 +2365,7 @@ const heroStyle: CSSProperties = {
   position: "relative",
   overflow: "hidden",
   borderRadius: 32,
-  background: "linear-gradient(135deg, #0f766e 0%, #0d9488 48%, #14b8a6 100%)",
+  background: "radial-gradient(circle at 85% 75%, rgba(20,184,166,0.38), transparent 55%), radial-gradient(circle at 10% 15%, rgba(13,148,136,0.18), transparent 45%), linear-gradient(165deg, #050f0d 0%, #0a2320 45%, #0d332e 100%)",
   boxShadow: "0 30px 80px rgba(13, 148, 136, 0.28)",
 };
 
