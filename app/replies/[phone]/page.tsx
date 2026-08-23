@@ -28,6 +28,7 @@ import {
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { auth, db, storage } from "../../../lib/firebase";
+import LoadingScreen from "../../../components/LoadingScreen";
 import { formatFirestoreDateNY } from "../../../lib/date";
 import { logDeletion } from "../../../lib/deletionLog";
 import { describeTwilioError } from "../../../lib/twilioErrorCodes";
@@ -1103,19 +1104,7 @@ export default function ReplyThreadPage({
   const isBlocked = conversationMeta?.blocked === true;
 
   if (checking) {
-    return isMobile ? (
-      <div style={imgCheckingScreenStyle}>Checking account access...</div>
-    ) : (
-      <main style={pageStyle}>
-        <div style={pageWrapStyle}>
-          <section style={threadPanelStyle}>
-            <div style={emptyStateStyle}>
-              <div style={emptyTitleStyle}>Checking account access...</div>
-            </div>
-          </section>
-        </div>
-      </main>
-    );
+    return <LoadingScreen text="Checking account access..." />;
   }
 
   // iMessage-style phone layout: a compact top bar (back arrow + contact

@@ -22,6 +22,7 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
+import LoadingScreen from "../../components/LoadingScreen";
 import { formatFirestoreDateNY } from "../../lib/date";
 import { logDeletion } from "../../lib/deletionLog";
 import { phoneDocId } from "../../lib/phone";
@@ -2010,17 +2011,7 @@ export default function RepliesPage() {
   ).length;
 
   if (checking) {
-    return (
-      <main style={pageStyle}>
-        <div style={pageWrapStyle}>
-          <section style={panelStyle}>
-            <div style={emptyStateStyle}>
-              <div style={emptyTitleStyle}>Checking account access...</div>
-            </div>
-          </section>
-        </div>
-      </main>
-    );
+    return <LoadingScreen text="Checking account access..." />;
   }
 
   if (authTimedOut) {

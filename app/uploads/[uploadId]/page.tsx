@@ -14,6 +14,7 @@ import {
   where,
 } from "firebase/firestore";
 import { auth, db } from "../../../lib/firebase";
+import LoadingScreen from "../../../components/LoadingScreen";
 import { formatFirestoreDateNY } from "../../../lib/date";
 import { logDeletion } from "../../../lib/deletionLog";
 
@@ -202,20 +203,7 @@ export default function UploadDetailsPage() {
   };
 
   if (checking || loading) {
-    return (
-      <main
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "#f1f5f9",
-          color: "#0f172a",
-        }}
-      >
-        Loading...
-      </main>
-    );
+    return <LoadingScreen text="Loading..." />;
   }
 
   if (!upload) {
