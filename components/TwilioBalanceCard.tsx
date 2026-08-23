@@ -12,7 +12,7 @@ import { auth } from "../lib/firebase";
 // superadmin - anyone noticing a low number here can flag it before it
 // turns into another outage. Below LOW_BALANCE_THRESHOLD it switches to a
 // red warning treatment instead of the normal teal-tinted card.
-const LOW_BALANCE_THRESHOLD = 20;
+const LOW_BALANCE_THRESHOLD = 70;
 
 type BalanceState =
   | { status: "loading" }
