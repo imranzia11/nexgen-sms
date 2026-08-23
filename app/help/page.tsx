@@ -678,7 +678,8 @@ const pageShellStyle: CSSProperties = {
 };
 
 const sidebarStyle: CSSProperties = {
-  background: "linear-gradient(180deg, #0f766e 0%, #0b5f59 100%)",
+  background:
+    "radial-gradient(circle at 85% 75%, rgba(20,184,166,0.38), transparent 55%), radial-gradient(circle at 10% 15%, rgba(13,148,136,0.18), transparent 45%), linear-gradient(165deg, #050f0d 0%, #0a2320 45%, #0d332e 100%)",
   padding: 24,
   display: "flex",
   flexDirection: "column",
