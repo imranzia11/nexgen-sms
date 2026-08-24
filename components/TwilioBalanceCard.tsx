@@ -128,6 +128,7 @@ const cardStyleLow: CSSProperties = {
   ...cardStyle,
   background: "rgba(220,38,38,0.14)",
   border: "1px solid rgba(220,38,38,0.35)",
+  animation: "lowBalancePulse 1.8s ease-in-out infinite",
 };
 
 const topRowStyle: CSSProperties = {
@@ -153,6 +154,7 @@ const iconStyleLow: CSSProperties = {
   ...iconStyle,
   background: "#fecaca",
   color: "#7f1d1d",
+  animation: "lowBalanceIconFlicker 1.8s ease-in-out infinite",
 };
 
 const titleStyle: CSSProperties = {
