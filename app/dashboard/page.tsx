@@ -2529,7 +2529,7 @@ const pageShellStyle: CSSProperties = {
   width: "100%",
   minHeight: "100vh",
   display: "grid",
-  gridTemplateColumns: "240px 1fr",
+  gridTemplateColumns: "320px 1fr",
 };
 
 const sidebarStyle: CSSProperties = {
