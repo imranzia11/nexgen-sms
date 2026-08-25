@@ -1545,22 +1545,6 @@ export default function DashboardPage() {
                 <div>
                   <div style={sidebarSmallLabelStyle}>Signed in as</div>
                   <div style={sidebarAdminNameStyle}>{userName}</div>
-                  {/* TEMPORARY: read-only debug label to confirm the exact
-                      account uid a support screenshot is coming from - not
-                      sensitive (the uid alone grants no access), safe to
-                      remove once the account-mismatch investigation is
-                      done. */}
-                  <div
-                    style={{
-                      marginTop: 2,
-                      fontSize: 10,
-                      color: "rgba(255,255,255,0.55)",
-                      fontFamily: "'IBM Plex Mono', monospace",
-                      wordBreak: "break-all",
-                    }}
-                  >
-                    uid: {profileUid || auth.currentUser?.uid || "(unknown)"}
-                  </div>
                 </div>
               </div>
 
@@ -2529,7 +2513,7 @@ const pageShellStyle: CSSProperties = {
   width: "100%",
   minHeight: "100vh",
   display: "grid",
-  gridTemplateColumns: "320px 1fr",
+  gridTemplateColumns: "640px 1fr",
 };
 
 const sidebarStyle: CSSProperties = {
