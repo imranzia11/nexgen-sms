@@ -34,7 +34,35 @@ async function main() {
     .get();
 
   if (snap.empty) {
-    console.log("No messages found in that window.");
+    console.log("No messages found in that window via the root `messages` collection.");
+    console.log("Falling back to the 20 most recent docs in that collection (no time filter),");
+    console.log("to check whether recent activity is landing somewhere this query isn't seeing:\n");
+
+    const recentSnap = await adminDb
+      .collection("messages")
+      .orderBy("createdAt", "desc")
+      .limit(20)
+      .get();
+
+    if (recentSnap.empty) {
+      console.log("The root `messages` collection has ZERO documents with a createdAt field at all.");
+      console.log("Recent sends are likely landing only in conversations/{id}/messages subcollections,");
+      console.log("or under a different field/collection than this script checks.");
+      return;
+    }
+
+    console.log(`Root \`messages\` collection has documents - most recent ${recentSnap.size}:\n`);
+    recentSnap.docs.forEach((d) => {
+      const data = d.data() as Record<string, any>;
+      const createdAt =
+        typeof data.createdAt?.toDate === "function" ? data.createdAt.toDate().toISOString() : "(no createdAt)";
+      console.log(
+        `${createdAt}  ownerUid=${data.ownerUid || "?"}  status=${data.status || "?"}  to=${data.to || "?"}`
+      );
+    });
+    console.log(
+      "\nIf the most recent entry above is older than your window, recent sends aren't writing to this collection - check conversations/{id}/messages instead."
+    );
     return;
   }
 
