@@ -17,6 +17,7 @@ import { auth, db } from "../../lib/firebase";
 import { formatFirestoreDateNY } from "../../lib/date";
 import LoadingScreen from "../../components/LoadingScreen";
 import TwilioBalanceCard from "../../components/TwilioBalanceCard";
+import InfraQueueNoticeCard from "../../components/InfraQueueNoticeCard";
 import RepliesNavBadge from "../../components/RepliesNavBadge";
 
 type ToastType = "success" | "error" | "info";
@@ -418,6 +419,10 @@ export default function BlacklistedPage() {
                     <div style={sidebarRepliesTextStyle}>Get help for portal setup</div>
                   </div>
                 </button>
+              </div>
+
+              <div style={sidebarRepliesWrapStyle}>
+                <InfraQueueNoticeCard />
               </div>
 
               <div style={sidebarRepliesWrapStyle}>

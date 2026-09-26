@@ -30,6 +30,7 @@ import { logDeletion } from "../../lib/deletionLog";
 import LoadingScreen from "../../components/LoadingScreen";
 import RepliesNavBadge from "../../components/RepliesNavBadge";
 import TwilioBalanceCard from "../../components/TwilioBalanceCard";
+import InfraQueueNoticeCard from "../../components/InfraQueueNoticeCard";
 
 type RowData = Record<string, string>;
 
@@ -1648,6 +1649,10 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 </button>
+              </div>
+
+              <div style={sidebarRepliesWrapStyle}>
+                <InfraQueueNoticeCard />
               </div>
 
               <div style={sidebarRepliesWrapStyle}>
