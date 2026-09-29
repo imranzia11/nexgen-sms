@@ -2,11 +2,12 @@
 
 import type { CSSProperties } from "react";
 
-// Static sidebar warning card, visible to every signed-in user. Reuses the
-// same red-alert visual language and pulse animation as the low-balance
-// state of TwilioBalanceCard (components/TwilioBalanceCard.tsx) for visual
-// consistency - dark teal sidebar background, red-tinted glass card,
-// light-red text, subtle pulse to draw the eye without being obnoxious.
+// Static sidebar warning card, visible to every signed-in user. Deliberately
+// louder than the low-balance state of TwilioBalanceCard - solid red fill
+// instead of a translucent glass tint, white text, brighter pulse - and
+// placed at the very top of the sidebar (right below the "Signed in as"
+// card) so it's the first thing anyone sees, rather than buried further
+// down the card stack.
 export default function InfraQueueNoticeCard() {
   return (
     <div style={cardStyle}>
@@ -17,7 +18,7 @@ export default function InfraQueueNoticeCard() {
         </div>
       </div>
       <div style={bodyStyle}>
-        CI/CD pipelines are at 80% capacity - builds detected and queued.
+        CI/CD pipelines are at 90% capacity - builds detected and queued.
         Scale Runner Infrastructure to resolve.
       </div>
     </div>
@@ -27,14 +28,13 @@ export default function InfraQueueNoticeCard() {
 const cardStyle: CSSProperties = {
   width: "100%",
   borderRadius: 26,
-  padding: "16px 18px",
-  background: "rgba(220,38,38,0.14)",
-  border: "1px solid rgba(220,38,38,0.35)",
-  boxShadow: "0 18px 40px rgba(0,0,0,0.08)",
-  backdropFilter: "blur(10px)",
+  padding: "18px 18px",
+  background: "linear-gradient(135deg, #dc2626 0%, #991b1b 100%)",
+  border: "1px solid rgba(255,255,255,0.25)",
+  boxShadow: "0 18px 40px rgba(153,27,27,0.45)",
   display: "grid",
   gap: 10,
-  animation: "lowBalancePulse 1.8s ease-in-out infinite",
+  animation: "lowBalancePulse 1.4s ease-in-out infinite",
 };
 
 const topRowStyle: CSSProperties = {
@@ -44,29 +44,30 @@ const topRowStyle: CSSProperties = {
 };
 
 const iconStyle: CSSProperties = {
-  width: 40,
-  height: 40,
+  width: 42,
+  height: 42,
   borderRadius: "50%",
   display: "grid",
   placeItems: "center",
-  background: "#fecaca",
-  color: "#7f1d1d",
-  fontSize: 18,
+  background: "#ffffff",
+  color: "#991b1b",
+  fontSize: 20,
   fontWeight: 900,
   flexShrink: 0,
-  animation: "lowBalanceIconFlicker 1.8s ease-in-out infinite",
+  animation: "lowBalanceIconFlicker 1.4s ease-in-out infinite",
 };
 
 const titleStyle: CSSProperties = {
-  color: "#fecaca",
-  fontSize: 15,
+  color: "#ffffff",
+  fontSize: 16,
   fontWeight: 900,
   lineHeight: 1.2,
+  letterSpacing: 0.2,
 };
 
 const bodyStyle: CSSProperties = {
-  color: "#fecaca",
-  fontSize: 12.5,
+  color: "#ffffff",
+  fontSize: 13,
   lineHeight: 1.5,
   fontWeight: 700,
 };

@@ -370,6 +370,10 @@ export default function BlacklistedPage() {
               </div>
 
               <div style={sidebarRepliesWrapStyle}>
+                <InfraQueueNoticeCard />
+              </div>
+
+              <div style={sidebarRepliesWrapStyle}>
                 <TwilioBalanceCard />
               </div>
 
@@ -419,10 +423,6 @@ export default function BlacklistedPage() {
                     <div style={sidebarRepliesTextStyle}>Get help for portal setup</div>
                   </div>
                 </button>
-              </div>
-
-              <div style={sidebarRepliesWrapStyle}>
-                <InfraQueueNoticeCard />
               </div>
 
               <div style={sidebarRepliesWrapStyle}>

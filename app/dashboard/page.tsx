@@ -1550,6 +1550,10 @@ export default function DashboardPage() {
               </div>
 
               <div style={sidebarRepliesWrapStyle}>
+                <InfraQueueNoticeCard />
+              </div>
+
+              <div style={sidebarRepliesWrapStyle}>
                 <div style={twilioNumberCardStyle}>
                   <div style={twilioNumberTopRowStyle}>
                     <div style={twilioNumberIconStyle}>☎</div>
@@ -1649,10 +1653,6 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 </button>
-              </div>
-
-              <div style={sidebarRepliesWrapStyle}>
-                <InfraQueueNoticeCard />
               </div>
 
               <div style={sidebarRepliesWrapStyle}>
