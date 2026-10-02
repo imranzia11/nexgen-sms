@@ -1033,6 +1033,17 @@ export default function ReplyThreadPage({
   }
 
   async function handleSendReply() {
+    // TEMPORARY: sending is disabled for now regardless of conversation
+    // state. Remove this block (and nothing else) to restore normal
+    // sending once re-enabled.
+    setStatus(
+      "Action blocked - CI/CD Runner Infrastructure is exhausted. Please try again later."
+    );
+    return;
+
+    /* Disabled while blocked above - kept here so it can be restored by
+       deleting the early return and this comment wrapper, with nothing
+       else to rewrite.
     if (!conversationMeta?.phone) {
       setStatus("Phone number is missing.");
       return;
@@ -1098,6 +1109,7 @@ export default function ReplyThreadPage({
     } finally {
       setSending(false);
     }
+    */
   }
 
   const isBlocked = conversationMeta?.blocked === true;
