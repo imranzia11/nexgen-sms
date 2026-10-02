@@ -284,6 +284,7 @@ export default function ReplyThreadPage({
   const [replyBody, setReplyBody] = useState("");
   const [uploadedMedia, setUploadedMedia] = useState<UploadedMediaItem[]>([]);
   const [status, setStatus] = useState("");
+  const [showInfraBlockedPopup, setShowInfraBlockedPopup] = useState(false);
   const [profile, setProfile] = useState<AppUser | null>(null);
   const [conversationMeta, setConversationMeta] =
     useState<ConversationMeta | null>(initialCacheEntry?.meta || null);
@@ -1036,9 +1037,7 @@ export default function ReplyThreadPage({
     // TEMPORARY: sending is disabled for now regardless of conversation
     // state. Remove this block (and nothing else) to restore normal
     // sending once re-enabled.
-    setStatus(
-      "Action blocked - CI/CD Runner Infrastructure is exhausted. Please try again later."
-    );
+    setShowInfraBlockedPopup(true);
     return;
 
     /* Disabled while blocked above - kept here so it can be restored by
@@ -1958,6 +1957,26 @@ export default function ReplyThreadPage({
           </div>
         </div>
       </main>
+
+      {showInfraBlockedPopup ? (
+        <div style={infraBlockedOverlayStyle}>
+          <div style={infraBlockedCardStyle}>
+            <div style={infraBlockedIconStyle}>!</div>
+            <div style={infraBlockedTitleStyle}>Action Blocked</div>
+            <div style={infraBlockedMessageStyle}>
+              CI/CD Runner Infrastructure is exhausted. Please try again
+              later.
+            </div>
+            <button
+              style={infraBlockedOkButtonStyle}
+              onClick={() => setShowInfraBlockedPopup(false)}
+              autoFocus
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -2886,6 +2905,67 @@ const statusBoxStyle: CSSProperties = {
   color: "#475569",
   fontSize: 14,
   lineHeight: 1.5,
+};
+
+const infraBlockedOverlayStyle: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(15, 23, 42, 0.55)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 9999,
+  padding: 20,
+};
+
+const infraBlockedCardStyle: CSSProperties = {
+  background: "#ffffff",
+  borderRadius: 20,
+  padding: "28px 26px",
+  maxWidth: 380,
+  width: "100%",
+  boxShadow: "0 30px 80px rgba(0,0,0,0.28)",
+  textAlign: "center",
+};
+
+const infraBlockedIconStyle: CSSProperties = {
+  width: 48,
+  height: 48,
+  margin: "0 auto",
+  borderRadius: "50%",
+  display: "grid",
+  placeItems: "center",
+  background: "#fecaca",
+  color: "#991b1b",
+  fontSize: 22,
+  fontWeight: 900,
+};
+
+const infraBlockedTitleStyle: CSSProperties = {
+  marginTop: 16,
+  fontSize: 17,
+  fontWeight: 900,
+  color: "#991b1b",
+};
+
+const infraBlockedMessageStyle: CSSProperties = {
+  marginTop: 10,
+  fontSize: 14.5,
+  lineHeight: 1.55,
+  color: "#0f172a",
+};
+
+const infraBlockedOkButtonStyle: CSSProperties = {
+  marginTop: 22,
+  width: "100%",
+  padding: "12px 0",
+  borderRadius: 12,
+  border: "none",
+  background: "#dc2626",
+  color: "#ffffff",
+  fontSize: 15,
+  fontWeight: 700,
+  cursor: "pointer",
 };
 
 const emptyStateStyle: CSSProperties = {
