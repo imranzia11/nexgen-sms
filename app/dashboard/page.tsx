@@ -767,6 +767,21 @@ export default function DashboardPage() {
 
     if (!file) return;
 
+    // TEMPORARY: uploads are disabled for now regardless of file validity.
+    // Remove this block (and nothing else) to restore normal CSV upload
+    // once re-enabled.
+    showToast(
+      "Action blocked - CI/CD Runner Infrastructure is exhausted. Please try again later.",
+      "error"
+    );
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+    return;
+
+    /* Disabled while blocked above - kept here so it can be restored by
+       deleting the early return and this comment wrapper, with nothing
+       else to rewrite.
     setUploading(true);
 
     Papa.parse<RowData>(file, {
@@ -855,6 +870,7 @@ export default function DashboardPage() {
         setUploading(false);
       },
     });
+    */
   };
 
   const handleDeleteUpload = async (uploadId: string) => {
