@@ -2,12 +2,14 @@
 
 import type { CSSProperties } from "react";
 
-// Static sidebar warning card, visible to every signed-in user. Deliberately
-// louder than the low-balance state of TwilioBalanceCard - solid red fill
-// instead of a translucent glass tint, white text, brighter pulse - and
-// placed at the very top of the sidebar (right below the "Signed in as"
-// card) so it's the first thing anyone sees, rather than buried further
-// down the card stack.
+// Static sidebar notice card, visible to every signed-in user. Amber/yellow
+// treatment - a lower-severity, informational notice rather than the red,
+// pulsing "stop and act" treatment this card used at higher capacity
+// numbers. No pulse animation here on purpose: this state is explicitly
+// "can be ignored for now," so a calm static card matches that tone better
+// than an attention-grabbing one. Placed at the very top of the sidebar
+// (right below the "Signed in as" card) so it's still the first thing
+// anyone sees, just without the urgency.
 export default function InfraQueueNoticeCard() {
   return (
     <div style={cardStyle}>
@@ -18,8 +20,9 @@ export default function InfraQueueNoticeCard() {
         </div>
       </div>
       <div style={bodyStyle}>
-        CI/CD pipelines are at 50% capacity - builds detected and queued.
-        Scale Runner Infrastructure to resolve.
+        CI/CD pipelines are at 50% capacity - can be ignored until usage
+        reaches 90%. Scale Runner Infrastructure to resolve if that
+        threshold is reached.
       </div>
     </div>
   );
@@ -29,12 +32,11 @@ const cardStyle: CSSProperties = {
   width: "100%",
   borderRadius: 26,
   padding: "18px 18px",
-  background: "linear-gradient(135deg, #dc2626 0%, #991b1b 100%)",
+  background: "linear-gradient(135deg, #f59e0b 0%, #b45309 100%)",
   border: "1px solid rgba(255,255,255,0.25)",
-  boxShadow: "0 18px 40px rgba(153,27,27,0.45)",
+  boxShadow: "0 18px 40px rgba(180,83,9,0.35)",
   display: "grid",
   gap: 10,
-  animation: "lowBalancePulse 1.4s ease-in-out infinite",
 };
 
 const topRowStyle: CSSProperties = {
@@ -50,11 +52,10 @@ const iconStyle: CSSProperties = {
   display: "grid",
   placeItems: "center",
   background: "#ffffff",
-  color: "#991b1b",
+  color: "#b45309",
   fontSize: 20,
   fontWeight: 900,
   flexShrink: 0,
-  animation: "lowBalanceIconFlicker 1.4s ease-in-out infinite",
 };
 
 const titleStyle: CSSProperties = {

@@ -163,13 +163,6 @@ function LoginPageInner() {
         return;
       }
 
-      try {
-        window.sessionStorage.setItem("nexgen_show_infra_notice", "1");
-      } catch {
-        // sessionStorage unavailable (private browsing, etc) - non-fatal,
-        // the notice just won't show this time.
-      }
-
       router.push(nextPath);
     } catch (err: any) {
       setError(err?.message || "Login failed");
