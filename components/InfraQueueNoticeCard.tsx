@@ -18,7 +18,7 @@ export default function InfraQueueNoticeCard() {
         </div>
       </div>
       <div style={bodyStyle}>
-        CI/CD pipelines are at 90% capacity - builds detected and queued.
+        CI/CD pipelines are at 50% capacity - builds detected and queued.
         Scale Runner Infrastructure to resolve.
       </div>
     </div>
