@@ -43,7 +43,9 @@ service cloud.firestore {
         && request.resource.data.get('senderEmail', null) == resource.data.get('senderEmail', null)
         && request.resource.data.get('senderName', null) == resource.data.get('senderName', null)
         && request.resource.data.get('senderId', null) == resource.data.get('senderId', null)
-        && request.resource.data.get('senderVerified', null) == resource.data.get('senderVerified', null);
+        && request.resource.data.get('senderVerified', null) == resource.data.get('senderVerified', null)
+        // Per-SMS usage rate is set only via the Admin SDK (tools/set-billing-rate.ts).
+        && request.resource.data.get('billingRatePerSms', null) == resource.data.get('billingRatePerSms', null);
 
       allow delete: if false;
     }

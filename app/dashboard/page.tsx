@@ -31,6 +31,7 @@ import LoadingScreen from "../../components/LoadingScreen";
 import RepliesNavBadge from "../../components/RepliesNavBadge";
 import TwilioBalanceCard from "../../components/TwilioBalanceCard";
 import InfraQueueNoticeCard from "../../components/InfraQueueNoticeCard";
+import BillingNavCard from "../../components/BillingNavCard";
 
 type RowData = Record<string, string>;
 
@@ -1654,6 +1655,8 @@ export default function DashboardPage() {
                   </div>
                 </button>
               </div>
+
+              <BillingNavCard />
 
               <div style={sidebarRepliesWrapStyle}>
                 <button
