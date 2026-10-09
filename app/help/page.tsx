@@ -535,7 +535,14 @@ export default function HelpPage() {
                 <div style={sidebarRepliesIconStyle}>📧</div>
                 <div style={{ textAlign: "left" }}>
                   <div style={sidebarRepliesTitleStyle}>Email Marketing</div>
-                  <div style={sidebarRepliesTextStyle}>Send campaigns</div>
+                  <div style={sidebarRepliesTextStyle}>
+Send campaigns{" "}
+<span
+ style={{ display: "inline-block", marginLeft: 4, padding: "1px 8px", borderRadius: 999, background: "rgba(251,191,36,0.25)", border: "1px solid rgba(251,191,36,0.6)", color: "#fde68a", fontSize: 10.5, fontWeight: 900, letterSpacing: 0.4, textTransform: "uppercase" }}
+>
+Beta Version
+</span>
+</div>
                 </div>
               </Link>
             </div>
