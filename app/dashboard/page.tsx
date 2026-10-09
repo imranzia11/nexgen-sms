@@ -1606,6 +1606,8 @@ export default function DashboardPage() {
                 <TwilioBalanceCard />
               </div>
 
+              <BillingNavCard />
+
               <div style={sidebarRepliesWrapStyle}>
                 <Link
                   href="/replies"
@@ -1655,8 +1657,6 @@ export default function DashboardPage() {
                   </div>
                 </button>
               </div>
-
-              <BillingNavCard />
 
               <div style={sidebarRepliesWrapStyle}>
                 <button
