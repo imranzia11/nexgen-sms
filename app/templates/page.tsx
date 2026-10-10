@@ -468,7 +468,7 @@ export default function TemplatesPage() {
 }
 
 const pageStyle: CSSProperties = {
-  minHeight: "100vh",
+  minHeight: "calc(100vh / var(--ui-zoom, 1))",
   background:
     "radial-gradient(circle at top left, rgba(20,184,166,0.18), transparent 28%), linear-gradient(180deg, #ecfeff 0%, #f8fafc 46%, #f8fafc 100%)",
   color: "#0f172a",
@@ -476,7 +476,7 @@ const pageStyle: CSSProperties = {
 
 const pageShellStyle: CSSProperties = {
   width: "100%",
-  minHeight: "100vh",
+  minHeight: "calc(100vh / var(--ui-zoom, 1))",
   display: "grid",
   gridTemplateColumns: "320px 1fr",
 };
@@ -490,7 +490,7 @@ const sidebarStyle: CSSProperties = {
   gap: 24,
   position: "sticky",
   top: 0,
-  minHeight: "100vh",
+  minHeight: "calc(100vh / var(--ui-zoom, 1))",
 };
 
 const brandWrapStyle: CSSProperties = {

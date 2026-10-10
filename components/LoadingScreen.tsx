@@ -37,7 +37,7 @@ export default function LoadingScreen({
 }
 
 const loadingPageStyle: CSSProperties = {
-  minHeight: "100vh",
+  minHeight: "calc(100vh / var(--ui-zoom, 1))",
   display: "grid",
   placeItems: "center",
   background: "linear-gradient(135deg, #0f766e 0%, #0d9488 50%, #14b8a6 100%)",

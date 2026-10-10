@@ -14,6 +14,54 @@ body {
   box-sizing: border-box;
 }
 
+/* Large-desktop scaling. Every page sizes its text in fixed pixels, so on a
+   wide/high-resolution monitor everything renders tiny and people end up
+   zooming the browser by hand. This scales the whole app up in steps by
+   viewport width instead, targeting an effective layout width of roughly
+   1500-1700px. `zoom` also multiplies vh lengths, so every full-height
+   page uses calc(100vh / var(--ui-zoom, 1)) to cancel that out and avoid
+   a phantom second scrollbar. Phones and normal laptops (under 1800px) are
+   untouched. */
+:root {
+  --ui-zoom: 1;
+}
+
+@media (min-width: 1800px) {
+  :root {
+    --ui-zoom: 1.2;
+  }
+  html {
+    zoom: 1.2;
+  }
+}
+
+@media (min-width: 2200px) {
+  :root {
+    --ui-zoom: 1.5;
+  }
+  html {
+    zoom: 1.5;
+  }
+}
+
+@media (min-width: 2800px) {
+  :root {
+    --ui-zoom: 1.9;
+  }
+  html {
+    zoom: 1.9;
+  }
+}
+
+@media (min-width: 3400px) {
+  :root {
+    --ui-zoom: 2.3;
+  }
+  html {
+    zoom: 2.3;
+  }
+}
+
 /* Shared loading-spinner animation used by every authenticated page's
    loading screen. Previously several pages (logs, stats, replies,
    replies/[phone], uploads/[uploadId]) referenced "spin" without ever

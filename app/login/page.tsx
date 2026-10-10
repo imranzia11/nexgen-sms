@@ -535,7 +535,7 @@ function TypingDots({ dark = false }: { dark?: boolean }) {
 }
 
 const pageStyle: CSSProperties = {
-  minHeight: "100vh",
+  minHeight: "calc(100vh / var(--ui-zoom, 1))",
   background: "linear-gradient(135deg, #0f766e 0%, #0d9488 48%, #14b8a6 100%)",
   display: "flex",
   alignItems: "center",

@@ -333,7 +333,7 @@ export default function AdminOverviewPage() {
 }
 
 const pageStyle: CSSProperties = {
-  minHeight: "100vh",
+  minHeight: "calc(100vh / var(--ui-zoom, 1))",
   background: "#f4fbf9",
   paddingBottom: 60,
 };

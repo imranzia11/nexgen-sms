@@ -205,7 +205,7 @@ export default function UploadDetailsPage() {
     return (
       <main
         style={{
-          minHeight: "100vh",
+          minHeight: "calc(100vh / var(--ui-zoom, 1))",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -222,7 +222,7 @@ export default function UploadDetailsPage() {
     return (
       <main
         style={{
-          minHeight: "100vh",
+          minHeight: "calc(100vh / var(--ui-zoom, 1))",
           background: "#f1f5f9",
           color: "#0f172a",
           padding: 24,
@@ -251,7 +251,7 @@ export default function UploadDetailsPage() {
   return (
     <main
       style={{
-        minHeight: "100vh",
+        minHeight: "calc(100vh / var(--ui-zoom, 1))",
         background: "#f1f5f9",
         color: "#0f172a",
         padding: 24,
