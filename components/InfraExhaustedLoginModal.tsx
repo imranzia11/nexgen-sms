@@ -93,7 +93,7 @@ const titleStyle: CSSProperties = {
 
 const messageStyle: CSSProperties = {
   marginTop: 10,
-  fontSize: 14.5,
+  fontSize: 16,
   lineHeight: 1.55,
   color: "#0f172a",
 };
@@ -106,7 +106,7 @@ const okButtonStyle: CSSProperties = {
   border: "none",
   background: "#dc2626",
   color: "#ffffff",
-  fontSize: 15,
+  fontSize: 17,
   fontWeight: 700,
   cursor: "pointer",
 };

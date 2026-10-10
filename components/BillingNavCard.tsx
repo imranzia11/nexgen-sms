@@ -145,7 +145,7 @@ const valueStyle: CSSProperties = {
 
 const hintStyle: CSSProperties = {
   color: "rgba(255,255,255,0.85)",
-  fontSize: 12.5,
+  fontSize: 14,
   lineHeight: 1.5,
   fontWeight: 700,
 };
@@ -161,5 +161,5 @@ const buttonStyle: CSSProperties = {
   background: "rgba(255,255,255,0.08)",
   color: "#ffffff",
   fontWeight: 800,
-  fontSize: 13,
+  fontSize: 15,
 };

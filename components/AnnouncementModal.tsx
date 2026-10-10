@@ -158,14 +158,14 @@ const badgeStyle: CSSProperties = {
   borderRadius: 999,
   background: "rgba(13, 148, 136, 0.12)",
   color: "#0f766e",
-  fontSize: 11.5,
+  fontSize: 13,
   fontWeight: 800,
   letterSpacing: 0.6,
 };
 
 const messageStyle: CSSProperties = {
   marginTop: 16,
-  fontSize: 15.5,
+  fontSize: 17,
   lineHeight: 1.5,
   color: "#0f172a",
   whiteSpace: "pre-wrap",
@@ -173,7 +173,7 @@ const messageStyle: CSSProperties = {
 
 const timeStyle: CSSProperties = {
   marginTop: 10,
-  fontSize: 12,
+  fontSize: 13,
   color: "#94a3b8",
 };
 
@@ -185,7 +185,7 @@ const okButtonStyle: CSSProperties = {
   border: "none",
   background: "#0d9488",
   color: "#ffffff",
-  fontSize: 15,
+  fontSize: 17,
   fontWeight: 700,
   cursor: "pointer",
 };

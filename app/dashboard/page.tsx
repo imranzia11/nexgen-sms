@@ -1697,7 +1697,7 @@ export default function DashboardPage() {
                     <div style={sidebarRepliesTextStyle}>
 Send campaigns{" "}
 <span
- style={{ display: "inline-block", marginLeft: 4, padding: "1px 8px", borderRadius: 999, background: "rgba(251,191,36,0.25)", border: "1px solid rgba(251,191,36,0.6)", color: "#fde68a", fontSize: 10.5, fontWeight: 900, letterSpacing: 0.4, textTransform: "uppercase" }}
+ style={{ display: "inline-block", marginLeft: 4, padding: "1px 8px", borderRadius: 999, background: "rgba(251,191,36,0.25)", border: "1px solid rgba(251,191,36,0.6)", color: "#fde68a", fontSize: 12, fontWeight: 900, letterSpacing: 0.4, textTransform: "uppercase" }}
 >
 Beta Version
 </span>
@@ -1748,7 +1748,7 @@ Beta Version
 
                 <div style={heroTopControlsStyle}>
                   <div style={searchBarStyle}>
-                    <span style={{ fontSize: 16, opacity: 0.8 }}>⌕</span>
+                    <span style={{ fontSize: 18, opacity: 0.8 }}>⌕</span>
                     <input
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
@@ -1868,7 +1868,7 @@ Beta Version
                                   border: `1px solid ${tone.border}`,
                                   borderRadius: 999,
                                   padding: "8px 12px",
-                                  fontSize: 12,
+                                  fontSize: 13,
                                   fontWeight: 700,
                                   textTransform: "capitalize",
                                   whiteSpace: "nowrap",
@@ -1986,7 +1986,7 @@ Beta Version
                                       border: `1px solid ${tone.border}`,
                                       borderRadius: 999,
                                       padding: "6px 10px",
-                                      fontSize: 12,
+                                      fontSize: 13,
                                       fontWeight: 700,
                                       textTransform: "capitalize",
                                     }}
@@ -2473,7 +2473,7 @@ function StatCard({
       <div
         style={{
           color: "rgba(236, 254, 255, 0.72)",
-          fontSize: 13,
+          fontSize: 15,
           fontWeight: 600,
         }}
       >
@@ -2517,7 +2517,7 @@ function EmptyState({ text }: { text: string }) {
   return (
     <div style={emptyStateStyle}>
       <div style={emptyStateIconStyle}>•</div>
-      <div style={{ fontSize: 15, color: "#64748b", fontWeight: 600 }}>
+      <div style={{ fontSize: 17, color: "#64748b", fontWeight: 600 }}>
         {text}
       </div>
     </div>
@@ -2589,7 +2589,7 @@ const brandTitleStyle: CSSProperties = {
 const brandSubStyle: CSSProperties = {
   marginTop: 4,
   color: "rgba(236, 254, 255, 0.7)",
-  fontSize: 13,
+  fontSize: 15,
 };
 
 const adminMiniCardStyle: CSSProperties = {
@@ -2618,13 +2618,13 @@ const avatarStyle: CSSProperties = {
 
 const sidebarSmallLabelStyle: CSSProperties = {
   color: "rgba(236, 254, 255, 0.68)",
-  fontSize: 12,
+  fontSize: 13,
 };
 
 const sidebarAdminNameStyle: CSSProperties = {
   marginTop: 4,
   color: "#ffffff",
-  fontSize: 16,
+  fontSize: 18,
   fontWeight: 800,
 };
 
@@ -2666,7 +2666,7 @@ const twilioNumberIconStyle: CSSProperties = {
 const twilioNumberValueStyle: CSSProperties = {
   marginTop: 6,
   color: "#ffffff",
-  fontSize: 16,
+  fontSize: 18,
   fontWeight: 900,
   wordBreak: "break-word",
 };
@@ -2679,13 +2679,13 @@ const twilioNumberCopyButtonStyle: CSSProperties = {
   background: "rgba(255,255,255,0.08)",
   color: "#ffffff",
   fontWeight: 800,
-  fontSize: 13,
+  fontSize: 15,
   cursor: "pointer",
 };
 
 const twilioNumberHintStyle: CSSProperties = {
   color: "rgba(236, 254, 255, 0.7)",
-  fontSize: 12.5,
+  fontSize: 14,
   lineHeight: 1.5,
 };
 
@@ -2752,8 +2752,8 @@ const sidebarRepliesTitleStyle: CSSProperties = {
 
 const sidebarRepliesTextStyle: CSSProperties = {
   marginTop: 6,
-  color: "rgba(236, 254, 255, 0.78)",
-  fontSize: 13,
+  color: "rgba(236, 254, 255, 0.95)",
+  fontSize: 15,
   lineHeight: 1.4,
 };
 
@@ -2824,7 +2824,7 @@ const heroBadgeStyle: CSSProperties = {
   background: "rgba(255,255,255,0.14)",
   border: "1px solid rgba(255,255,255,0.18)",
   color: "#ecfeff",
-  fontSize: 12,
+  fontSize: 13,
   fontWeight: 800,
   letterSpacing: 0.3,
 };
@@ -2841,7 +2841,7 @@ const heroTextStyle: CSSProperties = {
   margin: "10px 0 0 0",
   maxWidth: 760,
   color: "rgba(236,254,255,0.86)",
-  fontSize: 16,
+  fontSize: 18,
   lineHeight: 1.65,
 };
 
@@ -2871,7 +2871,7 @@ const searchInputStyle: CSSProperties = {
   outline: "none",
   background: "transparent",
   color: "#ffffff",
-  fontSize: 15,
+  fontSize: 17,
 };
 
 const heroPrimaryButtonStyle: CSSProperties = {
@@ -2881,7 +2881,7 @@ const heroPrimaryButtonStyle: CSSProperties = {
   background: "#ecfeff",
   color: "#0f766e",
   fontWeight: 900,
-  fontSize: 15,
+  fontSize: 17,
 };
 
 const statsGridStyle: CSSProperties = {
@@ -2941,7 +2941,7 @@ const panelTitleStyle: CSSProperties = {
 const panelDescStyle: CSSProperties = {
   margin: "8px 0 0 0",
   color: "#64748b",
-  fontSize: 14,
+  fontSize: 16,
   lineHeight: 1.5,
 };
 
@@ -3008,7 +3008,7 @@ const fileNameStyle: CSSProperties = {
 
 const fileMetaStyle: CSSProperties = {
   marginTop: 6,
-  fontSize: 12,
+  fontSize: 13,
   color: "#64748b",
 };
 
@@ -3027,14 +3027,14 @@ const miniDataStyle: CSSProperties = {
 };
 
 const miniDataLabelStyle: CSSProperties = {
-  fontSize: 12,
+  fontSize: 13,
   color: "#64748b",
   fontWeight: 700,
 };
 
 const miniDataValueStyle: CSSProperties = {
   marginTop: 8,
-  fontSize: 14,
+  fontSize: 16,
   color: "#0f172a",
   fontWeight: 800,
   wordBreak: "break-word",
@@ -3066,7 +3066,7 @@ const thStyle: CSSProperties = {
   background: "#f8fafc",
   color: "#475569",
   borderBottom: "1px solid #e2e8f0",
-  fontSize: 13,
+  fontSize: 15,
   fontWeight: 800,
   whiteSpace: "nowrap",
 };
@@ -3075,7 +3075,7 @@ const tdStyle: CSSProperties = {
   padding: "14px 16px",
   color: "#0f172a",
   borderBottom: "1px solid #f1f5f9",
-  fontSize: 14,
+  fontSize: 16,
   verticalAlign: "middle",
 };
 
@@ -3089,7 +3089,7 @@ const leadsPaginationRowStyle: CSSProperties = {
 };
 
 const leadsPaginationLabelStyle: CSSProperties = {
-  fontSize: 13,
+  fontSize: 15,
   fontWeight: 700,
   color: "#64748b",
 };
@@ -3101,7 +3101,7 @@ const leadsPaginationButtonStyle: CSSProperties = {
   background: "#ffffff",
   color: "#0f172a",
   fontWeight: 800,
-  fontSize: 14,
+  fontSize: 16,
   cursor: "pointer",
 };
 
@@ -3132,7 +3132,7 @@ const templateSelectStyle: CSSProperties = {
   padding: "14px 16px",
   background: "#ffffff",
   color: "#0f172a",
-  fontSize: 15,
+  fontSize: 17,
   outline: "none",
 };
 
@@ -3143,7 +3143,7 @@ const manageTemplatesLinkStyle: CSSProperties = {
   background: "#f0fdfa",
   color: "#0f766e",
   fontWeight: 800,
-  fontSize: 14,
+  fontSize: 16,
   textDecoration: "none",
   whiteSpace: "nowrap",
 };
@@ -3157,14 +3157,14 @@ const infoPanelStyle: CSSProperties = {
 
 const infoPanelLabelStyle: CSSProperties = {
   color: "#64748b",
-  fontSize: 12,
+  fontSize: 13,
   fontWeight: 800,
 };
 
 const infoPanelValueStyle: CSSProperties = {
   marginTop: 10,
   color: "#0f172a",
-  fontSize: 16,
+  fontSize: 18,
   fontWeight: 900,
   wordBreak: "break-word",
 };
@@ -3173,7 +3173,7 @@ const fieldLabelStyle: CSSProperties = {
   display: "block",
   marginBottom: 8,
   color: "#334155",
-  fontSize: 13,
+  fontSize: 15,
   fontWeight: 800,
 };
 
@@ -3184,7 +3184,7 @@ const fieldInputStyle: CSSProperties = {
   padding: "14px 16px",
   background: "#ffffff",
   color: "#0f172a",
-  fontSize: 15,
+  fontSize: 17,
   outline: "none",
 };
 
@@ -3195,7 +3195,7 @@ const fieldTextareaStyle: CSSProperties = {
   padding: "14px 16px",
   background: "#ffffff",
   color: "#0f172a",
-  fontSize: 15,
+  fontSize: 17,
   resize: "vertical",
   outline: "none",
   minHeight: 180,
@@ -3207,7 +3207,7 @@ const messageHintStyle: CSSProperties = {
   justifyContent: "space-between",
   alignItems: "center",
   color: "#64748b",
-  fontSize: 13,
+  fontSize: 15,
 };
 
 const followUpCardStyle: CSSProperties = {
@@ -3236,14 +3236,14 @@ const followUpCheckboxStyle: CSSProperties = {
 
 const followUpCheckboxTitleStyle: CSSProperties = {
   color: "#0f172a",
-  fontSize: 15,
+  fontSize: 17,
   fontWeight: 800,
 };
 
 const followUpCheckboxSubStyle: CSSProperties = {
   marginTop: 4,
   color: "#64748b",
-  fontSize: 13,
+  fontSize: 15,
   lineHeight: 1.5,
 };
 
@@ -3267,7 +3267,7 @@ const followUpHourChipStyle: CSSProperties = {
   background: "#ffffff",
   color: "#334155",
   fontWeight: 800,
-  fontSize: 13,
+  fontSize: 15,
   cursor: "pointer",
 };
 
@@ -3292,13 +3292,13 @@ const sendButtonStyle: CSSProperties = {
   background: "linear-gradient(135deg, #0f766e 0%, #0d9488 100%)",
   color: "#ffffff",
   fontWeight: 900,
-  fontSize: 16,
+  fontSize: 18,
   boxShadow: "0 18px 35px rgba(13,148,136,0.24)",
 };
 
 const sendHelpTextStyle: CSSProperties = {
   color: "#475569",
-  fontSize: 13,
+  fontSize: 15,
   lineHeight: 1.5,
   wordBreak: "break-word",
 };
@@ -3320,13 +3320,13 @@ const sendProgressTopRowStyle: CSSProperties = {
 };
 
 const sendProgressTitleStyle: CSSProperties = {
-  fontSize: 13.5,
+  fontSize: 15,
   fontWeight: 800,
   color: "#0f766e",
 };
 
 const sendProgressCountStyle: CSSProperties = {
-  fontSize: 13,
+  fontSize: 15,
   fontWeight: 700,
   color: "#0f172a",
   fontFamily: "'IBM Plex Mono', monospace",
@@ -3347,7 +3347,7 @@ const sendProgressFillStyle: CSSProperties = {
 };
 
 const sendProgressWarningStyle: CSSProperties = {
-  fontSize: 12.5,
+  fontSize: 14,
   color: "#b45309",
   lineHeight: 1.5,
 };
@@ -3393,7 +3393,7 @@ const sendOverlayTitleStyle: CSSProperties = {
 
 const sendOverlaySubtitleStyle: CSSProperties = {
   marginTop: 6,
-  fontSize: 14,
+  fontSize: 16,
   fontWeight: 700,
   color: "#0f766e",
   fontFamily: "'IBM Plex Mono', monospace",
@@ -3416,7 +3416,7 @@ const sendOverlayFillStyle: CSSProperties = {
 
 const sendOverlayWarningStyle: CSSProperties = {
   marginTop: 18,
-  fontSize: 12.5,
+  fontSize: 14,
   color: "#b45309",
   lineHeight: 1.6,
   background: "rgba(180, 83, 9, 0.08)",
@@ -3452,13 +3452,13 @@ const guideNumberStyle: CSSProperties = {
   background: "#ccfbf1",
   color: "#115e59",
   fontWeight: 900,
-  fontSize: 14,
+  fontSize: 16,
   flexShrink: 0,
 };
 
 const guideTextStyle: CSSProperties = {
   color: "#334155",
-  fontSize: 14,
+  fontSize: 16,
   lineHeight: 1.6,
   fontWeight: 600,
 };
@@ -3493,7 +3493,7 @@ const inlineSearchInputStyle: CSSProperties = {
   padding: "12px 14px",
   background: "#ffffff",
   color: "#0f172a",
-  fontSize: 14,
+  fontSize: 16,
   outline: "none",
 };
 
@@ -3541,7 +3541,7 @@ const comingSoonTitleStyle: CSSProperties = {
 const comingSoonTextStyle: CSSProperties = {
   margin: "12px 0 0 0",
   color: "rgba(226, 232, 240, 0.92)",
-  fontSize: 15,
+  fontSize: 17,
   lineHeight: 1.6,
 };
 
@@ -3553,7 +3553,7 @@ const comingSoonCloseButtonStyle: CSSProperties = {
   padding: "14px 16px",
   background: "#2dd4bf",
   color: "#022c22",
-  fontSize: 15,
+  fontSize: 17,
   fontWeight: 800,
   cursor: "pointer",
 };
@@ -3611,7 +3611,7 @@ const busyTitleStyle: CSSProperties = {
 const busyTextStyle: CSSProperties = {
   margin: "12px 0 0 0",
   color: "rgba(226, 232, 240, 0.92)",
-  fontSize: 15,
+  fontSize: 17,
   lineHeight: 1.7,
 };
 
@@ -3655,14 +3655,14 @@ const toastDotStyle: CSSProperties = {
 };
 
 const toastTitleStyle: CSSProperties = {
-  fontSize: 16,
+  fontSize: 18,
   fontWeight: 900,
   lineHeight: 1.2,
 };
 
 const toastMessageStyle: CSSProperties = {
   marginTop: 6,
-  fontSize: 15,
+  fontSize: 17,
   lineHeight: 1.6,
   color: "rgba(255,255,255,0.95)",
 };
@@ -3697,7 +3697,7 @@ const singleSendTitleStyle: CSSProperties = {
 const singleSendTextStyle: CSSProperties = {
   margin: "10px 0 0 0",
   color: "#64748b",
-  fontSize: 15,
+  fontSize: 17,
   lineHeight: 1.6,
   maxWidth: 520,
 };
@@ -3709,7 +3709,7 @@ const singleSendInputStyle: CSSProperties = {
   padding: "16px 16px",
   background: "#ffffff",
   color: "#0f172a",
-  fontSize: 15,
+  fontSize: 17,
   outline: "none",
   boxShadow: "none",
 };

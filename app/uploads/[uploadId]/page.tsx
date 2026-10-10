@@ -322,7 +322,7 @@ export default function UploadDetailsPage() {
                 color: "#fff",
                 borderRadius: 12,
                 padding: "12px 14px",
-                fontSize: 14,
+                fontSize: 16,
               }}
             >
               {errorText}
@@ -404,7 +404,7 @@ function InfoCard({ label, value }: { label: string; value: string }) {
         padding: 16,
       }}
     >
-      <p style={{ margin: 0, fontSize: 14, color: "#64748b" }}>{label}</p>
+      <p style={{ margin: 0, fontSize: 16, color: "#64748b" }}>{label}</p>
       <p
         style={{
           marginTop: 10,
@@ -427,12 +427,12 @@ const thStyle: CSSProperties = {
   background: "#f8fafc",
   color: "#334155",
   borderBottom: "1px solid #e2e8f0",
-  fontSize: 14,
+  fontSize: 16,
 };
 
 const tdStyle: CSSProperties = {
   padding: "12px 14px",
   color: "#0f172a",
   borderBottom: "1px solid #f1f5f9",
-  fontSize: 14,
+  fontSize: 16,
 };

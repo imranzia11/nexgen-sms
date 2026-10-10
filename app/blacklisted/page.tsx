@@ -446,7 +446,7 @@ export default function BlacklistedPage() {
                     <div style={sidebarRepliesTextStyle}>
 Send campaigns{" "}
 <span
- style={{ display: "inline-block", marginLeft: 4, padding: "1px 8px", borderRadius: 999, background: "rgba(251,191,36,0.25)", border: "1px solid rgba(251,191,36,0.6)", color: "#fde68a", fontSize: 10.5, fontWeight: 900, letterSpacing: 0.4, textTransform: "uppercase" }}
+ style={{ display: "inline-block", marginLeft: 4, padding: "1px 8px", borderRadius: 999, background: "rgba(251,191,36,0.25)", border: "1px solid rgba(251,191,36,0.6)", color: "#fde68a", fontSize: 12, fontWeight: 900, letterSpacing: 0.4, textTransform: "uppercase" }}
 >
 Beta Version
 </span>
@@ -497,7 +497,7 @@ Beta Version
 
                 <div style={heroTopControlsStyle}>
                   <div style={searchBarStyle}>
-                    <span style={{ fontSize: 16, opacity: 0.8 }}>⌕</span>
+                    <span style={{ fontSize: 18, opacity: 0.8 }}>⌕</span>
                     <input
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
@@ -591,7 +591,7 @@ Beta Version
                               border: `1px solid ${tone.border}`,
                               borderRadius: 999,
                               padding: "8px 12px",
-                              fontSize: 12,
+                              fontSize: 13,
                               fontWeight: 700,
                               textTransform: "capitalize",
                               whiteSpace: "nowrap",
@@ -726,7 +726,7 @@ function StatCard({
         minHeight: compact ? 88 : 96,
       }}
     >
-      <div style={{ color: "rgba(236, 254, 255, 0.72)", fontSize: 13, fontWeight: 600 }}>
+      <div style={{ color: "rgba(236, 254, 255, 0.72)", fontSize: 15, fontWeight: 600 }}>
         {label}
       </div>
       <div
@@ -758,7 +758,7 @@ function EmptyState({ text }: { text: string }) {
   return (
     <div style={emptyStateStyle}>
       <div style={emptyStateIconStyle}>•</div>
-      <div style={{ fontSize: 15, color: "#64748b", fontWeight: 600 }}>{text}</div>
+      <div style={{ fontSize: 17, color: "#64748b", fontWeight: 600 }}>{text}</div>
     </div>
   );
 }
@@ -819,7 +819,7 @@ const brandTitleStyle: CSSProperties = {
 const brandSubStyle: CSSProperties = {
   marginTop: 4,
   color: "rgba(236, 254, 255, 0.7)",
-  fontSize: 13,
+  fontSize: 15,
 };
 
 const adminMiniCardStyle: CSSProperties = {
@@ -890,7 +890,7 @@ const comingSoonTitleStyle: CSSProperties = {
 const comingSoonTextStyle: CSSProperties = {
   margin: "12px 0 0 0",
   color: "rgba(226, 232, 240, 0.92)",
-  fontSize: 15,
+  fontSize: 17,
   lineHeight: 1.6,
 };
 
@@ -902,20 +902,20 @@ const comingSoonCloseButtonStyle: CSSProperties = {
   padding: "14px 16px",
   background: "#2dd4bf",
   color: "#022c22",
-  fontSize: 15,
+  fontSize: 17,
   fontWeight: 800,
   cursor: "pointer",
 };
 
 const sidebarSmallLabelStyle: CSSProperties = {
   color: "rgba(236, 254, 255, 0.68)",
-  fontSize: 12,
+  fontSize: 13,
 };
 
 const sidebarAdminNameStyle: CSSProperties = {
   marginTop: 4,
   color: "#ffffff",
-  fontSize: 16,
+  fontSize: 18,
   fontWeight: 800,
 };
 
@@ -986,8 +986,8 @@ const sidebarRepliesTitleStyle: CSSProperties = {
 
 const sidebarRepliesTextStyle: CSSProperties = {
   marginTop: 6,
-  color: "rgba(236, 254, 255, 0.78)",
-  fontSize: 13,
+  color: "rgba(236, 254, 255, 0.95)",
+  fontSize: 15,
   lineHeight: 1.4,
 };
 
@@ -1058,7 +1058,7 @@ const heroBadgeStyle: CSSProperties = {
   background: "rgba(255,255,255,0.14)",
   border: "1px solid rgba(255,255,255,0.18)",
   color: "#ecfeff",
-  fontSize: 12,
+  fontSize: 13,
   fontWeight: 800,
   letterSpacing: 0.3,
 };
@@ -1075,7 +1075,7 @@ const heroTextStyle: CSSProperties = {
   margin: "10px 0 0 0",
   maxWidth: 760,
   color: "rgba(236,254,255,0.86)",
-  fontSize: 16,
+  fontSize: 18,
   lineHeight: 1.65,
 };
 
@@ -1105,7 +1105,7 @@ const searchInputStyle: CSSProperties = {
   outline: "none",
   background: "transparent",
   color: "#ffffff",
-  fontSize: 15,
+  fontSize: 17,
 };
 
 const heroPrimaryButtonLinkStyle: CSSProperties = {
@@ -1115,7 +1115,7 @@ const heroPrimaryButtonLinkStyle: CSSProperties = {
   background: "#ecfeff",
   color: "#0f766e",
   fontWeight: 900,
-  fontSize: 15,
+  fontSize: 17,
   textDecoration: "none",
   display: "inline-flex",
   alignItems: "center",
@@ -1155,7 +1155,7 @@ const panelTitleStyle: CSSProperties = {
 const panelDescStyle: CSSProperties = {
   margin: "8px 0 0 0",
   color: "#64748b",
-  fontSize: 14,
+  fontSize: 16,
   lineHeight: 1.5,
 };
 
@@ -1179,7 +1179,7 @@ const paginationRowStyle: CSSProperties = {
 };
 
 const paginationLabelStyle: CSSProperties = {
-  fontSize: 13,
+  fontSize: 15,
   fontWeight: 700,
   color: "#64748b",
 };
@@ -1191,7 +1191,7 @@ const paginationButtonStyle: CSSProperties = {
   background: "#ffffff",
   color: "#0f172a",
   fontWeight: 800,
-  fontSize: 14,
+  fontSize: 16,
   cursor: "pointer",
 };
 
@@ -1231,7 +1231,7 @@ const blacklistPhoneStyle: CSSProperties = {
 
 const blacklistMetaStyle: CSSProperties = {
   marginTop: 6,
-  fontSize: 13,
+  fontSize: 15,
   color: "#64748b",
 };
 
@@ -1250,14 +1250,14 @@ const miniInfoCardStyle: CSSProperties = {
 };
 
 const miniInfoLabelStyle: CSSProperties = {
-  fontSize: 12,
+  fontSize: 13,
   color: "#64748b",
   fontWeight: 700,
 };
 
 const miniInfoValueStyle: CSSProperties = {
   marginTop: 8,
-  fontSize: 14,
+  fontSize: 16,
   color: "#0f172a",
   fontWeight: 800,
   wordBreak: "break-word",
@@ -1270,7 +1270,7 @@ const replySectionStyle: CSSProperties = {
 };
 
 const replySectionTitleStyle: CSSProperties = {
-  fontSize: 16,
+  fontSize: 18,
   fontWeight: 900,
   color: "#0f172a",
   marginBottom: 12,
@@ -1282,7 +1282,7 @@ const emptyReplyStyle: CSSProperties = {
   border: "1px dashed #cbd5e1",
   padding: 16,
   color: "#64748b",
-  fontSize: 14,
+  fontSize: 16,
   fontWeight: 600,
 };
 
@@ -1312,19 +1312,19 @@ const replyEventChipStyle: CSSProperties = {
   border: "1px solid rgba(239, 68, 68, 0.25)",
   borderRadius: 999,
   padding: "6px 10px",
-  fontSize: 12,
+  fontSize: 13,
   fontWeight: 700,
 };
 
 const replyDateStyle: CSSProperties = {
-  fontSize: 12,
+  fontSize: 13,
   color: "#64748b",
   fontWeight: 700,
 };
 
 const replyBodyStyle: CSSProperties = {
   marginTop: 10,
-  fontSize: 15,
+  fontSize: 17,
   lineHeight: 1.6,
   color: "#0f172a",
   wordBreak: "break-word",
@@ -1332,7 +1332,7 @@ const replyBodyStyle: CSSProperties = {
 
 const replyIdStyle: CSSProperties = {
   marginTop: 10,
-  fontSize: 12,
+  fontSize: 13,
   color: "#64748b",
 };
 
@@ -1399,14 +1399,14 @@ const toastDotStyle: CSSProperties = {
 };
 
 const toastTitleStyle: CSSProperties = {
-  fontSize: 16,
+  fontSize: 18,
   fontWeight: 900,
   lineHeight: 1.2,
 };
 
 const toastMessageStyle: CSSProperties = {
   marginTop: 6,
-  fontSize: 15,
+  fontSize: 17,
   lineHeight: 1.6,
   color: "rgba(255,255,255,0.95)",
 };

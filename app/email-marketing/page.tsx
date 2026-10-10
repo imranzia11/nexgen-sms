@@ -985,7 +985,7 @@ const brandTitleStyle: CSSProperties = {
 const brandSubStyle: CSSProperties = {
   marginTop: 4,
   color: "rgba(236, 254, 255, 0.7)",
-  fontSize: 13,
+  fontSize: 15,
 };
 
 const adminMiniCardStyle: CSSProperties = {
@@ -1014,13 +1014,13 @@ const avatarStyle: CSSProperties = {
 
 const sidebarSmallLabelStyle: CSSProperties = {
   color: "rgba(236, 254, 255, 0.68)",
-  fontSize: 12,
+  fontSize: 13,
 };
 
 const sidebarAdminNameStyle: CSSProperties = {
   marginTop: 4,
   color: "#ffffff",
-  fontSize: 16,
+  fontSize: 18,
   fontWeight: 800,
 };
 
@@ -1064,8 +1064,8 @@ const sidebarRepliesTitleStyle: CSSProperties = {
 
 const sidebarRepliesTextStyle: CSSProperties = {
   marginTop: 6,
-  color: "rgba(236, 254, 255, 0.78)",
-  fontSize: 13,
+  color: "rgba(236, 254, 255, 0.95)",
+  fontSize: 15,
   lineHeight: 1.4,
 };
 
@@ -1141,7 +1141,7 @@ const headerTitleStyle: CSSProperties = {
 const headerSubStyle: CSSProperties = {
   marginTop: 4,
   color: "rgba(236,254,255,0.85)",
-  fontSize: 13,
+  fontSize: 15,
 };
 
 const rollbackNoticeStyle: CSSProperties = {
@@ -1153,13 +1153,13 @@ const rollbackNoticeStyle: CSSProperties = {
   background: "rgba(220,38,38,0.12)",
   border: "1px solid rgba(220,38,38,0.35)",
   color: "#991b1b",
-  fontSize: 13.5,
+  fontSize: 15,
   fontWeight: 700,
   lineHeight: 1.6,
 };
 
 const rollbackNoticeIconStyle: CSSProperties = {
-  fontSize: 16,
+  fontSize: 18,
   flexShrink: 0,
 };
 
@@ -1186,7 +1186,7 @@ const metricCardStyle: CSSProperties = {
 };
 
 const metricLabelStyle: CSSProperties = {
-  fontSize: 12,
+  fontSize: 13,
   fontWeight: 700,
   color: "#64748b",
   textTransform: "uppercase",
@@ -1209,7 +1209,7 @@ const noteBoxStyle: CSSProperties = {
   WebkitBackdropFilter: "blur(10px)",
   border: "1px solid rgba(15,23,42,0.06)",
   color: "#475569",
-  fontSize: 12.5,
+  fontSize: 14,
   lineHeight: 1.6,
 };
 
@@ -1247,7 +1247,7 @@ const gateTitleStyle: CSSProperties = {
 const gateTextStyle: CSSProperties = {
   margin: "10px 0 20px 0",
   color: "#475569",
-  fontSize: 14,
+  fontSize: 16,
   lineHeight: 1.6,
 };
 
@@ -1261,7 +1261,7 @@ const gateInputStyle: CSSProperties = {
   border: "1px solid #cbd5e1",
   borderRadius: 14,
   padding: "14px 16px",
-  fontSize: 15,
+  fontSize: 17,
   boxSizing: "border-box",
 };
 
@@ -1273,21 +1273,21 @@ const gateButtonStyle: CSSProperties = {
   background: "#0d9488",
   color: "#ffffff",
   fontWeight: 800,
-  fontSize: 15,
+  fontSize: 17,
   cursor: "pointer",
 };
 
 const gateErrorStyle: CSSProperties = {
   marginTop: 6,
   color: "#b91c1c",
-  fontSize: 13.5,
+  fontSize: 15,
   textAlign: "left",
 };
 
 const gateNoteStyle: CSSProperties = {
   marginTop: 6,
   color: "#0f766e",
-  fontSize: 13.5,
+  fontSize: 15,
   textAlign: "left",
 };
 
@@ -1314,7 +1314,7 @@ const sectionBadgeStyle: CSSProperties = {
   borderRadius: "50%",
   background: "#0d9488",
   color: "#ffffff",
-  fontSize: 13,
+  fontSize: 15,
   fontWeight: 800,
   display: "grid",
   placeItems: "center",
@@ -1339,7 +1339,7 @@ const csvFormatBoxStyle: CSSProperties = {
 };
 
 const csvFormatTitleStyle: CSSProperties = {
-  fontSize: 13,
+  fontSize: 15,
   fontWeight: 800,
   color: "#0f172a",
   marginBottom: 10,
@@ -1356,7 +1356,7 @@ const csvFormatTableStyle: CSSProperties = {
 
 const csvFormatHeaderCellStyle: CSSProperties = {
   padding: "8px 12px",
-  fontSize: 12.5,
+  fontSize: 14,
   fontWeight: 800,
   color: "#0f766e",
   background: "rgba(13,148,136,0.1)",
@@ -1365,13 +1365,13 @@ const csvFormatHeaderCellStyle: CSSProperties = {
 
 const csvFormatExampleCellStyle: CSSProperties = {
   padding: "8px 12px",
-  fontSize: 12.5,
+  fontSize: 14,
   color: "#334155",
 };
 
 const csvFormatHintStyle: CSSProperties = {
   marginTop: 10,
-  fontSize: 12,
+  fontSize: 13,
   color: "#64748b",
   lineHeight: 1.5,
 };
@@ -1400,14 +1400,14 @@ const dropzoneIconStyle: CSSProperties = {
 };
 
 const dropzoneTitleStyle: CSSProperties = {
-  fontSize: 14,
+  fontSize: 16,
   fontWeight: 700,
   color: "#0f172a",
 };
 
 const dropzoneHintStyle: CSSProperties = {
   marginTop: 4,
-  fontSize: 12.5,
+  fontSize: 14,
   color: "#64748b",
 };
 
@@ -1415,7 +1415,7 @@ const cardHintStyle: CSSProperties = {
   marginTop: 6,
   marginBottom: 14,
   color: "#64748b",
-  fontSize: 13.5,
+  fontSize: 15,
   lineHeight: 1.5,
 };
 
@@ -1433,20 +1433,20 @@ const uploadButtonStyle: CSSProperties = {
   background: "#f0fdfa",
   color: "#0f766e",
   fontWeight: 800,
-  fontSize: 13.5,
+  fontSize: 15,
   cursor: "pointer",
 };
 
 const uploadedFileNameStyle: CSSProperties = {
   color: "#334155",
-  fontSize: 13.5,
+  fontSize: 15,
 };
 
 const clearButtonStyle: CSSProperties = {
   border: "none",
   background: "transparent",
   color: "#b91c1c",
-  fontSize: 13,
+  fontSize: 15,
   fontWeight: 700,
   cursor: "pointer",
 };
@@ -1461,7 +1461,7 @@ const leadStatsRowStyle: CSSProperties = {
 const leadStatChipStyle: CSSProperties = {
   borderRadius: 999,
   padding: "6px 14px",
-  fontSize: 12.5,
+  fontSize: 14,
   fontWeight: 800,
   background: "#f1f5f9",
   color: "#334155",
@@ -1488,7 +1488,7 @@ const leadTableWrapStyle: CSSProperties = {
 const leadTableStyle: CSSProperties = {
   width: "100%",
   borderCollapse: "collapse",
-  fontSize: 13.5,
+  fontSize: 15,
 };
 
 const leadTableHeadCellStyle: CSSProperties = {
@@ -1522,7 +1522,7 @@ const fieldLabelStyle: CSSProperties = {
   display: "block",
   marginTop: 16,
   marginBottom: 6,
-  fontSize: 13,
+  fontSize: 15,
   fontWeight: 800,
   color: "#334155",
 };
@@ -1532,7 +1532,7 @@ const fieldInputStyle: CSSProperties = {
   border: "1px solid #cbd5e1",
   borderRadius: 12,
   padding: "12px 14px",
-  fontSize: 14,
+  fontSize: 16,
   boxSizing: "border-box",
 };
 
@@ -1541,7 +1541,7 @@ const fieldTextareaStyle: CSSProperties = {
   border: "1px solid #cbd5e1",
   borderRadius: 12,
   padding: "12px 14px",
-  fontSize: 14,
+  fontSize: 16,
   lineHeight: 1.6,
   boxSizing: "border-box",
   resize: "vertical",
@@ -1555,7 +1555,7 @@ const summaryCardStyle: CSSProperties = {
   background: "#f0fdfa",
   color: "#0f766e",
   fontWeight: 700,
-  fontSize: 13.5,
+  fontSize: 15,
 };
 
 const sendButtonStyle: CSSProperties = {
@@ -1567,7 +1567,7 @@ const sendButtonStyle: CSSProperties = {
   background: "#0d9488",
   color: "#ffffff",
   fontWeight: 800,
-  fontSize: 15,
+  fontSize: 17,
   cursor: "pointer",
 };
 
@@ -1582,7 +1582,7 @@ const sendProgressCardStyle: CSSProperties = {
 const sendProgressTopRowStyle: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
-  fontSize: 13,
+  fontSize: 15,
   fontWeight: 800,
   color: "#334155",
 };
@@ -1607,6 +1607,6 @@ const sendProgressFillStyle: CSSProperties = {
 
 const sendProgressWarningStyle: CSSProperties = {
   marginTop: 10,
-  fontSize: 12.5,
+  fontSize: 14,
   color: "#b45309",
 };

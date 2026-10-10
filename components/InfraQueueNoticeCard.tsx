@@ -60,7 +60,7 @@ const iconStyle: CSSProperties = {
 
 const titleStyle: CSSProperties = {
   color: "#ffffff",
-  fontSize: 16,
+  fontSize: 18,
   fontWeight: 900,
   lineHeight: 1.2,
   letterSpacing: 0.2,
@@ -68,7 +68,7 @@ const titleStyle: CSSProperties = {
 
 const bodyStyle: CSSProperties = {
   color: "#ffffff",
-  fontSize: 13,
+  fontSize: 15,
   lineHeight: 1.5,
   fontWeight: 700,
 };

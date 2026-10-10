@@ -521,7 +521,7 @@ const brandTitleStyle: CSSProperties = {
 const brandSubStyle: CSSProperties = {
   marginTop: 4,
   color: "rgba(236, 254, 255, 0.7)",
-  fontSize: 13,
+  fontSize: 15,
 };
 
 const adminMiniCardStyle: CSSProperties = {
@@ -550,13 +550,13 @@ const avatarStyle: CSSProperties = {
 
 const sidebarSmallLabelStyle: CSSProperties = {
   color: "rgba(236, 254, 255, 0.68)",
-  fontSize: 12,
+  fontSize: 13,
 };
 
 const sidebarAdminNameStyle: CSSProperties = {
   marginTop: 4,
   color: "#ffffff",
-  fontSize: 16,
+  fontSize: 18,
   fontWeight: 800,
 };
 
@@ -591,15 +591,15 @@ const sidebarIconStyle: CSSProperties = {
 
 const sidebarCardTitleStyle: CSSProperties = {
   color: "#ffffff",
-  fontSize: 16,
+  fontSize: 18,
   fontWeight: 900,
   lineHeight: 1.1,
 };
 
 const sidebarCardTextStyle: CSSProperties = {
   marginTop: 6,
-  color: "rgba(236, 254, 255, 0.78)",
-  fontSize: 12,
+  color: "rgba(236, 254, 255, 0.95)",
+  fontSize: 13,
   lineHeight: 1.4,
 };
 
@@ -639,7 +639,7 @@ const heroBadgeStyle: CSSProperties = {
   background: "rgba(255,255,255,0.14)",
   border: "1px solid rgba(255,255,255,0.18)",
   color: "#ecfeff",
-  fontSize: 12,
+  fontSize: 13,
   fontWeight: 800,
 };
 
@@ -655,7 +655,7 @@ const heroTextStyle: CSSProperties = {
   margin: "10px 0 0 0",
   maxWidth: 760,
   color: "rgba(236,254,255,0.86)",
-  fontSize: 15,
+  fontSize: 17,
   lineHeight: 1.6,
 };
 
@@ -665,14 +665,14 @@ const complianceBannerStyle: CSSProperties = {
   background: "#fffbeb",
   border: "1px solid #fbbf24",
   color: "#92400e",
-  fontSize: 14,
+  fontSize: 16,
   lineHeight: 1.5,
 };
 
 const complianceWarningStyle: CSSProperties = {
   marginTop: 6,
   color: "#b91c1c",
-  fontSize: 12,
+  fontSize: 13,
   fontWeight: 700,
 };
 
@@ -706,7 +706,7 @@ const slotNumberStyle: CSSProperties = {
   background: "#ccfbf1",
   color: "#115e59",
   fontWeight: 900,
-  fontSize: 14,
+  fontSize: 16,
   flexShrink: 0,
 };
 
@@ -717,7 +717,7 @@ const slotNameInputStyle: CSSProperties = {
   padding: "10px 14px",
   background: "#f8fafc",
   color: "#0f172a",
-  fontSize: 15,
+  fontSize: 17,
   fontWeight: 700,
   outline: "none",
 };
@@ -726,7 +726,7 @@ const fieldLabelStyle: CSSProperties = {
   display: "block",
   marginBottom: 8,
   color: "#334155",
-  fontSize: 13,
+  fontSize: 15,
   fontWeight: 800,
 };
 
@@ -737,7 +737,7 @@ const fieldTextareaStyle: CSSProperties = {
   padding: "12px 14px",
   background: "#ffffff",
   color: "#0f172a",
-  fontSize: 14,
+  fontSize: 16,
   resize: "vertical",
   outline: "none",
 };
@@ -748,7 +748,7 @@ const charHintStyle: CSSProperties = {
   justifyContent: "flex-end",
   gap: 6,
   color: "#94a3b8",
-  fontSize: 12,
+  fontSize: 13,
 };
 
 const slotActionsStyle: CSSProperties = {
@@ -765,7 +765,7 @@ const saveButtonStyle: CSSProperties = {
   background: "linear-gradient(135deg, #0f766e 0%, #0d9488 100%)",
   color: "#ffffff",
   fontWeight: 800,
-  fontSize: 14,
+  fontSize: 16,
 };
 
 const clearButtonStyle: CSSProperties = {
@@ -775,7 +775,7 @@ const clearButtonStyle: CSSProperties = {
   background: "#ffffff",
   color: "#475569",
   fontWeight: 800,
-  fontSize: 14,
+  fontSize: 16,
   cursor: "pointer",
 };
 
@@ -819,14 +819,14 @@ const toastDotStyle: CSSProperties = {
 };
 
 const toastTitleStyle: CSSProperties = {
-  fontSize: 16,
+  fontSize: 18,
   fontWeight: 900,
   lineHeight: 1.2,
 };
 
 const toastMessageStyle: CSSProperties = {
   marginTop: 6,
-  fontSize: 15,
+  fontSize: 17,
   lineHeight: 1.6,
   color: "rgba(255,255,255,0.95)",
 };

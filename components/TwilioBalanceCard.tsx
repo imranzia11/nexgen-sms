@@ -167,7 +167,7 @@ const titleStyle: CSSProperties = {
 const valueStyle: CSSProperties = {
   marginTop: 6,
   color: "#ffffff",
-  fontSize: 16,
+  fontSize: 18,
   fontWeight: 900,
   wordBreak: "break-word",
 };
@@ -179,7 +179,7 @@ const valueStyleLow: CSSProperties = {
 
 const hintStyleLow: CSSProperties = {
   color: "#fecaca",
-  fontSize: 12.5,
+  fontSize: 14,
   lineHeight: 1.5,
   fontWeight: 700,
 };
@@ -192,7 +192,7 @@ const refreshButtonStyle: CSSProperties = {
   background: "rgba(255,255,255,0.08)",
   color: "#ffffff",
   fontWeight: 800,
-  fontSize: 13,
+  fontSize: 15,
   cursor: "pointer",
 };
 

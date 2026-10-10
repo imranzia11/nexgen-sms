@@ -357,7 +357,7 @@ export default function StatsPage() {
                   <div style={sidebarRepliesTextStyle}>
 Send campaigns{" "}
 <span
- style={{ display: "inline-block", marginLeft: 4, padding: "1px 8px", borderRadius: 999, background: "rgba(251,191,36,0.25)", border: "1px solid rgba(251,191,36,0.6)", color: "#fde68a", fontSize: 10.5, fontWeight: 900, letterSpacing: 0.4, textTransform: "uppercase" }}
+ style={{ display: "inline-block", marginLeft: 4, padding: "1px 8px", borderRadius: 999, background: "rgba(251,191,36,0.25)", border: "1px solid rgba(251,191,36,0.6)", color: "#fde68a", fontSize: 12, fontWeight: 900, letterSpacing: 0.4, textTransform: "uppercase" }}
 >
 Beta Version
 </span>
@@ -547,7 +547,7 @@ const brandTitleStyle: CSSProperties = {
 const brandSubStyle: CSSProperties = {
   marginTop: 4,
   color: "rgba(236, 254, 255, 0.7)",
-  fontSize: 13,
+  fontSize: 15,
 };
 
 const adminMiniCardStyle: CSSProperties = {
@@ -605,7 +605,7 @@ const comingSoonTitleStyle: CSSProperties = {
 const comingSoonTextStyle: CSSProperties = {
   margin: "12px 0 0 0",
   color: "rgba(226, 232, 240, 0.92)",
-  fontSize: 15,
+  fontSize: 17,
   lineHeight: 1.6,
 };
 
@@ -617,7 +617,7 @@ const comingSoonCloseButtonStyle: CSSProperties = {
   padding: "14px 16px",
   background: "#2dd4bf",
   color: "#022c22",
-  fontSize: 15,
+  fontSize: 17,
   fontWeight: 800,
   cursor: "pointer",
 };
@@ -637,13 +637,13 @@ const avatarStyle: CSSProperties = {
 
 const sidebarSmallLabelStyle: CSSProperties = {
   color: "rgba(236, 254, 255, 0.68)",
-  fontSize: 12,
+  fontSize: 13,
 };
 
 const sidebarAdminNameStyle: CSSProperties = {
   marginTop: 4,
   color: "#ffffff",
-  fontSize: 16,
+  fontSize: 18,
   fontWeight: 800,
 };
 
@@ -704,8 +704,8 @@ const sidebarRepliesTitleStyle: CSSProperties = {
 
 const sidebarRepliesTextStyle: CSSProperties = {
   marginTop: 6,
-  color: "rgba(236, 254, 255, 0.78)",
-  fontSize: 13,
+  color: "rgba(236, 254, 255, 0.95)",
+  fontSize: 15,
   lineHeight: 1.4,
 };
 
@@ -768,7 +768,7 @@ const heroBadgeStyle: CSSProperties = {
   background: "rgba(255,255,255,0.14)",
   border: "1px solid rgba(255,255,255,0.18)",
   color: "#ecfeff",
-  fontSize: 11,
+  fontSize: 12,
   fontWeight: 800,
   letterSpacing: 0.3,
 };
@@ -785,7 +785,7 @@ const heroTextStyle: CSSProperties = {
   margin: "5px 0 0 0",
   maxWidth: 760,
   color: "rgba(236,254,255,0.92)",
-  fontSize: 13,
+  fontSize: 15,
   lineHeight: 1.5,
 };
 
@@ -803,7 +803,7 @@ const monthInputStyle: CSSProperties = {
   padding: "8px 12px",
   background: "rgba(255,255,255,0.12)",
   color: "#ffffff",
-  fontSize: 13,
+  fontSize: 15,
   fontWeight: 600,
   colorScheme: "dark",
 };
@@ -815,7 +815,7 @@ const heroPrimaryButtonStyle: CSSProperties = {
   background: "#ecfeff",
   color: "#0f766e",
   fontWeight: 900,
-  fontSize: 13,
+  fontSize: 15,
   cursor: "pointer",
 };
 
@@ -844,7 +844,7 @@ const panelTitleStyle: CSSProperties = {
 const panelDescStyle: CSSProperties = {
   margin: "8px 0 0 0",
   color: "#64748b",
-  fontSize: 14,
+  fontSize: 16,
   lineHeight: 1.5,
 };
 
@@ -923,7 +923,7 @@ const yAxisLabelStyle: CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
   color: "#0f172a",
-  fontSize: 16,
+  fontSize: 18,
   fontWeight: 800,
   letterSpacing: 0.4,
   whiteSpace: "nowrap",
@@ -940,7 +940,7 @@ const xAxisLabelStyle: CSSProperties = {
   textAlign: "center",
   marginTop: 10,
   color: "#0f172a",
-  fontSize: 16,
+  fontSize: 18,
   fontWeight: 800,
   letterSpacing: 0.4,
 };
@@ -950,7 +950,7 @@ const errorBoxStyle: CSSProperties = {
   padding: "14px 16px",
   background: "#7f1d1d",
   color: "#ffffff",
-  fontSize: 14,
+  fontSize: 16,
   lineHeight: 1.5,
 };
 

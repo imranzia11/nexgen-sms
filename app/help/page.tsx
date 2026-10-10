@@ -538,7 +538,7 @@ export default function HelpPage() {
                   <div style={sidebarRepliesTextStyle}>
 Send campaigns{" "}
 <span
- style={{ display: "inline-block", marginLeft: 4, padding: "1px 8px", borderRadius: 999, background: "rgba(251,191,36,0.25)", border: "1px solid rgba(251,191,36,0.6)", color: "#fde68a", fontSize: 10.5, fontWeight: 900, letterSpacing: 0.4, textTransform: "uppercase" }}
+ style={{ display: "inline-block", marginLeft: 4, padding: "1px 8px", borderRadius: 999, background: "rgba(251,191,36,0.25)", border: "1px solid rgba(251,191,36,0.6)", color: "#fde68a", fontSize: 12, fontWeight: 900, letterSpacing: 0.4, textTransform: "uppercase" }}
 >
 Beta Version
 </span>
@@ -726,7 +726,7 @@ const brandTitleStyle: CSSProperties = {
 const brandSubStyle: CSSProperties = {
   marginTop: 4,
   color: "rgba(236, 254, 255, 0.7)",
-  fontSize: 13,
+  fontSize: 15,
 };
 
 const adminMiniCardStyle: CSSProperties = {
@@ -784,7 +784,7 @@ const comingSoonTitleStyle: CSSProperties = {
 const comingSoonTextStyle: CSSProperties = {
   margin: "12px 0 0 0",
   color: "rgba(226, 232, 240, 0.92)",
-  fontSize: 15,
+  fontSize: 17,
   lineHeight: 1.6,
 };
 
@@ -796,7 +796,7 @@ const comingSoonCloseButtonStyle: CSSProperties = {
   padding: "14px 16px",
   background: "#2dd4bf",
   color: "#022c22",
-  fontSize: 15,
+  fontSize: 17,
   fontWeight: 800,
   cursor: "pointer",
 };
@@ -816,13 +816,13 @@ const avatarStyle: CSSProperties = {
 
 const sidebarSmallLabelStyle: CSSProperties = {
   color: "rgba(236, 254, 255, 0.68)",
-  fontSize: 12,
+  fontSize: 13,
 };
 
 const sidebarAdminNameStyle: CSSProperties = {
   marginTop: 4,
   color: "#ffffff",
-  fontSize: 16,
+  fontSize: 18,
   fontWeight: 800,
 };
 
@@ -883,8 +883,8 @@ const sidebarRepliesTitleStyle: CSSProperties = {
 
 const sidebarRepliesTextStyle: CSSProperties = {
   marginTop: 6,
-  color: "rgba(236, 254, 255, 0.78)",
-  fontSize: 13,
+  color: "rgba(236, 254, 255, 0.95)",
+  fontSize: 15,
   lineHeight: 1.4,
 };
 
@@ -937,7 +937,7 @@ const chatHeaderTitleStyle: CSSProperties = {
 const chatHeaderSubStyle: CSSProperties = {
   marginTop: 4,
   color: "rgba(236,254,255,0.85)",
-  fontSize: 13,
+  fontSize: 15,
 };
 
 const chatPanelStyle: CSSProperties = {
@@ -975,7 +975,7 @@ const chatAvatarSmallStyle: CSSProperties = {
   placeItems: "center",
   background: "#ccfbf1",
   color: "#115e59",
-  fontSize: 15,
+  fontSize: 17,
   flexShrink: 0,
 };
 
@@ -983,7 +983,7 @@ const bubbleBaseStyle: CSSProperties = {
   maxWidth: "70%",
   padding: "14px 16px",
   borderRadius: 20,
-  fontSize: 14.5,
+  fontSize: 16,
   lineHeight: 1.6,
 };
 
@@ -1024,7 +1024,7 @@ const inlineSupportButtonStyle: CSSProperties = {
   background: "#0f172a",
   color: "#ffffff",
   fontWeight: 800,
-  fontSize: 13,
+  fontSize: 15,
   cursor: "pointer",
 };
 
@@ -1044,7 +1044,7 @@ const chipStyle: CSSProperties = {
   padding: "8px 14px",
   background: "rgba(13,148,136,0.06)",
   color: "#0d9488",
-  fontSize: 12.5,
+  fontSize: 14,
   fontWeight: 700,
   cursor: "pointer",
   whiteSpace: "nowrap",
@@ -1062,7 +1062,7 @@ const chatInputStyle: CSSProperties = {
   border: "1px solid rgba(15,23,42,0.12)",
   borderRadius: 16,
   padding: "14px 16px",
-  fontSize: 14.5,
+  fontSize: 16,
   outline: "none",
   background: "#f8fafc",
   color: "#0f172a",
@@ -1075,7 +1075,7 @@ const chatSendButtonStyle: CSSProperties = {
   background: "#0d9488",
   color: "#ffffff",
   fontWeight: 800,
-  fontSize: 14,
+  fontSize: 16,
   cursor: "pointer",
 };
 
@@ -1087,6 +1087,6 @@ const footerSupportButtonStyle: CSSProperties = {
   background: "#ffffff",
   color: "#0d9488",
   fontWeight: 800,
-  fontSize: 13,
+  fontSize: 15,
   cursor: "pointer",
 };
