@@ -142,8 +142,9 @@ function getInitialDashboardCache(): DashboardCache | null {
   return null;
 }
 
-const DEFAULT_SMS_MESSAGE =
-  "Quick question - does your business need extra capital right now? We can approve $10K-$500K within hours. Reply STOP to opt out, Reply YES to get Funds.";
+// No pre-filled message - the box starts empty and shows a placeholder
+// instead, so every campaign is written fresh or loaded from a template.
+const DEFAULT_SMS_MESSAGE = "";
 
 const DEFAULT_FOLLOW_UP_MESSAGE =
   "Hey, following up to know if you're still interested.";
@@ -2120,6 +2121,9 @@ Beta Version
                     <textarea
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
+                      placeholder={
+                        'Write your message here and save it, or select a saved template above.\n\nRemember to include "Reply STOP to opt out, HELP for help." in the first text.'
+                      }
                       rows={8}
                       style={fieldTextareaStyle}
                     />
