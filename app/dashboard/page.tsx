@@ -1718,14 +1718,6 @@ Beta Version
                   Stats
                 </Link>
 
-                <a
-                  href="https://nexgenmerchant-finder.web.app/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={sidebarSecondaryLinkButtonStyle}
-                >
-                  Beta Version - Lead Generation
-                </a>
 
                 <button onClick={handleLogout} style={sidebarLogoutButtonStyle}>
                   Logout
