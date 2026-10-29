@@ -70,6 +70,19 @@ export default function AdminOverviewPage() {
   const [busyUid, setBusyUid] = useState("");
   const [actionError, setActionError] = useState("");
 
+  // Create-account form: only the fields the app needs. The superadmin sets
+  // the password here and hands the credentials to the user.
+  const [showCreate, setShowCreate] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const [createdNote, setCreatedNote] = useState("");
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+    twilioNumber: "",
+  });
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) {
@@ -199,6 +212,50 @@ export default function AdminOverviewPage() {
     }
   };
 
+  const handleCreateAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    try {
+      setCreating(true);
+      setCreateError("");
+      setCreatedNote("");
+
+      const user = auth.currentUser;
+      if (!user) throw new Error("You are not signed in.");
+      const idToken = await user.getIdToken();
+
+      const res = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(form),
+      });
+      const body = await res.json().catch(() => ({}));
+
+      if (!res.ok || !body.ok) {
+        throw new Error(body.error || "Failed to create account.");
+      }
+
+      setAccounts((prev) =>
+        [...prev, body.account as AccountRow].sort((a, b) =>
+          a.email.localeCompare(b.email)
+        )
+      );
+      setCreatedNote(
+        `Account created. Login: ${body.account.email} - give the user the password you just set.`
+      );
+      setForm({ name: "", email: "", password: "", twilioNumber: "" });
+    } catch (error: unknown) {
+      setCreateError(
+        error instanceof Error ? error.message : "Failed to create account."
+      );
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const activeCount = accounts.filter((a) => a.isActive).length;
   const inactiveCount = accounts.length - activeCount;
 
@@ -219,6 +276,17 @@ export default function AdminOverviewPage() {
             </p>
           </div>
           <div style={heroActionsStyle}>
+            <button
+              type="button"
+              onClick={() => {
+                setShowCreate((v) => !v);
+                setCreateError("");
+                setCreatedNote("");
+              }}
+              style={logoutButtonStyle}
+            >
+              {showCreate ? "Close" : "Create Account"}
+            </button>
             <Link href="/admin/broadcast" style={diagnoseLinkStyle}>
               Send Update
             </Link>
@@ -330,6 +398,67 @@ export default function AdminOverviewPage() {
           <div style={errorStateStyle}>{billingError}</div>
         ) : null}
 
+        {showCreate ? (
+          <form onSubmit={handleCreateAccount} style={createFormStyle} autoComplete="off">
+            <div style={createFormTitleStyle}>Create account</div>
+            <div style={createGridStyle}>
+              <label style={createLabelStyle}>
+                Name
+                <input
+                  style={createInputStyle}
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                  placeholder="Andy"
+                  required
+                />
+              </label>
+              <label style={createLabelStyle}>
+                Login email (username)
+                <input
+                  style={createInputStyle}
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                  placeholder="andy@company.com"
+                  autoComplete="off"
+                  required
+                />
+              </label>
+              <label style={createLabelStyle}>
+                Password (min 8 characters)
+                <input
+                  style={createInputStyle}
+                  type="text"
+                  value={form.password}
+                  onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                  placeholder="Set a password"
+                  autoComplete="off"
+                  minLength={8}
+                  required
+                />
+              </label>
+              <label style={createLabelStyle}>
+                Twilio number
+                <input
+                  style={createInputStyle}
+                  value={form.twilioNumber}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, twilioNumber: e.target.value }))
+                  }
+                  placeholder="+14234019888"
+                  autoComplete="off"
+                  required
+                />
+              </label>
+            </div>
+            {createError ? <div style={createErrorStyle}>{createError}</div> : null}
+            {createdNote ? <div style={createSuccessStyle}>{createdNote}</div> : null}
+            <button type="submit" disabled={creating} style={createSubmitStyle}>
+              {creating ? "Creating..." : "Create account"}
+            </button>
+          </form>
+        ) : null}
+
         {loading ? (
           <div style={emptyStateStyle}>Loading accounts...</div>
         ) : loadError ? (
@@ -404,6 +533,79 @@ export default function AdminOverviewPage() {
     </main>
   );
 }
+
+const createFormStyle: CSSProperties = {
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 22,
+  padding: 24,
+  margin: "0 0 24px",
+  display: "grid",
+  gap: 16,
+  boxShadow: "0 12px 30px rgba(15,23,42,0.06)",
+};
+
+const createFormTitleStyle: CSSProperties = {
+  fontSize: 20,
+  fontWeight: 900,
+  color: "#0f172a",
+};
+
+const createGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+  gap: 14,
+};
+
+const createLabelStyle: CSSProperties = {
+  display: "grid",
+  gap: 6,
+  fontSize: 13,
+  fontWeight: 800,
+  color: "#334155",
+};
+
+const createInputStyle: CSSProperties = {
+  border: "1px solid #cbd5e1",
+  borderRadius: 12,
+  padding: "11px 14px",
+  fontSize: 15,
+  color: "#0f172a",
+  background: "#f8fafc",
+  outline: "none",
+};
+
+const createErrorStyle: CSSProperties = {
+  background: "#fee2e2",
+  color: "#991b1b",
+  border: "1px solid #fecaca",
+  borderRadius: 12,
+  padding: "10px 14px",
+  fontSize: 14,
+  fontWeight: 700,
+};
+
+const createSuccessStyle: CSSProperties = {
+  background: "#dcfce7",
+  color: "#166534",
+  border: "1px solid #bbf7d0",
+  borderRadius: 12,
+  padding: "10px 14px",
+  fontSize: 14,
+  fontWeight: 700,
+};
+
+const createSubmitStyle: CSSProperties = {
+  justifySelf: "start",
+  border: "none",
+  borderRadius: 14,
+  padding: "12px 24px",
+  background: "#0f766e",
+  color: "#ffffff",
+  fontSize: 15,
+  fontWeight: 800,
+  cursor: "pointer",
+};
 
 const toggleButtonStyle: CSSProperties = {
   border: "1px solid transparent",
