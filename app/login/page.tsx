@@ -165,7 +165,11 @@ function LoginPageInner() {
 
       router.push(nextPath);
     } catch (err: any) {
-      setError(err?.message || "Login failed");
+      setError(
+        err?.code === "auth/user-disabled"
+          ? "Access denied. Account inactive."
+          : err?.message || "Login failed"
+      );
     }
 
     setLoading(false);

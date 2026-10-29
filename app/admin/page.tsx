@@ -67,6 +67,8 @@ export default function AdminOverviewPage() {
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [billing, setBilling] = useState<Billing | null>(null);
   const [billingError, setBillingError] = useState("");
+  const [busyUid, setBusyUid] = useState("");
+  const [actionError, setActionError] = useState("");
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -149,6 +151,52 @@ export default function AdminOverviewPage() {
   const handleLogout = async () => {
     await signOut(auth).catch(() => {});
     router.push("/login");
+  };
+
+  // Enables/disables one account via the superadmin-only status route. A
+  // disabled account can't sign in (login screen + Firebase Auth both refuse
+  // it) and any open session is signed out on its next load.
+  const handleToggleAccount = async (account: AccountRow) => {
+    const nextActive = !account.isActive;
+    const ok = window.confirm(
+      nextActive
+        ? `Enable ${account.email || "this account"}? They will be able to log in again.`
+        : `Disable ${account.email || "this account"}? They will not be able to log in until you enable it again.`
+    );
+    if (!ok) return;
+
+    try {
+      setBusyUid(account.uid);
+      setActionError("");
+
+      const user = auth.currentUser;
+      if (!user) throw new Error("You are not signed in.");
+      const idToken = await user.getIdToken();
+
+      const res = await fetch(`/api/admin/account/${account.uid}/status`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ isActive: nextActive }),
+      });
+      const body = await res.json().catch(() => ({}));
+
+      if (!res.ok || !body.ok) {
+        throw new Error(body.error || "Failed to update account.");
+      }
+
+      setAccounts((prev) =>
+        prev.map((a) => (a.uid === account.uid ? { ...a, isActive: nextActive } : a))
+      );
+    } catch (error: unknown) {
+      setActionError(
+        error instanceof Error ? error.message : "Failed to update account."
+      );
+    } finally {
+      setBusyUid("");
+    }
   };
 
   const activeCount = accounts.filter((a) => a.isActive).length;
@@ -286,10 +334,13 @@ export default function AdminOverviewPage() {
           <div style={emptyStateStyle}>Loading accounts...</div>
         ) : loadError ? (
           <div style={errorStateStyle}>{loadError}</div>
+        ) : actionError && accounts.length === 0 ? (
+          <div style={errorStateStyle}>{actionError}</div>
         ) : accounts.length === 0 ? (
           <div style={emptyStateStyle}>No accounts found.</div>
         ) : (
           <div style={rosterListStyle}>
+            {actionError ? <div style={errorStateStyle}>{actionError}</div> : null}
             {accounts.map((account) => (
               <Link
                 key={account.uid}
@@ -317,6 +368,28 @@ export default function AdminOverviewPage() {
                   >
                     {account.isActive ? "Active" : "Inactive"}
                   </span>
+                  <button
+                    type="button"
+                    disabled={busyUid === account.uid}
+                    onClick={(e) => {
+                      // The whole card is a link to the detail page - keep
+                      // this click from navigating.
+                      e.preventDefault();
+                      e.stopPropagation();
+                      void handleToggleAccount(account);
+                    }}
+                    style={{
+                      ...toggleButtonStyle,
+                      ...(account.isActive ? toggleDisableStyle : toggleEnableStyle),
+                      opacity: busyUid === account.uid ? 0.6 : 1,
+                    }}
+                  >
+                    {busyUid === account.uid
+                      ? "Saving..."
+                      : account.isActive
+                      ? "Disable"
+                      : "Enable"}
+                  </button>
                   <div style={smsCountWrapStyle}>
                     <div style={smsCountValueStyle}>{account.smsSentCount}</div>
                     <div style={smsCountLabelStyle}>SMS sent</div>
@@ -331,6 +404,27 @@ export default function AdminOverviewPage() {
     </main>
   );
 }
+
+const toggleButtonStyle: CSSProperties = {
+  border: "1px solid transparent",
+  borderRadius: 12,
+  padding: "8px 16px",
+  fontSize: 14,
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const toggleDisableStyle: CSSProperties = {
+  background: "#fee2e2",
+  color: "#991b1b",
+  borderColor: "#fecaca",
+};
+
+const toggleEnableStyle: CSSProperties = {
+  background: "#dcfce7",
+  color: "#166534",
+  borderColor: "#bbf7d0",
+};
 
 const pageStyle: CSSProperties = {
   minHeight: "calc(100vh / var(--ui-zoom, 1))",
