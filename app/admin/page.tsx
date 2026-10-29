@@ -72,6 +72,7 @@ export default function AdminOverviewPage() {
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [billing, setBilling] = useState<Billing | null>(null);
   const [billingError, setBillingError] = useState("");
+  const [rosterTab, setRosterTab] = useState<"active" | "inactive">("active");
   const [busyUid, setBusyUid] = useState("");
   const [actionError, setActionError] = useState("");
 
@@ -637,8 +638,37 @@ export default function AdminOverviewPage() {
           <div style={emptyStateStyle}>No accounts found.</div>
         ) : (
           <div style={rosterListStyle}>
+            <div style={{ display: "flex", gap: 10 }}>
+              {(["active", "inactive"] as const).map((tab) => {
+                const count = accounts.filter(
+                  (a) => (tab === "active") === Boolean(a.isActive)
+                ).length;
+                const selected = rosterTab === tab;
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setRosterTab(tab)}
+                    style={{
+                      padding: "10px 20px",
+                      borderRadius: 999,
+                      border: "1px solid #cbd5e1",
+                      background: selected ? "#0f172a" : "#ffffff",
+                      color: selected ? "#ffffff" : "#334155",
+                      fontWeight: 800,
+                      fontSize: 15,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {tab === "active" ? "Active" : "Inactive"} ({count})
+                  </button>
+                );
+              })}
+            </div>
             {actionError ? <div style={errorStateStyle}>{actionError}</div> : null}
-            {accounts.map((account) => (
+            {accounts
+              .filter((a) => (rosterTab === "active") === Boolean(a.isActive))
+              .map((account) => (
               <Link
                 key={account.uid}
                 href={`/admin/${account.uid}`}
