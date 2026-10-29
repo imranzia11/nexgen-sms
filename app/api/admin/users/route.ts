@@ -63,6 +63,18 @@ export async function POST(req: NextRequest) {
       return fail("That Twilio number is already assigned to another account.", 409);
     }
 
+    // Also refuse a number still sitting on an ACTIVE account's doc (e.g. an
+    // account created before numberAssignments existed).
+    const holder = await adminDb
+      .collection("users")
+      .where("twilioNumber", "==", twilioNumber)
+      .where("isActive", "==", true)
+      .limit(1)
+      .get();
+    if (!holder.empty) {
+      return fail("That Twilio number is already assigned to another account.", 409);
+    }
+
     try {
       const authUser = await getAuth().createUser({
         email,

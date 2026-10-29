@@ -17,6 +17,11 @@ type AccountRow = {
   smsSentCount: number;
 };
 
+type AvailableNumber = {
+  phoneNumber: string;
+  friendlyName: string;
+};
+
 type BillingCategory = {
   category: string;
   description: string;
@@ -72,6 +77,11 @@ export default function AdminOverviewPage() {
 
   // Create-account form: only the fields the app needs. The superadmin sets
   // the password here and hands the credentials to the user.
+  const [availableNumbers, setAvailableNumbers] = useState<AvailableNumber[]>([]);
+  const [numbersLoading, setNumbersLoading] = useState(false);
+  const [numbersError, setNumbersError] = useState("");
+  const [enableFor, setEnableFor] = useState<AccountRow | null>(null);
+  const [enableNumber, setEnableNumber] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
@@ -169,43 +179,124 @@ export default function AdminOverviewPage() {
   // Enables/disables one account via the superadmin-only status route. A
   // disabled account can't sign in (login screen + Firebase Auth both refuse
   // it) and any open session is signed out on its next load.
+  //
+  // Disabling also RELEASES the account's Twilio number so it can be given to
+  // another account; enabling an account that no longer has a number asks
+  // which one to assign (dropdown of numbers not in use).
+
+  // Numbers that can be assigned right now (Twilio numbers not held by an
+  // active account). Reloaded whenever a dropdown is about to be shown and
+  // after a disable, since that frees a number.
+  const loadNumbers = async () => {
+    try {
+      setNumbersLoading(true);
+      setNumbersError("");
+
+      const user = auth.currentUser;
+      if (!user) throw new Error("You are not signed in.");
+      const idToken = await user.getIdToken();
+
+      const res = await fetch("/api/admin/numbers", {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      const body = await res.json().catch(() => ({}));
+
+      if (!res.ok || !body.ok) {
+        throw new Error(body.error || "Failed to load Twilio numbers.");
+      }
+
+      setAvailableNumbers((body.numbers || []) as AvailableNumber[]);
+    } catch (error: unknown) {
+      setNumbersError(
+        error instanceof Error ? error.message : "Failed to load Twilio numbers."
+      );
+    } finally {
+      setNumbersLoading(false);
+    }
+  };
+
+  const callStatusRoute = async (
+    account: AccountRow,
+    isActive: boolean,
+    twilioNumber?: string
+  ) => {
+    const user = auth.currentUser;
+    if (!user) throw new Error("You are not signed in.");
+    const idToken = await user.getIdToken();
+
+    const res = await fetch(`/api/admin/account/${account.uid}/status`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ isActive, ...(twilioNumber ? { twilioNumber } : {}) }),
+    });
+    const body = await res.json().catch(() => ({}));
+
+    if (!res.ok || !body.ok) {
+      throw new Error(body.error || "Failed to update account.");
+    }
+
+    setAccounts((prev) =>
+      prev.map((a) =>
+        a.uid === account.uid
+          ? { ...a, isActive, twilioNumber: String(body.twilioNumber || "") }
+          : a
+      )
+    );
+  };
+
   const handleToggleAccount = async (account: AccountRow) => {
     const nextActive = !account.isActive;
+
+    // Enabling an account with no number: pick one first.
+    if (nextActive && !account.twilioNumber) {
+      setActionError("");
+      setEnableFor(account);
+      setEnableNumber("");
+      void loadNumbers();
+      return;
+    }
+
     const ok = window.confirm(
       nextActive
         ? `Enable ${account.email || "this account"}? They will be able to log in again.`
-        : `Disable ${account.email || "this account"}? They will not be able to log in until you enable it again.`
+        : `Disable ${account.email || "this account"}? They will not be able to log in, and their Twilio number${account.twilioNumber ? ` (${account.twilioNumber})` : ""} will be released so it can be assigned to someone else.`
     );
     if (!ok) return;
 
     try {
       setBusyUid(account.uid);
       setActionError("");
-
-      const user = auth.currentUser;
-      if (!user) throw new Error("You are not signed in.");
-      const idToken = await user.getIdToken();
-
-      const res = await fetch(`/api/admin/account/${account.uid}/status`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({ isActive: nextActive }),
-      });
-      const body = await res.json().catch(() => ({}));
-
-      if (!res.ok || !body.ok) {
-        throw new Error(body.error || "Failed to update account.");
-      }
-
-      setAccounts((prev) =>
-        prev.map((a) => (a.uid === account.uid ? { ...a, isActive: nextActive } : a))
-      );
+      await callStatusRoute(account, nextActive);
+      if (!nextActive) void loadNumbers();
     } catch (error: unknown) {
       setActionError(
         error instanceof Error ? error.message : "Failed to update account."
+      );
+    } finally {
+      setBusyUid("");
+    }
+  };
+
+  const handleConfirmEnable = async () => {
+    if (!enableFor) return;
+    if (!enableNumber) {
+      setActionError("Select a Twilio number for this account.");
+      return;
+    }
+
+    try {
+      setBusyUid(enableFor.uid);
+      setActionError("");
+      await callStatusRoute(enableFor, true, enableNumber);
+      setEnableFor(null);
+      setEnableNumber("");
+      void loadNumbers();
+    } catch (error: unknown) {
+      setActionError(
+        error instanceof Error ? error.message : "Failed to enable account."
       );
     } finally {
       setBusyUid("");
@@ -247,6 +338,7 @@ export default function AdminOverviewPage() {
         `Account created. Login: ${body.account.email} - give the user the password you just set.`
       );
       setForm({ name: "", email: "", password: "", twilioNumber: "" });
+      void loadNumbers();
     } catch (error: unknown) {
       setCreateError(
         error instanceof Error ? error.message : "Failed to create account."
@@ -279,6 +371,7 @@ export default function AdminOverviewPage() {
             <button
               type="button"
               onClick={() => {
+                if (!showCreate) void loadNumbers();
                 setShowCreate((v) => !v);
                 setCreateError("");
                 setCreatedNote("");
@@ -398,6 +491,65 @@ export default function AdminOverviewPage() {
           <div style={errorStateStyle}>{billingError}</div>
         ) : null}
 
+        {enableFor ? (
+          <div style={createFormStyle}>
+            <div style={createFormTitleStyle}>
+              Enable {enableFor.email || "account"}
+            </div>
+            <div style={{ color: "#475569", fontSize: 14, fontWeight: 600 }}>
+              This account&apos;s old number was released when it was disabled. Pick
+              a number to assign now.
+            </div>
+            <label style={createLabelStyle}>
+              Twilio number
+              <select
+                style={createInputStyle}
+                value={enableNumber}
+                onChange={(e) => setEnableNumber(e.target.value)}
+              >
+                <option value="">
+                  {numbersLoading
+                    ? "Loading numbers..."
+                    : availableNumbers.length === 0
+                    ? "No free numbers available"
+                    : "Select a number"}
+                </option>
+                {availableNumbers.map((n) => (
+                  <option key={n.phoneNumber} value={n.phoneNumber}>
+                    {n.friendlyName && n.friendlyName !== n.phoneNumber
+                      ? `${n.phoneNumber} (${n.friendlyName})`
+                      : n.phoneNumber}
+                  </option>
+                ))}
+              </select>
+              {numbersError ? (
+                <span style={{ color: "#991b1b", fontWeight: 700 }}>{numbersError}</span>
+              ) : null}
+            </label>
+            <div style={{ display: "flex", gap: 12 }}>
+              <button
+                type="button"
+                disabled={busyUid === enableFor.uid}
+                onClick={() => void handleConfirmEnable()}
+                style={createSubmitStyle}
+              >
+                {busyUid === enableFor.uid ? "Saving..." : "Enable account"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEnableFor(null);
+                  setEnableNumber("");
+                  setActionError("");
+                }}
+                style={{ ...createSubmitStyle, background: "#e2e8f0", color: "#334155" }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {showCreate ? (
           <form onSubmit={handleCreateAccount} style={createFormStyle} autoComplete="off">
             <div style={createFormTitleStyle}>Create account</div>
@@ -439,16 +591,32 @@ export default function AdminOverviewPage() {
               </label>
               <label style={createLabelStyle}>
                 Twilio number
-                <input
+                <select
                   style={createInputStyle}
                   value={form.twilioNumber}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, twilioNumber: e.target.value }))
                   }
-                  placeholder="+14234019888"
-                  autoComplete="off"
                   required
-                />
+                >
+                  <option value="">
+                    {numbersLoading
+                      ? "Loading numbers..."
+                      : availableNumbers.length === 0
+                      ? "No free numbers available"
+                      : "Select a number"}
+                  </option>
+                  {availableNumbers.map((n) => (
+                    <option key={n.phoneNumber} value={n.phoneNumber}>
+                      {n.friendlyName && n.friendlyName !== n.phoneNumber
+                        ? `${n.phoneNumber} (${n.friendlyName})`
+                        : n.phoneNumber}
+                    </option>
+                  ))}
+                </select>
+                {numbersError ? (
+                  <span style={{ color: "#991b1b", fontWeight: 700 }}>{numbersError}</span>
+                ) : null}
               </label>
             </div>
             {createError ? <div style={createErrorStyle}>{createError}</div> : null}
