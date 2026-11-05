@@ -3,12 +3,14 @@ import { getAuth } from "firebase-admin/auth";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../../../../../../lib/firebaseAdmin";
 
-// Superadmin-only: add prepaid credit to one account.
+// Superadmin-only: set an account's prepaid credit (e.g. 500 -> $500.00).
 //
-// Each recharge is a ledger entry in users/{uid}/billingCredits and bumps the
-// running total on the user doc (billingCreditTotal), in one transaction. The
-// first recharge also starts metering: it sets billingStartedAt (usage is
-// counted from then on) and a default per-SMS rate if none is set yet.
+// The amount SETS the account's credit total and then locks it
+// (billingCreditLocked). The entry is also recorded in
+// users/{uid}/billingCredits. It also starts metering: billingStartedAt
+// (usage is counted from then on) and a default per-SMS rate if none is set.
+// Once locked, further changes are refused with "Seek admin permission to add
+// balance." - the lock can only be cleared directly in Firestore.
 // The account's balance = credit total - usage since billingStartedAt x rate
 // (computed in /api/billing).
 
@@ -62,11 +64,17 @@ export async function POST(
         throw new Error("SUPERADMIN");
       }
 
-      const prevTotal = Number(data.billingCreditTotal) || 0;
-      const newTotal = Math.round((prevTotal + amount) * 100) / 100;
+      // The balance is set once and then locked. Changing it again needs the
+      // lock cleared by an admin directly in Firestore (billingCreditLocked).
+      if (data.billingCreditLocked === true) throw new Error("LOCKED");
+
+      const newTotal = amount;
       const rate = Number(data.billingRatePerSms);
 
-      const update: Record<string, unknown> = { billingCreditTotal: newTotal };
+      const update: Record<string, unknown> = {
+        billingCreditTotal: newTotal,
+        billingCreditLocked: true,
+      };
       if (!data.billingStartedAt) update.billingStartedAt = new Date();
       if (!Number.isFinite(rate) || rate <= 0) update.billingRatePerSms = DEFAULT_RATE;
 
@@ -83,6 +91,7 @@ export async function POST(
     return NextResponse.json({ ok: true, uid, amount, creditTotal: result.creditTotal });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unexpected server error";
+    if (message === "LOCKED") return fail("Seek admin permission to add balance.", 409);
     if (message === "NOT_FOUND") return fail("Account not found.", 404);
     if (message === "SUPERADMIN") return fail("Superadmin accounts can't be recharged.", 400);
     console.error("Add credit failed", error);

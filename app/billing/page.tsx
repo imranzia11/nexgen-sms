@@ -17,13 +17,22 @@ import TwilioBalanceCard from "../../components/TwilioBalanceCard";
 // come from /api/billing, which is scoped to the signed-in caller; accounts
 // without a rate are sent back to the dashboard.
 
-type DayRow = { day: number; sent: number; received: number; amount: number };
+type DayRow = {
+  day: number;
+  sent: number;
+  received: number;
+  segments: number;
+  amount: number;
+};
 
 type BillingData = {
   month: string;
   rate: number;
   sent: number;
   received: number;
+  sentSegments: number;
+  receivedSegments: number;
+  totalSegments: number;
   total: number;
   amount: number;
   days: DayRow[];
@@ -234,8 +243,9 @@ export default function BillingPage() {
                 <div style={heroBadgeStyle}>Your Usage</div>
                 <h1 style={heroTitleStyle}>Billing</h1>
                 <p style={heroTextStyle}>
-                  {data ? money(data.rate) : "Per-message rate"} per SMS, charged on every
-                  message sent and every message received.
+                  {data ? money(data.rate) : "Per-segment rate"} per SMS segment, charged on
+                  every message sent and received. A message up to 160 characters is one
+                  segment; longer messages and emoji use more.
                 </p>
               </div>
 
@@ -265,7 +275,8 @@ export default function BillingPage() {
               <div style={panelHeaderStyle}>
                 <h2 style={panelTitleStyle}>Account Balance</h2>
                 <p style={panelDescStyle}>
-                  Credit added by your account manager, minus usage since your first recharge.
+                  Prepaid credit set by your account manager, minus usage since your
+                  account was funded.
                 </p>
               </div>
               <div style={summaryGridStyle}>
@@ -314,7 +325,7 @@ export default function BillingPage() {
               <h2 style={panelTitleStyle}>{formatMonthLabel(selectedMonth)}</h2>
               <p style={panelDescStyle}>
                 {data
-                  ? `${data.sent.toLocaleString()} sent + ${data.received.toLocaleString()} received = ${data.total.toLocaleString()} SMS x ${money(data.rate)}`
+                  ? `${data.sentSegments.toLocaleString()} sent + ${data.receivedSegments.toLocaleString()} received = ${data.totalSegments.toLocaleString()} segments x ${money(data.rate)}`
                   : "Loading usage..."}
               </p>
             </div>
@@ -329,18 +340,24 @@ export default function BillingPage() {
                   <div style={summaryTileStyle}>
                     <div style={summaryLabelStyle}>SMS sent</div>
                     <div style={summaryValueStyle}>{data.sent.toLocaleString()}</div>
-                    <div style={summarySubStyle}>{money(data.sent * data.rate)}</div>
+                    <div style={summarySubStyle}>
+                      {data.sentSegments.toLocaleString()} segments -{" "}
+                      {money(data.sentSegments * data.rate)}
+                    </div>
                   </div>
                   <div style={summaryTileStyle}>
                     <div style={summaryLabelStyle}>SMS received</div>
                     <div style={summaryValueStyle}>{data.received.toLocaleString()}</div>
-                    <div style={summarySubStyle}>{money(data.received * data.rate)}</div>
+                    <div style={summarySubStyle}>
+                      {data.receivedSegments.toLocaleString()} segments -{" "}
+                      {money(data.receivedSegments * data.rate)}
+                    </div>
                   </div>
                   <div style={{ ...summaryTileStyle, ...summaryTotalTileStyle }}>
                     <div style={summaryLabelStyle}>Total</div>
                     <div style={summaryValueStyle}>{money(data.amount)}</div>
                     <div style={summarySubStyle}>
-                      {data.total.toLocaleString()} x {money(data.rate)}
+                      {data.totalSegments.toLocaleString()} segments x {money(data.rate)}
                     </div>
                   </div>
                 </div>

@@ -36,6 +36,15 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Account is inactive." }, { status: 403 });
     }
 
+    // Prepaid accounts see their own internal balance instead; the shared
+    // Twilio figure is never returned to them.
+    if (userData.billingStartedAt) {
+      return NextResponse.json(
+        { ok: false, error: "Not available for this account." },
+        { status: 403 }
+      );
+    }
+
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken = process.env.TWILIO_AUTH_TOKEN;
 

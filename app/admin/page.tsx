@@ -250,7 +250,7 @@ export default function AdminOverviewPage() {
 
   const handleAddCredit = async (account: AccountRow) => {
     const input = window.prompt(
-      `Add credit (USD) to ${account.email || account.name}:`,
+      `Set prepaid balance (USD) for ${account.email || account.name}. This locks once set:`,
       "500"
     );
     if (input === null) return;
@@ -279,9 +279,9 @@ export default function AdminOverviewPage() {
         throw new Error(body?.error || "Failed to add credit.");
       }
       setCreatedNote(
-        `Added $${amount.toFixed(2)} to ${account.email || account.name}. Total credit: $${Number(
+        `Balance for ${account.email || account.name} set to $${Number(
           body.creditTotal
-        ).toFixed(2)}.`
+        ).toFixed(2)} and locked.`
       );
     } catch (error: unknown) {
       setActionError(error instanceof Error ? error.message : "Failed to add credit.");

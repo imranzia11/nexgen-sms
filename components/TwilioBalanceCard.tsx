@@ -14,10 +14,15 @@ import { auth } from "../lib/firebase";
 // red warning treatment instead of the normal teal-tinted card.
 const LOW_BALANCE_THRESHOLD = 70;
 
+// Accounts on a prepaid plan see their own internal balance (managed by the
+// superadmin) instead of the shared Twilio figure, with a lower warning
+// threshold.
+const INTERNAL_LOW_THRESHOLD = 50;
+
 type BalanceState =
   | { status: "loading" }
   | { status: "error" }
-  | { status: "ready"; amount: number; currency: string };
+  | { status: "ready"; amount: number; currency: string; internal?: boolean };
 
 function formatBalance(amount: number, currency: string) {
   try {
@@ -49,6 +54,23 @@ export default function TwilioBalanceCard() {
         setState({ status: "loading" });
         const idToken = await user.getIdToken();
 
+        // Prepaid accounts: internal balance, never the Twilio one.
+        const billingRes = await fetch("/api/billing?check=1", {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        const billingJson = await billingRes.json().catch(() => ({}));
+        if (billingRes.ok && billingJson?.prepaid) {
+          if (!cancelled) {
+            setState({
+              status: "ready",
+              amount: Number(billingJson.prepaid.balance) || 0,
+              currency: "usd",
+              internal: true,
+            });
+          }
+          return;
+        }
+
         const res = await fetch("/api/twilio-balance", {
           headers: { Authorization: `Bearer ${idToken}` },
         });
@@ -77,14 +99,17 @@ export default function TwilioBalanceCard() {
     };
   }, [refreshKey]);
 
-  const isLow = state.status === "ready" && state.amount < LOW_BALANCE_THRESHOLD;
+  const internal = state.status === "ready" && state.internal === true;
+  const isLow =
+    state.status === "ready" &&
+    state.amount < (internal ? INTERNAL_LOW_THRESHOLD : LOW_BALANCE_THRESHOLD);
 
   return (
     <div style={isLow ? cardStyleLow : cardStyle}>
       <div style={topRowStyle}>
         <div style={isLow ? iconStyleLow : iconStyle}>$</div>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={titleStyle}>Twilio Balance</div>
+          <div style={titleStyle}>{internal ? "Account Balance" : "Twilio Balance"}</div>
           <div style={isLow ? valueStyleLow : valueStyle}>
             {state.status === "loading"
               ? "Loading..."
@@ -97,7 +122,9 @@ export default function TwilioBalanceCard() {
 
       {isLow ? (
         <div style={hintStyleLow}>
-          Balance is low - recharge soon to avoid failed sends.
+          {internal
+            ? "Balance is low - contact your account manager."
+            : "Balance is low - recharge soon to avoid failed sends."}
         </div>
       ) : null}
 
