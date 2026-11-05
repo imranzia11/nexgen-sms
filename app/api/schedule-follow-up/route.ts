@@ -3,6 +3,7 @@ import { getAuth } from "firebase-admin/auth";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../../../lib/firebaseAdmin";
 import { toE164, phoneDocId } from "../../../lib/phone";
+import { isOutOfPrepaidBalance, CAPACITY_BLOCK_MESSAGE } from "../../../lib/prepaidBalance";
 
 type Recipient = {
   name?: string;
@@ -73,6 +74,13 @@ export async function POST(req: NextRequest) {
     if (userData.isActive !== true) {
       return NextResponse.json(
         { ok: false, error: "User account is inactive." },
+        { status: 403 }
+      );
+    }
+
+    if (await isOutOfPrepaidBalance(uid, userData)) {
+      return NextResponse.json(
+        { ok: false, error: CAPACITY_BLOCK_MESSAGE },
         { status: 403 }
       );
     }
