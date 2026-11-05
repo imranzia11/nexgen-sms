@@ -28,6 +28,8 @@ type BalanceState =
       currency: string;
       internal?: boolean;
       unset?: boolean;
+      locked?: boolean;
+      max?: number;
     };
 
 function formatBalance(amount: number, currency: string) {
@@ -72,6 +74,8 @@ export default function TwilioBalanceCard() {
               amount: Number(billingJson.prepaid.balance) || 0,
               currency: "usd",
               internal: true,
+              locked: billingJson.creditLocked === true,
+              max: Number(billingJson.selfCreditMax) || 500,
             });
           }
           return;
@@ -85,6 +89,8 @@ export default function TwilioBalanceCard() {
               currency: "usd",
               internal: true,
               unset: true,
+              locked: billingJson.creditLocked === true,
+              max: Number(billingJson.selfCreditMax) || 500,
             });
           }
           return;
@@ -119,7 +125,56 @@ export default function TwilioBalanceCard() {
   }, [refreshKey]);
 
   const internal = state.status === "ready" && state.internal === true;
+  const [showForm, setShowForm] = useState(false);
+  const [amountInput, setAmountInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState("");
+
+  // One-time balance setup from the sidebar. Runs next to a short "updating"
+  // animation; once set it is locked server-side (see /api/billing/credit).
+  const handleSetup = async () => {
+    const amount = Number(amountInput.trim());
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setFormError("Enter an amount greater than 0.");
+      return;
+    }
+
+    try {
+      setBusy(true);
+      setFormError("");
+      const user = auth.currentUser;
+      if (!user) return;
+      const idToken = await user.getIdToken();
+
+      const [res] = await Promise.all([
+        fetch("/api/billing/credit", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({ amount }),
+        }),
+        new Promise((resolve) => setTimeout(resolve, 2600)),
+      ]);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error || "Could not update the balance.");
+      }
+
+      setShowForm(false);
+      setAmountInput("");
+      setRefreshKey((k) => k + 1);
+    } catch (error: any) {
+      setFormError(error?.message || "Could not update the balance.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const unset = state.status === "ready" && state.unset === true;
+  const locked = state.status === "ready" && state.locked === true;
+  const maxAmount = state.status === "ready" ? state.max || 500 : 500;
   const isLow =
     state.status === "ready" &&
     !unset &&
@@ -151,13 +206,45 @@ export default function TwilioBalanceCard() {
         </div>
       ) : null}
 
-      <button
-        type="button"
-        onClick={() => setRefreshKey((k) => k + 1)}
-        style={isLow ? refreshButtonStyleLow : refreshButtonStyle}
-      >
-        Refresh balance
-      </button>
+      {internal ? (
+        locked ? (
+          <div style={lockedNoteStyle}>To add more balance, seek admin permission.</div>
+        ) : busy ? (
+          <div style={lockedNoteStyle}>Updating your balance...</div>
+        ) : showForm ? (
+          <div style={{ display: "grid", gap: 8 }}>
+            <input
+              type="number"
+              min={1}
+              max={maxAmount}
+              value={amountInput}
+              onChange={(e) => setAmountInput(e.target.value)}
+              placeholder={`Amount (max ${maxAmount})`}
+              style={amountInputStyle}
+            />
+            {formError ? <div style={formErrorStyle}>{formError}</div> : null}
+            <button type="button" onClick={handleSetup} style={refreshButtonStyle}>
+              Add credit
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowForm(true)}
+            style={isLow ? refreshButtonStyleLow : refreshButtonStyle}
+          >
+            Setup balance
+          </button>
+        )
+      ) : (
+        <button
+          type="button"
+          onClick={() => setRefreshKey((k) => k + 1)}
+          style={isLow ? refreshButtonStyleLow : refreshButtonStyle}
+        >
+          Refresh balance
+        </button>
+      )}
     </div>
   );
 }
@@ -244,6 +331,31 @@ const refreshButtonStyle: CSSProperties = {
   fontWeight: 800,
   fontSize: 15,
   cursor: "pointer",
+};
+
+const amountInputStyle: CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
+  borderRadius: 12,
+  border: "1px solid rgba(255,255,255,0.25)",
+  background: "rgba(255,255,255,0.12)",
+  color: "#ffffff",
+  padding: "10px 12px",
+  fontSize: 16,
+  fontWeight: 700,
+};
+
+const lockedNoteStyle: CSSProperties = {
+  color: "rgba(236,254,255,0.85)",
+  fontSize: 14,
+  lineHeight: 1.5,
+  fontWeight: 700,
+};
+
+const formErrorStyle: CSSProperties = {
+  color: "#fecaca",
+  fontSize: 14,
+  fontWeight: 700,
 };
 
 const refreshButtonStyleLow: CSSProperties = {

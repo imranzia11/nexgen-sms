@@ -147,57 +147,6 @@ export default function BillingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, selectedMonth]);
 
-  const [creditInput, setCreditInput] = useState("");
-  const [creditBusy, setCreditBusy] = useState(false);
-  const [creditError, setCreditError] = useState("");
-  const [creditDone, setCreditDone] = useState("");
-
-  // One-time balance setup. The request runs alongside a short "updating"
-  // animation; after it succeeds the balance is locked and this form is
-  // replaced by a note that further changes need admin permission.
-  const handleSetCredit = async () => {
-    const amount = Number(creditInput.trim());
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setCreditError("Enter an amount greater than 0.");
-      return;
-    }
-
-    try {
-      setCreditBusy(true);
-      setCreditError("");
-      setCreditDone("");
-
-      const user = auth.currentUser;
-      if (!user) return;
-      const idToken = await user.getIdToken();
-
-      const [res] = await Promise.all([
-        fetch("/api/billing/credit", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${idToken}`,
-          },
-          body: JSON.stringify({ amount }),
-        }),
-        new Promise((resolve) => setTimeout(resolve, 2600)),
-      ]);
-      const json = await res.json().catch(() => ({}));
-
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || "Could not update the balance.");
-      }
-
-      setCreditDone(`Balance set to ${money(Number(json.creditTotal))}.`);
-      setCreditInput("");
-      await loadBilling(selectedMonth);
-    } catch (error: any) {
-      setCreditError(error?.message || "Could not update the balance.");
-    } finally {
-      setCreditBusy(false);
-    }
-  };
-
   const handleLogout = async () => {
     await signOut(auth).catch(() => {});
     router.push("/login");
@@ -322,44 +271,6 @@ export default function BillingPage() {
           </div>
 
           {errorText ? <div style={errorBoxStyle}>{errorText}</div> : null}
-
-          {data && !data.creditLocked ? (
-            <section style={panelStyle}>
-              <div style={panelHeaderStyle}>
-                <h2 style={panelTitleStyle}>Add Credit</h2>
-                <p style={panelDescStyle}>
-                  Enter your prepaid amount (up to {money(data.selfCreditMax)}). You can set
-                  this once; later changes need admin permission.
-                </p>
-              </div>
-              {creditBusy ? (
-                <div style={ringWrapStyle}>
-                  <div style={spinnerStyle} />
-                  <div style={{ marginTop: 12, fontWeight: 800, color: "#0f766e" }}>
-                    Updating your balance...
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-                  <input
-                    type="number"
-                    min={1}
-                    max={data.selfCreditMax}
-                    value={creditInput}
-                    onChange={(e) => setCreditInput(e.target.value)}
-                    placeholder="500"
-                    style={creditInputStyle}
-                  />
-                  <button type="button" onClick={handleSetCredit} style={creditButtonStyle}>
-                    Add credit
-                  </button>
-                </div>
-              )}
-              {creditError ? <div style={errorBoxStyle}>{creditError}</div> : null}
-            </section>
-          ) : null}
-
-          {creditDone ? <div style={creditDoneStyle}>{creditDone}</div> : null}
 
           {data?.prepaid ? (
             <section style={panelStyle}>
@@ -493,37 +404,6 @@ export default function BillingPage() {
     </main>
   );
 }
-
-const creditInputStyle: CSSProperties = {
-  width: 180,
-  borderRadius: 14,
-  border: "1px solid rgba(15,23,42,0.18)",
-  padding: "12px 14px",
-  fontSize: 18,
-  fontWeight: 700,
-  color: "#0f172a",
-};
-
-const creditButtonStyle: CSSProperties = {
-  border: "none",
-  borderRadius: 14,
-  padding: "12px 22px",
-  background: "#0f766e",
-  color: "#ffffff",
-  fontSize: 16,
-  fontWeight: 900,
-  cursor: "pointer",
-};
-
-const creditDoneStyle: CSSProperties = {
-  borderRadius: 18,
-  padding: "14px 16px",
-  background: "rgba(15,118,110,0.14)",
-  border: "1px solid rgba(15,118,110,0.35)",
-  color: "#0f766e",
-  fontSize: 16,
-  fontWeight: 800,
-};
 
 const summaryGridStyle: CSSProperties = {
   display: "grid",

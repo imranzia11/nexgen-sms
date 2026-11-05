@@ -176,19 +176,21 @@ export async function GET(req: NextRequest) {
       };
     }
 
+    const configuredMax = Number(userData.billingSelfCreditMax);
+    const selfCreditMax =
+      Number.isFinite(configuredMax) && configuredMax > 0 ? configuredMax : 500;
+    const creditLocked = userData.billingCreditLocked === true;
+
     // Cheap probe for the sidebar: visibility + internal balance only.
     if (req.nextUrl.searchParams.get("check") === "1") {
       return NextResponse.json({
         ok: true,
         enabled: true,
         prepaid: prepaid ? { balance: prepaid.balance, creditTotal: prepaid.creditTotal } : null,
+        creditLocked,
+        selfCreditMax,
       });
     }
-
-    const configuredMax = Number(userData.billingSelfCreditMax);
-    const selfCreditMax =
-      Number.isFinite(configuredMax) && configuredMax > 0 ? configuredMax : 500;
-    const creditLocked = userData.billingCreditLocked === true;
 
     const requested = req.nextUrl.searchParams.get("month") || "";
     const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(requested)
