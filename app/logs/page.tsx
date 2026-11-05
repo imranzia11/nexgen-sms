@@ -344,15 +344,15 @@ export default function LogsPage() {
       <div style={pageShellStyle}>
         <aside style={sidebarStyle}>
           <div>
-            <div style={brandWrapStyle}>
+            <Link href="/dashboard" style={{ ...brandWrapStyle, textDecoration: "none", cursor: "pointer" }}>
               <div style={brandIconStyle}>N</div>
               <div>
                 <div style={brandTitleStyle}>Nexgen SMS</div>
                 <div style={brandSubStyle}>User Portal</div>
               </div>
-            </div>
+            </Link>
 
-            <div style={adminMiniCardStyle}>
+            <Link href="/dashboard" style={{ ...adminMiniCardStyle, textDecoration: "none", cursor: "pointer" }}>
               <div style={avatarStyle}>
                 {userName?.slice(0, 1)?.toUpperCase() || "U"}
               </div>
@@ -360,7 +360,7 @@ export default function LogsPage() {
                 <div style={sidebarSmallLabelStyle}>Signed in as</div>
                 <div style={sidebarAdminNameStyle}>{userName}</div>
               </div>
-            </div>
+            </Link>
 
             <div style={sidebarRepliesWrapStyle}>
               <TwilioBalanceCard />

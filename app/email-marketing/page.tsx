@@ -489,21 +489,21 @@ export default function EmailMarketingPage() {
       <div style={pageShellStyle}>
         <aside style={sidebarStyle}>
           <div>
-            <div style={brandWrapStyle}>
+            <Link href="/dashboard" style={{ ...brandWrapStyle, textDecoration: "none", cursor: "pointer" }}>
               <div style={brandIconStyle}>N</div>
               <div>
                 <div style={brandTitleStyle}>Nexgen</div>
                 <div style={brandSubStyle}>Email Campaigns</div>
               </div>
-            </div>
+            </Link>
 
-            <div style={adminMiniCardStyle}>
+            <Link href="/dashboard" style={{ ...adminMiniCardStyle, textDecoration: "none", cursor: "pointer" }}>
               <div style={avatarStyle}>{userName?.slice(0, 1)?.toUpperCase() || "U"}</div>
               <div>
                 <div style={sidebarSmallLabelStyle}>Signed in as</div>
                 <div style={sidebarAdminNameStyle}>{userName}</div>
               </div>
-            </div>
+            </Link>
 
             <div style={sidebarRepliesWrapStyle}>
               <TwilioBalanceCard />
