@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../../../../lib/firebaseAdmin";
 import { sendSmsForUser } from "../../../../lib/twilioSend";
-import { isUidOutOfPrepaidBalance } from "../../../../lib/prepaidBalance";
 import { phoneDocId } from "../../../../lib/phone";
 
 export async function GET(req: NextRequest) {
@@ -245,13 +244,6 @@ export async function GET(req: NextRequest) {
         .doc(conversationIdForCheck)
         .set({ hasReply: true, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
 
-      skipped++;
-      continue;
-    }
-
-    // 3e. Prepaid accounts with no balance left don't send.
-    if (await isUidOutOfPrepaidBalance(String(data.ownerUid || ""))) {
-      await doc.ref.update({ status: "skipped", skippedReason: "capacity_exhausted" });
       skipped++;
       continue;
     }
