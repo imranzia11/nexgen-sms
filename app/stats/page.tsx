@@ -302,10 +302,6 @@ export default function StatsPage() {
             </Link>
 
             <div style={sidebarRepliesWrapStyle}>
-              <TwilioBalanceCard />
-            </div>
-
-            <div style={sidebarRepliesWrapStyle}>
               <Link href="/dashboard" style={sidebarRepliesCardStyle}>
                 <div style={sidebarRepliesIconStyle}>⌂</div>
                 <div>
@@ -313,6 +309,10 @@ export default function StatsPage() {
                   <div style={sidebarRepliesTextStyle}>Back to SMS control center</div>
                 </div>
               </Link>
+            </div>
+
+            <div style={sidebarRepliesWrapStyle}>
+              <TwilioBalanceCard />
             </div>
 
             <div style={sidebarRepliesWrapStyle}>

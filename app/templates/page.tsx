@@ -337,10 +337,6 @@ export default function TemplatesPage() {
               </Link>
 
               <div style={sidebarLinkWrapStyle}>
-                <TwilioBalanceCard />
-              </div>
-
-              <div style={sidebarLinkWrapStyle}>
                 <Link href="/dashboard" style={sidebarCardStyle}>
                   <div style={sidebarIconStyle}>←</div>
                   <div>
@@ -350,6 +346,10 @@ export default function TemplatesPage() {
                     </div>
                   </div>
                 </Link>
+              </div>
+
+              <div style={sidebarLinkWrapStyle}>
+                <TwilioBalanceCard />
               </div>
             </div>
 
