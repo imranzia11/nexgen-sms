@@ -27,6 +27,12 @@ type BillingData = {
   total: number;
   amount: number;
   days: DayRow[];
+  prepaid: {
+    creditTotal: number;
+    used: number;
+    balance: number;
+    credits: { amount: number; note: string; at: number }[];
+  } | null;
 };
 
 function money(value: number) {
@@ -253,6 +259,55 @@ export default function BillingPage() {
           </div>
 
           {errorText ? <div style={errorBoxStyle}>{errorText}</div> : null}
+
+          {data?.prepaid ? (
+            <section style={panelStyle}>
+              <div style={panelHeaderStyle}>
+                <h2 style={panelTitleStyle}>Account Balance</h2>
+                <p style={panelDescStyle}>
+                  Credit added by your account manager, minus usage since your first recharge.
+                </p>
+              </div>
+              <div style={summaryGridStyle}>
+                <div style={{ ...summaryTileStyle, ...summaryTotalTileStyle }}>
+                  <div style={summaryLabelStyle}>Available balance</div>
+                  <div style={summaryValueStyle}>{money(data.prepaid.balance)}</div>
+                </div>
+                <div style={summaryTileStyle}>
+                  <div style={summaryLabelStyle}>Total credit added</div>
+                  <div style={summaryValueStyle}>{money(data.prepaid.creditTotal)}</div>
+                </div>
+                <div style={summaryTileStyle}>
+                  <div style={summaryLabelStyle}>Used</div>
+                  <div style={summaryValueStyle}>{money(data.prepaid.used)}</div>
+                </div>
+              </div>
+              {data.prepaid.credits.length > 0 ? (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={tableStyle}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}>Recharge date</th>
+                        <th style={thStyle}>Note</th>
+                        <th style={thStyleRight}>Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.prepaid.credits.map((c, i) => (
+                        <tr key={i}>
+                          <td style={tdStyle}>
+                            {c.at ? new Date(c.at).toLocaleDateString("en-US") : "-"}
+                          </td>
+                          <td style={tdStyle}>{c.note || "-"}</td>
+                          <td style={tdStyleRight}>{money(c.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
 
           <section style={panelStyle}>
             <div style={panelHeaderStyle}>

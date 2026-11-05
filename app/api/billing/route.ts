@@ -130,7 +130,84 @@ export async function GET(req: NextRequest) {
 
     const total = sent + received;
 
+    // Prepaid balance: credit added by the superadmin minus every SMS sent or
+    // received since metering started (billingStartedAt), at the account rate.
+    let prepaid: {
+      creditTotal: number;
+      used: number;
+      balance: number;
+      credits: { amount: number; note: string; at: number }[];
+    } | null = null;
+
+    const startedAt =
+      userData.billingStartedAt && typeof userData.billingStartedAt.toDate === "function"
+        ? (userData.billingStartedAt.toDate() as Date)
+        : null;
+
+    if (startedAt) {
+      const now = new Date();
+      const [sOut, sFollow, sIn, creditsSnap] = await Promise.all([
+        adminDb
+          .collection("messages")
+          .where("ownerUid", "==", uid)
+          .where("createdAt", ">=", startedAt)
+          .where("createdAt", "<=", now)
+          .select("direction", "status")
+          .get(),
+        adminDb
+          .collection("followUps")
+          .where("ownerUid", "==", uid)
+          .where("sentAt", ">=", startedAt)
+          .where("sentAt", "<=", now)
+          .select("status")
+          .get(),
+        adminDb
+          .collection("replies")
+          .where("ownerUid", "==", uid)
+          .where("createdAt", ">=", startedAt)
+          .where("createdAt", "<=", now)
+          .select()
+          .get(),
+        adminDb
+          .collection("users")
+          .doc(uid)
+          .collection("billingCredits")
+          .orderBy("createdAt", "desc")
+          .limit(10)
+          .get(),
+      ]);
+
+      let usedCount = sIn.size;
+      sOut.docs.forEach((d) => {
+        const data = d.data();
+        if (data.direction === "outbound" && !isFailedStatus(data.status)) usedCount += 1;
+      });
+      sFollow.docs.forEach((d) => {
+        if (String(d.data().status || "").toLowerCase() === "sent") usedCount += 1;
+      });
+
+      const creditTotal = Number(userData.billingCreditTotal) || 0;
+      const used = Math.round(usedCount * rate * 100) / 100;
+      prepaid = {
+        creditTotal,
+        used,
+        balance: Math.round((creditTotal - used) * 100) / 100,
+        credits: creditsSnap.docs.map((d) => {
+          const c = d.data();
+          return {
+            amount: Number(c.amount) || 0,
+            note: String(c.note || ""),
+            at:
+              c.createdAt && typeof c.createdAt.toMillis === "function"
+                ? c.createdAt.toMillis()
+                : 0,
+          };
+        }),
+      };
+    }
+
     return NextResponse.json({
+      prepaid,
       ok: true,
       enabled: true,
       month,

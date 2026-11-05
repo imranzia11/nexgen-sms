@@ -248,6 +248,48 @@ export default function AdminOverviewPage() {
     );
   };
 
+  const handleAddCredit = async (account: AccountRow) => {
+    const input = window.prompt(
+      `Add credit (USD) to ${account.email || account.name}:`,
+      "500"
+    );
+    if (input === null) return;
+    const amount = Number(input.trim());
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setActionError("Enter an amount greater than 0.");
+      return;
+    }
+
+    try {
+      setBusyUid(account.uid);
+      setActionError("");
+      const user = auth.currentUser;
+      if (!user) return;
+      const idToken = await user.getIdToken();
+      const res = await fetch(`/api/admin/account/${account.uid}/credit`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ amount }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body?.ok === false) {
+        throw new Error(body?.error || "Failed to add credit.");
+      }
+      setCreatedNote(
+        `Added $${amount.toFixed(2)} to ${account.email || account.name}. Total credit: $${Number(
+          body.creditTotal
+        ).toFixed(2)}.`
+      );
+    } catch (error: unknown) {
+      setActionError(error instanceof Error ? error.message : "Failed to add credit.");
+    } finally {
+      setBusyUid("");
+    }
+  };
+
   const handleToggleAccount = async (account: AccountRow) => {
     const nextActive = !account.isActive;
 
@@ -717,6 +759,24 @@ export default function AdminOverviewPage() {
                       ? "Disable"
                       : "Enable"}
                   </button>
+                  {account.isActive ? (
+                    <button
+                      type="button"
+                      disabled={busyUid === account.uid}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        void handleAddCredit(account);
+                      }}
+                      style={{
+                        ...toggleButtonStyle,
+                        ...toggleEnableStyle,
+                        opacity: busyUid === account.uid ? 0.6 : 1,
+                      }}
+                    >
+                      Add credit
+                    </button>
+                  ) : null}
                   <div style={smsCountWrapStyle}>
                     <div style={smsCountValueStyle}>{account.smsSentCount}</div>
                     <div style={smsCountLabelStyle}>SMS sent</div>

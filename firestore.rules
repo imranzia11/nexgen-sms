@@ -45,7 +45,10 @@ service cloud.firestore {
         && request.resource.data.get('senderId', null) == resource.data.get('senderId', null)
         && request.resource.data.get('senderVerified', null) == resource.data.get('senderVerified', null)
         // Per-SMS usage rate is set only via the Admin SDK (tools/set-billing-rate.ts).
-        && request.resource.data.get('billingRatePerSms', null) == resource.data.get('billingRatePerSms', null);
+        && request.resource.data.get('billingRatePerSms', null) == resource.data.get('billingRatePerSms', null)
+        // Prepaid credit is written only by the server (superadmin recharge route).
+        && request.resource.data.get('billingCreditTotal', null) == resource.data.get('billingCreditTotal', null)
+        && request.resource.data.get('billingStartedAt', null) == resource.data.get('billingStartedAt', null);
 
       allow delete: if false;
     }
