@@ -49,6 +49,7 @@ service cloud.firestore {
         // Prepaid credit is written only by the server (superadmin recharge route).
         && request.resource.data.get('billingCreditTotal', null) == resource.data.get('billingCreditTotal', null)
         && request.resource.data.get('billingCreditLocked', null) == resource.data.get('billingCreditLocked', null)
+        && request.resource.data.get('billingSelfCreditMax', null) == resource.data.get('billingSelfCreditMax', null)
         && request.resource.data.get('billingStartedAt', null) == resource.data.get('billingStartedAt', null);
 
       allow delete: if false;

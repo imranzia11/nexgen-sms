@@ -185,6 +185,11 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    const configuredMax = Number(userData.billingSelfCreditMax);
+    const selfCreditMax =
+      Number.isFinite(configuredMax) && configuredMax > 0 ? configuredMax : 500;
+    const creditLocked = userData.billingCreditLocked === true;
+
     const requested = req.nextUrl.searchParams.get("month") || "";
     const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(requested)
       ? requested
@@ -227,6 +232,8 @@ export async function GET(req: NextRequest) {
       ok: true,
       enabled: true,
       prepaid,
+      creditLocked,
+      selfCreditMax,
       month,
       rate,
       sent: usage.sent,

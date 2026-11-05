@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
 
     // Prepaid accounts see their own internal balance instead; the shared
     // Twilio figure is never returned to them.
-    if (userData.billingStartedAt) {
+    if (userData.billingStartedAt || Number(userData.billingRatePerSms) > 0) {
       return NextResponse.json(
         { ok: false, error: "Not available for this account." },
         { status: 403 }

@@ -22,7 +22,13 @@ const INTERNAL_LOW_THRESHOLD = 50;
 type BalanceState =
   | { status: "loading" }
   | { status: "error" }
-  | { status: "ready"; amount: number; currency: string; internal?: boolean };
+  | {
+      status: "ready";
+      amount: number;
+      currency: string;
+      internal?: boolean;
+      unset?: boolean;
+    };
 
 function formatBalance(amount: number, currency: string) {
   try {
@@ -70,6 +76,19 @@ export default function TwilioBalanceCard() {
           }
           return;
         }
+        // Billing-enabled but no balance set yet: still never show Twilio's.
+        if (billingRes.ok && billingJson?.enabled === true) {
+          if (!cancelled) {
+            setState({
+              status: "ready",
+              amount: 0,
+              currency: "usd",
+              internal: true,
+              unset: true,
+            });
+          }
+          return;
+        }
 
         const res = await fetch("/api/twilio-balance", {
           headers: { Authorization: `Bearer ${idToken}` },
@@ -100,8 +119,10 @@ export default function TwilioBalanceCard() {
   }, [refreshKey]);
 
   const internal = state.status === "ready" && state.internal === true;
+  const unset = state.status === "ready" && state.unset === true;
   const isLow =
     state.status === "ready" &&
+    !unset &&
     state.amount < (internal ? INTERNAL_LOW_THRESHOLD : LOW_BALANCE_THRESHOLD);
 
   return (
@@ -115,6 +136,8 @@ export default function TwilioBalanceCard() {
               ? "Loading..."
               : state.status === "error"
               ? "Unavailable"
+              : unset
+              ? "Not set - open Billing"
               : formatBalance(state.amount, state.currency)}
           </div>
         </div>
