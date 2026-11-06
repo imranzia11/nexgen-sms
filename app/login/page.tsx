@@ -163,7 +163,15 @@ function LoginPageInner() {
         return;
       }
 
-      router.push(nextPath);
+      // ?next= is meant for the installed phone app (see safeNextPath).
+      // On a regular desktop browser tab - e.g. a bookmarked
+      // /login?next=/replies link - land on the dashboard instead.
+      const isInstalledApp =
+        window.matchMedia("(display-mode: standalone)").matches ||
+        (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+      const isPhoneScreen = window.matchMedia("(max-width: 820px)").matches;
+
+      router.push(isInstalledApp || isPhoneScreen ? nextPath : "/dashboard");
     } catch (err: any) {
       setError(
         err?.code === "auth/user-disabled"
