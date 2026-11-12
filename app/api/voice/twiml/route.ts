@@ -68,13 +68,19 @@ export async function POST(req: NextRequest) {
       return reject("This number has opted out and cannot be contacted.");
     }
 
+    // Same rule as texting: a record only blocks while its status is
+    // "blocked". Unblocking from the Replies page keeps the record and sets
+    // status "active", so the mere existence of a record must not refuse
+    // the call.
     const blockedSnap = await adminDb
       .collection("blacklisted_numbers")
       .where("ownerUid", "==", uid)
       .where("phone", "==", to)
-      .limit(1)
       .get();
-    if (!blockedSnap.empty) {
+    const isBlockedForOwner = blockedSnap.docs.some(
+      (d) => String(d.data()?.status || "").toLowerCase() === "blocked"
+    );
+    if (isBlockedForOwner) {
       return reject("This number has opted out and cannot be contacted.");
     }
 
