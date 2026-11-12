@@ -57,10 +57,23 @@ async function main() {
     .where("phone", "==", phone)
     .get();
   console.log(`Per-account blacklisted_numbers entries: ${perOwner.size}`);
+  const stillBlocked = perOwner.docs.filter(
+    (d) => String(d.data()?.status || "").toLowerCase() === "blocked"
+  ).length;
   perOwner.docs.forEach((doc) => {
     const d = doc.data() || {};
-    console.log(`  - ownerUid=${d.ownerUid} keyword=${d.keyword}`);
+    console.log(
+      `  - ownerUid=${d.ownerUid} status=${d.status} reason=${d.reason} source=${d.source} lastKeyword=${d.lastKeyword}`
+    );
   });
+
+  const globalBlocked =
+    snap.exists && String(snap.data()?.status || "").toLowerCase() === "blocked";
+  console.log(
+    `\nCALLS/TEXTS REFUSED? ${
+      globalBlocked || stillBlocked > 0 ? "YES" : "NO"
+    } (platform-wide blocked: ${globalBlocked}, account entries with status blocked: ${stillBlocked})`
+  );
 
   if (apply && snap.exists) {
     await ref.set(
