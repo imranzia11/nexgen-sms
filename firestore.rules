@@ -50,6 +50,8 @@ service cloud.firestore {
         && request.resource.data.get('billingCreditTotal', null) == resource.data.get('billingCreditTotal', null)
         && request.resource.data.get('billingCreditLocked', null) == resource.data.get('billingCreditLocked', null)
         && request.resource.data.get('billingSelfCreditMax', null) == resource.data.get('billingSelfCreditMax', null)
+        // Voice calling is switched on per account via the Admin SDK only.
+        && request.resource.data.get('voiceEnabled', null) == resource.data.get('voiceEnabled', null)
         && request.resource.data.get('billingStartedAt', null) == resource.data.get('billingStartedAt', null);
 
       allow delete: if false;
@@ -203,6 +205,13 @@ service cloud.firestore {
       allow create: if ownsNewResource();
       allow update: if false;
       allow delete: if false;
+    }
+
+    // Outbound call records, written only by the voice routes (Admin SDK).
+    // An account can read its own calls; nobody can write from the client.
+    match /calls/{callSid} {
+      allow read: if ownsResource();
+      allow write: if false;
     }
   }
 }

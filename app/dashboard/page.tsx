@@ -31,6 +31,7 @@ import LoadingScreen from "../../components/LoadingScreen";
 import RepliesNavBadge from "../../components/RepliesNavBadge";
 import TwilioBalanceCard from "../../components/TwilioBalanceCard";
 import BillingNavCard from "../../components/BillingNavCard";
+import CallButton from "../../components/CallButton";
 
 type RowData = Record<string, string>;
 
@@ -1930,7 +1931,12 @@ export default function DashboardPage() {
                             return (
                               <tr key={lead.id}>
                                 <td style={tdStyle}>{lead.name || "-"}</td>
-                                <td style={tdStyle}>{lead.phone}</td>
+                                <td style={tdStyle}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                    <span>{lead.phone}</span>
+                                    <CallButton phone={lead.phone || ""} size={28} />
+                                  </div>
+                                </td>
                                 <td style={tdStyle}>
                                   <span
                                     style={{

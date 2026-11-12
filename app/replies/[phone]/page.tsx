@@ -31,6 +31,7 @@ import { auth, db, storage } from "../../../lib/firebase";
 import { formatFirestoreDateNY } from "../../../lib/date";
 import { logDeletion } from "../../../lib/deletionLog";
 import { describeTwilioError } from "../../../lib/twilioErrorCodes";
+import CallButton from "../../../components/CallButton";
 
 type MediaMetaItem = {
   url: string;
@@ -1178,6 +1179,8 @@ export default function ReplyThreadPage({
             ) : null}
           </div>
 
+          <CallButton phone={conversationMeta?.phone || routePhone || ""} size={36} />
+
           <div style={imgMenuWrapStyle}>
             <button
               type="button"
@@ -1518,6 +1521,7 @@ export default function ReplyThreadPage({
                   <span style={heroInfoValueStyle}>
                     {conversationMeta?.phone || routePhone || "-"}
                   </span>
+                  <CallButton phone={conversationMeta?.phone || routePhone || ""} size={32} />
                 </div>
 
                 <Link
