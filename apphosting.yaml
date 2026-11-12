@@ -35,10 +35,6 @@ env:
     availability:
       - BUILD
       - RUNTIME
-  - variable: TWILIO_API_KEY_SID
-    secret: TWILIO_API_KEY_SID
-  - variable: TWILIO_API_KEY_SECRET
-    secret: TWILIO_API_KEY_SECRET
 
 # Keep one container warm at all times so visitors never hit a cold-start
 # delay (a few extra seconds on the very first request after the app has
