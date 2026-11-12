@@ -1179,8 +1179,6 @@ export default function ReplyThreadPage({
             ) : null}
           </div>
 
-          <CallButton phone={conversationMeta?.phone || routePhone || ""} size={40} />
-
           <div style={imgMenuWrapStyle}>
             <button
               type="button"
@@ -1458,6 +1456,8 @@ export default function ReplyThreadPage({
               }}
             />
 
+            <CallButton phone={conversationMeta?.phone || routePhone || ""} size={38} />
+
             <button
               type="button"
               onClick={handleSendReply}
@@ -1522,11 +1522,6 @@ export default function ReplyThreadPage({
                     {conversationMeta?.phone || routePhone || "-"}
                   </span>
                 </div>
-
-                <CallButton
-                  phone={conversationMeta?.phone || routePhone || ""}
-                  variant="prominent"
-                />
 
                 <Link
                   href="/replies"
@@ -1913,6 +1908,7 @@ export default function ReplyThreadPage({
               </div>
 
               <div style={buttonRowStyle}>
+                <div style={{ display: "flex", gap: 12, alignItems: "stretch" }}>
                 <button
                   onClick={handleSendReply}
                   disabled={
@@ -1923,6 +1919,8 @@ export default function ReplyThreadPage({
                   }
                   style={{
                     ...sendButtonStyle,
+                    flex: 1,
+                    width: "auto",
                     opacity:
                       isBlocked ||
                       sending ||
@@ -1941,6 +1939,12 @@ export default function ReplyThreadPage({
                 >
                   {isBlocked ? "Blocked" : sending ? "Sending..." : "Send Reply"}
                 </button>
+
+                <CallButton
+                  phone={conversationMeta?.phone || routePhone || ""}
+                  variant="prominent"
+                />
+                </div>
 
                 <button
                   onClick={() => void handleManualRefresh()}
