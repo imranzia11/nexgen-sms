@@ -1179,7 +1179,7 @@ export default function ReplyThreadPage({
             ) : null}
           </div>
 
-          <CallButton phone={conversationMeta?.phone || routePhone || ""} size={36} />
+          <CallButton phone={conversationMeta?.phone || routePhone || ""} size={40} />
 
           <div style={imgMenuWrapStyle}>
             <button
@@ -1521,8 +1521,12 @@ export default function ReplyThreadPage({
                   <span style={heroInfoValueStyle}>
                     {conversationMeta?.phone || routePhone || "-"}
                   </span>
-                  <CallButton phone={conversationMeta?.phone || routePhone || ""} size={32} />
                 </div>
+
+                <CallButton
+                  phone={conversationMeta?.phone || routePhone || ""}
+                  variant="prominent"
+                />
 
                 <Link
                   href="/replies"
