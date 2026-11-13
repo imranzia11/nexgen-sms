@@ -100,6 +100,16 @@ async function ensureDevice() {
   return device;
 }
 
+// Loads the Voice SDK and registers the device ahead of the first call so
+// the first dial isn't delayed by setup. Errors surface on the real call.
+export async function warmUpVoice() {
+  try {
+    await ensureDevice();
+  } catch {
+    /* ignored */
+  }
+}
+
 function stopTimer() {
   if (timer) clearInterval(timer);
   timer = null;

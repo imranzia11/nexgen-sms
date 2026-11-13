@@ -9,6 +9,7 @@ import {
   isVoiceAvailable,
   startCall,
   subscribeCall,
+  warmUpVoice,
   type CallState,
 } from "../lib/voiceClient";
 
@@ -79,7 +80,11 @@ export default function AutoDialer({ leads, onProgress }: Props) {
 
   useEffect(() => {
     let alive = true;
-    isVoiceAvailable().then((ok) => alive && setAvailable(ok));
+    isVoiceAvailable().then((ok) => {
+      if (!alive) return;
+      setAvailable(ok);
+      if (ok) void warmUpVoice();
+    });
     return () => {
       alive = false;
     };
@@ -407,8 +412,17 @@ export default function AutoDialer({ leads, onProgress }: Props) {
             </span>
           )}
           {run === "gap" && !paused && (
-            <span>
-              Next call in <strong>{countdown}s</strong>
+            <span
+              style={{
+                display: "inline-block",
+                background: "rgba(34,197,94,0.18)",
+                border: "1px solid rgba(34,197,94,0.5)",
+                borderRadius: 10,
+                padding: "8px 14px",
+                fontSize: 16,
+              }}
+            >
+              Next call in <strong style={{ fontSize: 20 }}>{countdown}s</strong>
               {nextUp ? ` - ${nextUp.name || "-"} ${nextUp.phone}` : ""}
             </span>
           )}

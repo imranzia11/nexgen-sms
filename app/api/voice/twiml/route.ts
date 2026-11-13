@@ -64,29 +64,29 @@ export async function POST(req: NextRequest) {
       return reject("This call could not be completed.");
     }
 
-    if (await isGloballyBlocked(to)) {
-      return reject("This number has opted out and cannot be contacted.");
-    }
-
     // Same rule as texting: a record only blocks while its status is
     // "blocked". Unblocking from the Replies page keeps the record and sets
     // status "active", so the mere existence of a record must not refuse
-    // the call.
-    const blockedSnap = await adminDb
-      .collection("blacklisted_numbers")
-      .where("ownerUid", "==", uid)
-      .where("phone", "==", to)
-      .get();
+    // the call. Both checks run together to keep call setup fast.
+    const [globallyBlocked, blockedSnap] = await Promise.all([
+      isGloballyBlocked(to),
+      adminDb
+        .collection("blacklisted_numbers")
+        .where("ownerUid", "==", uid)
+        .where("phone", "==", to)
+        .get(),
+    ]);
     const isBlockedForOwner = blockedSnap.docs.some(
       (d) => String(d.data()?.status || "").toLowerCase() === "blocked"
     );
-    if (isBlockedForOwner) {
+    if (globallyBlocked || isBlockedForOwner) {
       return reject("This number has opted out and cannot be contacted.");
     }
 
     const callSid = String(params.CallSid || "");
     if (callSid) {
-      await adminDb.collection("calls").doc(callSid).set({
+      // Not awaited: the log write must not delay connecting the call.
+      void adminDb.collection("calls").doc(callSid).set({
         ownerUid: uid,
         ownerEmail: String(user.email || ""),
         callSid,
@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
         direction: "outbound",
         status: "initiated",
         createdAt: FieldValue.serverTimestamp(),
-      });
+      }).catch((e) => console.error("Call log write failed", e));
     }
 
     const actionUrl = appBaseUrl
@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
       : "/api/voice/status";
 
     return twiml(
-      `<Dial callerId="${callerId}" answerOnBridge="true" action="${actionUrl}" method="POST"><Number>${to}</Number></Dial>`
+      `<Dial callerId="${callerId}" answerOnBridge="true" timeout="20" action="${actionUrl}" method="POST"><Number>${to}</Number></Dial>`
     );
   } catch (error) {
     console.error("Voice TwiML route failed", error);

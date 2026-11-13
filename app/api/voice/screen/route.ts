@@ -40,28 +40,35 @@ export async function POST(req: NextRequest) {
 
     const blocked = new Set<string>();
 
-    for (const part of chunk(phones, 30)) {
-      const [globalSnap, ownerSnap] = await Promise.all([
-        adminDb.collection("globalBlacklist").where("phone", "in", part).get(),
-        adminDb
-          .collection("blacklisted_numbers")
-          .where("ownerUid", "==", uid)
-          .where("phone", "in", part)
-          .get(),
-      ]);
+    // Chunks run in parallel groups; doing them one after another made a
+    // 2,000-number list take far too long to check.
+    const parts = chunk(phones, 30);
+    for (const group of chunk(parts, 20)) {
+      await Promise.all(
+        group.map(async (part) => {
+          const [globalSnap, ownerSnap] = await Promise.all([
+            adminDb.collection("globalBlacklist").where("phone", "in", part).get(),
+            adminDb
+              .collection("blacklisted_numbers")
+              .where("ownerUid", "==", uid)
+              .where("phone", "in", part)
+              .get(),
+          ]);
 
-      globalSnap.docs.forEach((d) => {
-        const data = d.data() || {};
-        if (String(data.status || "").toLowerCase() === "blocked") {
-          blocked.add(String(data.phone || d.id));
-        }
-      });
-      ownerSnap.docs.forEach((d) => {
-        const data = d.data() || {};
-        if (String(data.status || "").toLowerCase() === "blocked") {
-          blocked.add(String(data.phone || ""));
-        }
-      });
+          globalSnap.docs.forEach((d) => {
+            const data = d.data() || {};
+            if (String(data.status || "").toLowerCase() === "blocked") {
+              blocked.add(String(data.phone || d.id));
+            }
+          });
+          ownerSnap.docs.forEach((d) => {
+            const data = d.data() || {};
+            if (String(data.status || "").toLowerCase() === "blocked") {
+              blocked.add(String(data.phone || ""));
+            }
+          });
+        })
+      );
     }
 
     return NextResponse.json({ ok: true, blocked: Array.from(blocked) });
