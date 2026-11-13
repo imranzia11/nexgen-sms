@@ -1984,7 +1984,11 @@ export default function DashboardPage() {
                     <EmptyState text="No leads found in selected file." />
                   ) : (
                     <>
-                    <AutoDialer leads={filteredLeads} onProgress={setDialProgress} />
+                    <AutoDialer
+                      leads={filteredLeads}
+                      onProgress={setDialProgress}
+                      resetKey={selectedUploadId}
+                    />
                     <div style={tableWrapStyle}>
                       <table style={tableStyle}>
                         <thead>

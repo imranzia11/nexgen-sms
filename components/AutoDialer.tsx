@@ -55,9 +55,10 @@ function skipStatus(status?: string) {
 type Props = {
   leads: DialLead[];
   onProgress?: (p: DialProgress) => void;
+  resetKey?: string;
 };
 
-export default function AutoDialer({ leads, onProgress }: Props) {
+export default function AutoDialer({ leads, onProgress, resetKey }: Props) {
   const [available, setAvailable] = useState(false);
   const [call, setCall] = useState<CallState | null>(null);
   const [run, setRun] = useState<"off" | "dialing" | "gap" | "paused" | "done">("off");
@@ -113,6 +114,11 @@ export default function AutoDialer({ leads, onProgress }: Props) {
     tickRef.current = null;
   };
 
+  const clearOutcomes = useCallback(() => {
+    outcomesRef.current = {};
+    setOutcomes({});
+  }, []);
+
   const finish = useCallback(
     (message: string) => {
       clearTick();
@@ -121,8 +127,12 @@ export default function AutoDialer({ leads, onProgress }: Props) {
       setCountdown(0);
       setNote(message);
       setRunState("done");
+      // Row labels are only for the live run; clear them shortly after it ends.
+      setTimeout(() => {
+        if (runRef.current === "done") clearOutcomes();
+      }, 8000);
     },
-    [setRunState]
+    [setRunState, clearOutcomes]
   );
 
   const dialNext = useCallback(() => {
@@ -223,6 +233,27 @@ export default function AutoDialer({ leads, onProgress }: Props) {
     []
   );
 
+  // Switching to another file ends the run and clears all row labels.
+  const firstKey = useRef(true);
+  useEffect(() => {
+    if (firstKey.current) {
+      firstKey.current = false;
+      return;
+    }
+    const wasDialing = runRef.current === "dialing";
+    clearTick();
+    runRef.current = "off";
+    setRun("off");
+    currentRef.current = "";
+    setCurrentId("");
+    setCountdown(0);
+    pausedRef.current = false;
+    setPaused(false);
+    setNote("");
+    clearOutcomes();
+    if (wasDialing) hangUp();
+  }, [resetKey, clearOutcomes]);
+
   async function start() {
     if (screening) return;
     if (!withinCallingHours()) {
@@ -304,6 +335,7 @@ export default function AutoDialer({ leads, onProgress }: Props) {
     pausedRef.current = false;
     setPaused(false);
     setNote("Auto-dial stopped.");
+    clearOutcomes();
     if (wasDialing) hangUp();
   }
 
