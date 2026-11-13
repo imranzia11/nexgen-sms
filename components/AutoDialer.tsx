@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { auth } from "../lib/firebase";
+import { deleteField, doc, serverTimestamp, updateDoc, writeBatch } from "firebase/firestore";
+import { auth, db } from "../lib/firebase";
 import { toE164 } from "../lib/phone";
 import {
   dismissCallError,
@@ -23,7 +24,13 @@ import {
 // itself on microphone / account errors; pause, skip and stop are always one
 // click away.
 
-export type DialLead = { id: string; name?: string; phone: string; status?: string };
+export type DialLead = {
+  id: string;
+  name?: string;
+  phone: string;
+  status?: string;
+  dialStatus?: string;
+};
 export type DialOutcome = "answered" | "no answer" | "failed" | "skipped";
 export type DialProgress = {
   currentId: string;
@@ -56,9 +63,26 @@ type Props = {
   leads: DialLead[];
   onProgress?: (p: DialProgress) => void;
   resetKey?: string;
+  // Called after an outcome is saved on a lead (or cleared with null) so the
+  // parent's copy of the lead stays in sync.
+  onSaved?: (id: string, outcome: DialOutcome | null) => void;
 };
 
-export default function AutoDialer({ leads, onProgress, resetKey }: Props) {
+const VALID_OUTCOMES = ["answered", "no answer", "failed", "skipped"];
+
+function seedOutcomes(leads: DialLead[]) {
+  const m: Record<string, DialOutcome> = {};
+  for (const l of leads) {
+    if (l.dialStatus && VALID_OUTCOMES.includes(l.dialStatus)) {
+      m[l.id] = l.dialStatus as DialOutcome;
+    }
+  }
+  return m;
+}
+
+export default function AutoDialer({ leads, onProgress, resetKey, onSaved }: Props) {
+  const onSavedRef = useRef(onSaved);
+  onSavedRef.current = onSaved;
   const [available, setAvailable] = useState(false);
   const [call, setCall] = useState<CallState | null>(null);
   const [run, setRun] = useState<"off" | "dialing" | "gap" | "paused" | "done">("off");
@@ -104,10 +128,26 @@ export default function AutoDialer({ leads, onProgress, resetKey }: Props) {
     setRun(s);
   }, []);
 
+  // Records a dialed lead's outcome and saves it on the lead, so a later
+  // session resumes where this one left off.
   const record = useCallback((id: string, outcome: DialOutcome) => {
     outcomesRef.current = { ...outcomesRef.current, [id]: outcome };
     setOutcomes(outcomesRef.current);
+    if (!id) return;
+    void updateDoc(doc(db, "leads", id), {
+      dialStatus: outcome,
+      dialedAt: serverTimestamp(),
+    }).catch((e) => console.error("Could not save dial status", e));
+    onSavedRef.current?.(id, outcome);
   }, []);
+
+  // Load saved statuses whenever the lead list changes (not mid-run).
+  useEffect(() => {
+    if (["dialing", "gap", "paused"].includes(runRef.current)) return;
+    const m = seedOutcomes(leads);
+    outcomesRef.current = m;
+    setOutcomes(m);
+  }, [leads]);
 
   const clearTick = () => {
     if (tickRef.current) clearInterval(tickRef.current);
@@ -127,12 +167,8 @@ export default function AutoDialer({ leads, onProgress, resetKey }: Props) {
       setCountdown(0);
       setNote(message);
       setRunState("done");
-      // Row labels are only for the live run; clear them shortly after it ends.
-      setTimeout(() => {
-        if (runRef.current === "done") clearOutcomes();
-      }, 8000);
     },
-    [setRunState, clearOutcomes]
+    [setRunState]
   );
 
   const dialNext = useCallback(() => {
@@ -250,9 +286,34 @@ export default function AutoDialer({ leads, onProgress, resetKey }: Props) {
     pausedRef.current = false;
     setPaused(false);
     setNote("");
-    clearOutcomes();
     if (wasDialing) hangUp();
-  }, [resetKey, clearOutcomes]);
+  }, [resetKey]);
+
+  // Wipes the saved statuses on every lead in the list so dialing starts over.
+  async function restartFromBeginning() {
+    if (!window.confirm("Clear all saved call statuses and start this list from the beginning?")) {
+      return;
+    }
+    const ids = leads.filter((l) => l.dialStatus || outcomesRef.current[l.id]).map((l) => l.id);
+    try {
+      for (let i = 0; i < ids.length; i += 400) {
+        const batch = writeBatch(db);
+        ids.slice(i, i + 400).forEach((id) =>
+          batch.update(doc(db, "leads", id), {
+            dialStatus: deleteField(),
+            dialedAt: deleteField(),
+          })
+        );
+        await batch.commit();
+      }
+      ids.forEach((id) => onSavedRef.current?.(id, null));
+      outcomesRef.current = {};
+      setOutcomes({});
+      setNote("Statuses cleared. Start auto-dial to begin from the first lead.");
+    } catch (e: any) {
+      setNote(e?.message || "Could not clear statuses.");
+    }
+  }
 
   async function start() {
     if (screening) return;
@@ -263,14 +324,22 @@ export default function AutoDialer({ leads, onProgress, resetKey }: Props) {
 
     setScreening(true);
     setNote("Checking the list...");
-    outcomesRef.current = {};
-    setOutcomes({});
+    // Resume: numbers already dialed in earlier runs keep their saved status
+    // and are passed over.
+    outcomesRef.current = seedOutcomes(leads);
+    setOutcomes(outcomesRef.current);
+    const alreadyDone = Object.keys(outcomesRef.current).length;
 
     const seen = new Set<string>();
     const queue: DialLead[] = [];
     let invalid = 0;
     for (const lead of leads) {
       const phone = toE164(String(lead.phone || ""));
+      if (outcomesRef.current[lead.id]) {
+        seen.add(phone);
+        queue.push(lead);
+        continue;
+      }
       if (!/^\+\d{8,15}$/.test(phone) || skipStatus(lead.status) || seen.has(phone)) {
         invalid += 1;
         outcomesRef.current[lead.id] = "skipped";
@@ -288,13 +357,17 @@ export default function AutoDialer({ leads, onProgress, resetKey }: Props) {
       const res = await fetch("/api/voice/screen", {
         method: "POST",
         headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ phones: queue.map((l) => toE164(l.phone)) }),
+        body: JSON.stringify({
+          phones: queue
+            .filter((l) => !outcomesRef.current[l.id])
+            .map((l) => toE164(l.phone)),
+        }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json?.ok === false) throw new Error(json?.error || "Screening failed.");
       const blocked = new Set<string>(json.blocked || []);
       for (const lead of queue) {
-        if (blocked.has(toE164(lead.phone))) {
+        if (!outcomesRef.current[lead.id] && blocked.has(toE164(lead.phone))) {
           outcomesRef.current[lead.id] = "skipped";
           blockedCount += 1;
         }
@@ -319,7 +392,9 @@ export default function AutoDialer({ leads, onProgress, resetKey }: Props) {
     }
 
     setNote(
-      `Skipping ${invalid + blockedCount} number(s) (invalid, duplicate or opted out).`
+      `${alreadyDone > 0 ? `Resuming - ${alreadyDone} already done. ` : ""}Skipping ${
+        invalid + blockedCount
+      } number(s) (invalid, duplicate or opted out).`
     );
     setRunState("dialing");
     dialNext();
@@ -334,8 +409,7 @@ export default function AutoDialer({ leads, onProgress, resetKey }: Props) {
     setCountdown(0);
     pausedRef.current = false;
     setPaused(false);
-    setNote("Auto-dial stopped.");
-    clearOutcomes();
+    setNote("Auto-dial stopped. Progress is saved - Start resumes where you left off.");
     if (wasDialing) hangUp();
   }
 
@@ -414,7 +488,11 @@ export default function AutoDialer({ leads, onProgress, resetKey }: Props) {
               opacity: screening || callBusy || leads.length === 0 ? 0.5 : 1,
             }}
           >
-            {screening ? "Checking list..." : "Start auto-dial"}
+            {screening
+              ? "Checking list..."
+              : counts.length > 0
+              ? "Resume auto-dial"
+              : "Start auto-dial"}
           </button>
         ) : (
           <>
@@ -428,6 +506,11 @@ export default function AutoDialer({ leads, onProgress, resetKey }: Props) {
               Stop
             </button>
           </>
+        )}
+        {!active && counts.length > 0 && (
+          <button onClick={restartFromBeginning} style={btn("#475569")}>
+            Start over
+          </button>
         )}
         <span style={{ fontSize: 13, opacity: 0.8 }}>
           {total > 0 ? `${doneCount}/${total} done` : `${leads.length} leads in list`}

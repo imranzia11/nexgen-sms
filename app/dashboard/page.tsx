@@ -46,6 +46,8 @@ type LeadItem = {
   status?: string;
   validationNote?: string;
   sourceFileName?: string;
+  rowIndex?: number;
+  dialStatus?: string;
 };
 
 type UploadItem = {
@@ -242,6 +244,23 @@ function guessPhoneColumn(headers: string[]) {
 }
 
 function guessNameFromRow(row: RowData) {
+  // Header-flexible: "Merchant name", "Marchant name", "Business Name",
+  // "Owner", "Contact name" etc. Phone/number columns are never used.
+  const preferred = [
+    /^m[ae]r?chant/i,
+    /^(full|customer|contact|owner|first)[\s_]*name/i,
+    /^name$/i,
+    /^owner/i,
+    /name/i,
+  ];
+  const keys = Object.keys(row || {}).filter(
+    (k) => !/phone|number|mobile|cell|email|file/i.test(k)
+  );
+  for (const rx of preferred) {
+    const key = keys.find((k) => rx.test(k.trim()) && String(row[k] || "").trim() !== "");
+    if (key) return String(row[key]).trim();
+  }
+
   return (
     row["Name"] ||
     row["name"] ||
@@ -647,8 +666,18 @@ export default function DashboardPage() {
           status: data.status || "",
           validationNote: data.validationNote || "",
           sourceFileName: data.sourceFileName || "",
+          rowIndex: typeof data.rowIndex === "number" ? data.rowIndex : undefined,
+          dialStatus: data.dialStatus || "",
         };
       });
+
+      // Keep the file's original row order so dialing can resume where it
+      // stopped (older uploads without rowIndex fall back to id order).
+      items.sort((a, b) =>
+        a.rowIndex !== undefined && b.rowIndex !== undefined
+          ? a.rowIndex - b.rowIndex
+          : a.id.localeCompare(b.id)
+      );
 
       setSelectedLeads(items);
     } catch (error) {
@@ -849,6 +878,7 @@ export default function DashboardPage() {
                 ? "Valid US number"
                 : validation.reason,
               sourceFileName: file.name,
+              rowIndex: processed,
               createdAt: serverTimestamp(),
             });
 
@@ -1988,6 +2018,13 @@ export default function DashboardPage() {
                       leads={filteredLeads}
                       onProgress={setDialProgress}
                       resetKey={selectedUploadId}
+                      onSaved={(id, outcome) =>
+                        setSelectedLeads((prev) =>
+                          prev.map((l) =>
+                            l.id === id ? { ...l, dialStatus: outcome || "" } : l
+                          )
+                        )
+                      }
                     />
                     <div style={tableWrapStyle}>
                       <table style={tableStyle}>
