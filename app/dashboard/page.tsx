@@ -22,6 +22,7 @@ import {
   serverTimestamp,
   setDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import Papa from "papaparse";
 import { auth, db } from "../../lib/firebase";
@@ -339,6 +340,10 @@ export default function DashboardPage() {
   const [twilioNumber, setTwilioNumber] = useState("");
 
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
   const [sendingSms, setSendingSms] = useState(false);
   const [sendingSingleSms, setSendingSingleSms] = useState(false);
   // Live progress for a chunked bulk send (see SEND_CHUNK_SIZE below) - null
@@ -776,6 +781,7 @@ export default function DashboardPage() {
     if (!file) return;
 
     setUploading(true);
+    setUploadProgress(null);
 
     Papa.parse<RowData>(file, {
       header: true,
@@ -817,13 +823,21 @@ export default function DashboardPage() {
           });
 
           let imported = 0;
+          let processed = 0;
+          const totalToWrite = parsedRows.length;
+          setUploadProgress({ done: 0, total: totalToWrite });
+
+          // Written in batches of 400 (Firestore allows 500 per batch), which
+          // is far faster than one write per lead, and drives the % shown.
+          let batch = writeBatch(db);
+          let inBatch = 0;
 
           for (const row of parsedRows) {
             const rawPhone = String(row[phoneColumn] || "");
             const validation = getUSPhoneValidation(rawPhone);
             const detectedName = String(guessNameFromRow(row) || "").trim();
 
-            await addDoc(collection(db, "leads"), {
+            batch.set(doc(collection(db, "leads")), {
               uploadId: uploadRef.id,
               uploadedBy: user.uid,
               ownerUid: user.uid,
@@ -841,7 +855,21 @@ export default function DashboardPage() {
             if (validation.valid) {
               imported += 1;
             }
+
+            inBatch += 1;
+            processed += 1;
+            if (inBatch >= 400) {
+              await batch.commit();
+              batch = writeBatch(db);
+              inBatch = 0;
+              setUploadProgress({ done: processed, total: totalToWrite });
+            }
           }
+
+          if (inBatch > 0) {
+            await batch.commit();
+          }
+          setUploadProgress({ done: totalToWrite, total: totalToWrite });
 
           await loadUploads(user.uid);
           setSelectedUploadId(uploadRef.id);
@@ -853,6 +881,7 @@ export default function DashboardPage() {
           showToast(error?.message || "Import failed.", "error");
         } finally {
           setUploading(false);
+          setUploadProgress(null);
           if (fileInputRef.current) {
             fileInputRef.current.value = "";
           }
@@ -1531,6 +1560,40 @@ export default function DashboardPage() {
                 ? "The system is sending your message directly to the entered USA number. Please do not close this page."
                 : "The system is busy."}
             </p>
+
+            {uploading ? (
+              <div style={{ marginTop: 16, width: "100%" }}>
+                <div
+                  style={{
+                    height: 10,
+                    borderRadius: 999,
+                    background: "rgba(255,255,255,0.15)",
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      height: "100%",
+                      width: `${
+                        uploadProgress && uploadProgress.total > 0
+                          ? Math.round((uploadProgress.done / uploadProgress.total) * 100)
+                          : 3
+                      }%`,
+                      background: "#5eead4",
+                      borderRadius: 999,
+                      transition: "width 0.3s ease",
+                    }}
+                  />
+                </div>
+                <p style={{ ...busyTextStyle, marginTop: 8, fontWeight: 700 }}>
+                  {uploadProgress && uploadProgress.total > 0
+                    ? `${Math.round(
+                        (uploadProgress.done / uploadProgress.total) * 100
+                      )}% - ${uploadProgress.done.toLocaleString()} of ${uploadProgress.total.toLocaleString()} leads saved`
+                    : "Reading file..."}
+                </p>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
