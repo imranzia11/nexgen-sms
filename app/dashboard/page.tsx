@@ -32,6 +32,7 @@ import RepliesNavBadge from "../../components/RepliesNavBadge";
 import TwilioBalanceCard from "../../components/TwilioBalanceCard";
 import BillingNavCard from "../../components/BillingNavCard";
 import CallButton from "../../components/CallButton";
+import AutoDialer, { type DialProgress } from "../../components/AutoDialer";
 
 type RowData = Record<string, string>;
 
@@ -356,6 +357,11 @@ export default function DashboardPage() {
   const [loadingUploads, setLoadingUploads] = useState(false);
   const [deletingUploadId, setDeletingUploadId] = useState("");
 
+  const [dialProgress, setDialProgress] = useState<DialProgress>({
+    currentId: "",
+    outcomes: {},
+    active: false,
+  });
   const [selectedUploadId, setSelectedUploadId] = useState("");
   const [selectedUpload, setSelectedUpload] = useState<UploadItem | null>(null);
   const [selectedLeads, setSelectedLeads] = useState<LeadItem[]>([]);
@@ -1914,6 +1920,8 @@ export default function DashboardPage() {
                   ) : filteredLeads.length === 0 ? (
                     <EmptyState text="No leads found in selected file." />
                   ) : (
+                    <>
+                    <AutoDialer leads={filteredLeads} onProgress={setDialProgress} />
                     <div style={tableWrapStyle}>
                       <table style={tableStyle}>
                         <thead>
@@ -1929,12 +1937,28 @@ export default function DashboardPage() {
                           {pagedLeads.map((lead) => {
                             const tone = statusChipTone(lead.status);
                             return (
-                              <tr key={lead.id}>
+                              <tr
+                                key={lead.id}
+                                style={
+                                  dialProgress.currentId === lead.id
+                                    ? { background: "rgba(34,197,94,0.16)" }
+                                    : undefined
+                                }
+                              >
                                 <td style={tdStyle}>{lead.name || "-"}</td>
                                 <td style={tdStyle}>
                                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                                     <span>{lead.phone}</span>
                                     <CallButton phone={lead.phone || ""} size={28} />
+                                    {dialProgress.currentId === lead.id ? (
+                                      <span style={{ fontSize: 12, fontWeight: 700, color: "#16a34a" }}>
+                                        Dialing
+                                      </span>
+                                    ) : dialProgress.outcomes[lead.id] ? (
+                                      <span style={{ fontSize: 12, fontWeight: 700, opacity: 0.75 }}>
+                                        {dialProgress.outcomes[lead.id]}
+                                      </span>
+                                    ) : null}
                                   </div>
                                 </td>
                                 <td style={tdStyle}>
@@ -1965,6 +1989,7 @@ export default function DashboardPage() {
                         </tbody>
                       </table>
                     </div>
+                    </>
                   )}
 
                   {filteredLeads.length > 0 ? (
