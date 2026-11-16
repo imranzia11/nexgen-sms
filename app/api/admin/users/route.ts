@@ -111,6 +111,7 @@ export async function POST(req: NextRequest) {
         name,
         role: "user",
         isActive: true,
+        voiceEnabled: true,
         twilioNumber,
         createdAt: FieldValue.serverTimestamp(),
         createdBy: decoded.uid,
