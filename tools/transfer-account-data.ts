@@ -122,12 +122,15 @@ async function main() {
     process.exit(1);
   }
 
-  const toSnap = await adminDb.collection("users").where("email", "==", toEmail).limit(1).get();
-  if (toSnap.empty) {
-    console.error(`No account with email ${toEmail}.`);
+  // The stale profile of a deleted login can share this email, so only an
+  // account whose login still exists counts as the destination.
+  const toSnap = await adminDb.collection("users").where("email", "==", toEmail).get();
+  const liveTarget = toSnap.docs.find((d) => authExists.has(d.id));
+  if (!liveTarget) {
+    console.error(`No live account (with a working login) for email ${toEmail}.`);
     process.exit(1);
   }
-  const toUid = toSnap.docs[0].id;
+  const toUid = liveTarget.id;
   if (toUid === fromUid) {
     console.error("Old and new uid are the same.");
     process.exit(1);
