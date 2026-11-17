@@ -45,13 +45,22 @@ async function main() {
   }
   const client = twilio(sid, token);
 
-  const userSnap = await adminDb.collection("users").where("email", "==", email).limit(1).get();
-  if (userSnap.empty) {
-    console.error(`No account with email ${email}.`);
+  // Resolve the uid from Firebase Authentication so a leftover profile from a
+  // deleted login with the same email can never be picked by mistake.
+  const { getAuth } = await import("firebase-admin/auth");
+  let uid = "";
+  try {
+    uid = (await getAuth().getUserByEmail(email)).uid;
+  } catch {
+    console.error(`No login exists in Firebase Authentication for ${email}.`);
     process.exit(1);
   }
-  const uid = userSnap.docs[0].id;
-  const user = userSnap.docs[0].data() || {};
+  const userDoc = await adminDb.collection("users").doc(uid).get();
+  if (!userDoc.exists) {
+    console.error(`Login exists but users/${uid} profile is missing.`);
+    process.exit(1);
+  }
+  const user = userDoc.data() || {};
   const number = toE164(String(user.twilioNumber || user.assignedTwilioNumber || ""));
   if (!number) {
     console.error("That account has no Twilio number.");

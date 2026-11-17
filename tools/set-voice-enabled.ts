@@ -73,18 +73,21 @@ async function main() {
     return;
   }
 
-  const userSnap = await adminDb
-    .collection("users")
-    .where("email", "==", loginEmail)
-    .limit(1)
-    .get();
-
-  if (userSnap.empty) {
-    console.error(`No user found with login email ${loginEmail}.`);
+  // Resolve through Firebase Authentication so a leftover profile from a
+  // deleted login with the same email is never picked.
+  const { getAuth } = await import("firebase-admin/auth");
+  let authUid = "";
+  try {
+    authUid = (await getAuth().getUserByEmail(loginEmail)).uid;
+  } catch {
+    console.error(`No login exists in Firebase Authentication for ${loginEmail}.`);
     process.exit(1);
   }
-
-  const userDoc = userSnap.docs[0];
+  const userDoc = await adminDb.collection("users").doc(authUid).get();
+  if (!userDoc.exists) {
+    console.error(`Login exists but users/${authUid} profile is missing.`);
+    process.exit(1);
+  }
   const existing = userDoc.data() || {};
 
   console.log(`Account: ${loginEmail} (uid: ${userDoc.id})`);
