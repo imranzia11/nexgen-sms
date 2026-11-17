@@ -57,7 +57,15 @@ async function main() {
     const orphans = new Map<string, Record<string, number>>();
     const sample = new Map<string, string>();
 
-    for (const col of ["uploads", "leads", "conversations", "campaigns", "followUps"]) {
+    for (const col of [
+      "uploads",
+      "leads",
+      "conversations",
+      "campaigns",
+      "followUps",
+      "messages",
+      "replies",
+    ]) {
       const snap = await adminDb.collection(col).select("ownerUid", "fileName", "twilioNumber").get();
       for (const d of snap.docs) {
         const owner = String(d.get("ownerUid") || "");
