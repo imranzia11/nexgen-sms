@@ -48,8 +48,28 @@ function getArg(name: string): string {
 async function main() {
   const { adminDb } = await import("../lib/firebaseAdmin");
 
+  const { getAuth } = await import("firebase-admin/auth");
   const usersSnap = await adminDb.collection("users").get();
-  const knownUids = new Set(usersSnap.docs.map((d) => d.id));
+
+  // An account counts as "gone" if its users/{uid} profile is missing OR its
+  // login no longer exists in Firebase Authentication (deleting only the
+  // login leaves the profile behind, which hides the old data from a scan).
+  const profileUids = usersSnap.docs.map((d) => d.id);
+  const authExists = new Set<string>();
+  for (let i = 0; i < profileUids.length; i += 100) {
+    const res = await getAuth().getUsers(profileUids.slice(i, i + 100).map((uid) => ({ uid })));
+    res.users.forEach((u) => authExists.add(u.uid));
+  }
+  const knownUids = new Set(profileUids.filter((uid) => authExists.has(uid)));
+  const staleProfiles = usersSnap.docs.filter((d) => !authExists.has(d.id));
+  if (staleProfiles.length > 0) {
+    console.log("Profiles whose login was deleted (data may still be under these):");
+    staleProfiles.forEach((d) => {
+      const x = d.data() || {};
+      console.log(`  ${d.id}  ${x.email || ""}  ${x.twilioNumber || ""}`);
+    });
+    console.log("");
+  }
 
   // ---------- --find ----------
   if (process.argv.includes("--find")) {
