@@ -39,6 +39,18 @@ const ROOT_COLLECTIONS = [
   "followUpScheduleErrors",
 ];
 
+async function withRetry<T>(fn: () => Promise<T>, tries = 6): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (e: any) {
+      const transient = [4, 14, 8, 10].includes(Number(e?.code)); // timeout/unavailable/etc.
+      if (!transient || attempt >= tries) throw e;
+      await new Promise((r) => setTimeout(r, 1000 * attempt));
+    }
+  }
+}
+
 function getArg(name: string): string {
   const prefix = `--${name}=`;
   const arg = process.argv.find((a) => a.startsWith(prefix));
@@ -192,22 +204,31 @@ async function main() {
   console.log(`conversations: ${convos.size} doc(s) (+ their messages)`);
   if (apply) {
     let done = 0;
-    for (const c of convos.docs) {
+    // Several conversations at once, each step retried on timeouts. Re-running
+    // after any failure is safe: finished conversations no longer match.
+    const moveOne = async (c: (typeof convos.docs)[number]) => {
       const newRef = adminDb.collection("conversations").doc(rewriteId(c.id));
-      await newRef.set(fixFields(c.data()));
+      await withRetry(() => newRef.set(fixFields(c.data())));
 
-      const msgs = await c.ref.collection("messages").get();
-      for (let i = 0; i < msgs.docs.length; i += 400) {
-        const batch = adminDb.batch();
-        msgs.docs.slice(i, i + 400).forEach((m) => {
-          batch.set(newRef.collection("messages").doc(m.id), fixFields(m.data()));
-          batch.delete(m.ref);
+      const msgs = await withRetry(() => c.ref.collection("messages").get());
+      for (let i = 0; i < msgs.docs.length; i += 200) {
+        await withRetry(() => {
+          const batch = adminDb.batch();
+          msgs.docs.slice(i, i + 200).forEach((m) => {
+            batch.set(newRef.collection("messages").doc(m.id), fixFields(m.data()));
+            batch.delete(m.ref);
+          });
+          return batch.commit();
         });
-        await batch.commit();
       }
-      await c.ref.delete();
+      await withRetry(() => c.ref.delete());
       done += 1;
-      if (done % 200 === 0) console.log(`  ...${done}/${convos.size} conversations moved`);
+      if (done % 100 === 0) console.log(`  ...${done}/${convos.size} conversations moved`);
+    };
+
+    const PARALLEL = 4;
+    for (let i = 0; i < convos.docs.length; i += PARALLEL) {
+      await Promise.all(convos.docs.slice(i, i + PARALLEL).map(moveOne));
     }
   }
 
