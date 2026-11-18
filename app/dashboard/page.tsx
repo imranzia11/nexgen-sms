@@ -33,6 +33,7 @@ import RepliesNavBadge from "../../components/RepliesNavBadge";
 import TwilioBalanceCard from "../../components/TwilioBalanceCard";
 import BillingNavCard from "../../components/BillingNavCard";
 import CallButton from "../../components/CallButton";
+import { markInterested } from "../../lib/callDisposition";
 import AutoDialer, { type DialProgress } from "../../components/AutoDialer";
 
 type RowData = Record<string, string>;
@@ -413,7 +414,7 @@ export default function DashboardPage() {
   const [twilioNumber, setTwilioNumber] = useState("");
 
   const [uploading, setUploading] = useState(false);
-  const [showInterestedOnly, setShowInterestedOnly] = useState(false);
+  const [leadFilter, setLeadFilter] = useState<"all" | "interested" | "answered">("all");
   const [showImportHelp, setShowImportHelp] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{
     done: number;
@@ -1525,9 +1526,12 @@ export default function DashboardPage() {
 
   const filteredLeads = useMemo(() => {
     const term = leadSearch.trim().toLowerCase();
-    const base = showInterestedOnly
-      ? selectedLeads.filter((l) => l.interested === true)
-      : selectedLeads;
+    const base =
+      leadFilter === "interested"
+        ? selectedLeads.filter((l) => l.interested === true)
+        : leadFilter === "answered"
+        ? selectedLeads.filter((l) => l.dialStatus === "answered")
+        : selectedLeads;
     if (!term) return base;
 
     return base.filter((lead) => {
@@ -1542,7 +1546,7 @@ export default function DashboardPage() {
         String(lead.sourceFileName || "").toLowerCase().includes(term)
       );
     });
-  }, [selectedLeads, leadSearch, showInterestedOnly]);
+  }, [selectedLeads, leadSearch, leadFilter]);
 
   // A call panel action (Interested / Block) updates the matching lead here.
   useEffect(() => {
@@ -2195,17 +2199,20 @@ export default function DashboardPage() {
                         placeholder="Search leads"
                         style={inlineSearchInputStyle}
                       />
-                      <button
-                        onClick={() => setShowInterestedOnly((v) => !v)}
-                        style={{
-                          ...secondaryButtonStyle,
-                          ...(showInterestedOnly
-                            ? { background: "#16a34a", color: "#fff", border: "1px solid #16a34a" }
-                            : {}),
-                        }}
-                      >
-                        ★ Interested
-                      </button>
+                      {(["interested", "answered"] as const).map((f) => (
+                        <button
+                          key={f}
+                          onClick={() => setLeadFilter((cur) => (cur === f ? "all" : f))}
+                          style={{
+                            ...secondaryButtonStyle,
+                            ...(leadFilter === f
+                              ? { background: "#16a34a", color: "#fff", border: "1px solid #16a34a" }
+                              : {}),
+                          }}
+                        >
+                          {f === "interested" ? "★ Interested" : "Answered"}
+                        </button>
+                      ))}
                       <button
                         onClick={() =>
                           selectedUploadId && loadLeadsForUpload(selectedUploadId)
@@ -2279,6 +2286,26 @@ export default function DashboardPage() {
                                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                                     <span>{lead.phone}</span>
                                     <CallButton phone={lead.phone || ""} size={28} />
+                                    <button
+                                      type="button"
+                                      title={lead.interested ? "Marked interested" : "Mark as interested (opens it in Replies)"}
+                                      disabled={lead.interested === true}
+                                      onClick={() => {
+                                        void markInterested(lead.phone).catch(() =>
+                                          showToast("Could not mark as interested.", "error")
+                                        );
+                                      }}
+                                      style={{
+                                        border: "none",
+                                        background: "transparent",
+                                        cursor: lead.interested ? "default" : "pointer",
+                                        fontSize: 20,
+                                        lineHeight: 1,
+                                        color: lead.interested ? "#f59e0b" : "#9ca3af",
+                                      }}
+                                    >
+                                      {lead.interested ? "★" : "☆"}
+                                    </button>
                                     {dialProgress.currentId === lead.id ? (
                                       <span style={{ fontSize: 12, fontWeight: 700, color: "#16a34a" }}>
                                         Dialing

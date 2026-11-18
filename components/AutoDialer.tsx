@@ -39,6 +39,7 @@ export type DialProgress = {
 };
 
 const GAP_SECONDS = 5;
+const ANSWERED_GAP_SECONDS = 15;
 
 // Calling runs around the clock. The account holder is responsible for
 // complying with local calling-hour rules.
@@ -199,10 +200,12 @@ export default function AutoDialer({ leads, onProgress, resetKey, onSaved }: Pro
     void startCall(toE164(next.phone));
   }, [finish, setRunState]);
 
-  const beginGap = useCallback(() => {
+  // After a call that was actually answered the gap is longer, so there is
+  // time to press Interested / Block on it before the next number is dialed.
+  const beginGap = useCallback((seconds: number = GAP_SECONDS) => {
     clearTick();
     setRunState("gap");
-    let left = GAP_SECONDS;
+    let left = seconds;
     setCountdown(left);
     tickRef.current = setInterval(() => {
       if (pausedRef.current) return;
@@ -237,7 +240,7 @@ export default function AutoDialer({ leads, onProgress, resetKey, onSaved }: Pro
         if (pausedRef.current) {
           setRunState("paused");
         } else {
-          beginGap();
+          beginGap(!skippedNow && reachedRef.current ? ANSWERED_GAP_SECONDS : GAP_SECONDS);
         }
       } else if (s.status === "error") {
         record(currentRef.current, "failed");
@@ -491,7 +494,7 @@ export default function AutoDialer({ leads, onProgress, resetKey, onSaved }: Pro
               {paused ? "Resume" : "Pause after this call"}
             </button>
             <button onClick={skip} style={btn("#334155")}>
-              Skip
+              {run === "gap" ? "Call next now" : "Skip"}
             </button>
             <button onClick={stop} style={btn("#dc2626")}>
               Stop
@@ -530,6 +533,9 @@ export default function AutoDialer({ leads, onProgress, resetKey, onSaved }: Pro
             >
               Next call in <strong style={{ fontSize: 20 }}>{countdown}s</strong>
               {nextUp ? ` - ${nextUp.name || "-"} ${nextUp.phone}` : ""}
+              <span style={{ display: "block", fontSize: 12, opacity: 0.85, marginTop: 2 }}>
+                Mark the last call ★ Interested or Block in the call panel before it dials.
+              </span>
             </span>
           )}
           {paused && run !== "dialing" && <span>Paused. Press Resume to continue.</span>}
