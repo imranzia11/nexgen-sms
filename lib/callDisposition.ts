@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  addDoc,
   collection,
   doc,
   getDoc,
@@ -12,11 +13,12 @@ import {
   where,
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
-import { phoneDocId, reversePhone, toE164 } from "./phone";
+import { phoneDocId, toE164 } from "./phone";
 
 // What a rep can do with a number during or right after a call:
-//  - markInterested: flags the lead as an interested customer and opens a
-//    conversation for it, so it appears in Replies where the rep can text it
+//  - markInterested: flags the lead as an interested customer; it shows in
+//    the dashboard's "Call Leads" tab until the first text is sent, which
+//    opens the conversation in Replies
 //  - blockNumber: adds the number to the account's blocked list (same record
 //    the Replies page "Block" action writes), so it is never texted or dialed
 
@@ -49,50 +51,36 @@ export async function markInterested(rawPhone: string) {
   const phone = toE164(rawPhone);
   const { uid, data } = await currentProfile();
 
+  // The lead goes to the "Call Leads" list. It only reaches Replies once the
+  // first text is sent (see components/CallLeadsPanel.tsx), so no conversation
+  // is created here.
   const leadDocs = await leadsForPhone(uid, phone);
-  const leadName = String(leadDocs.find((d) => d.get("name"))?.get("name") || "");
-  await Promise.all(
-    leadDocs.map((d) =>
-      updateDoc(d.ref, { interested: true, interestedAt: serverTimestamp() })
-    )
-  );
-
-  const convoRef = doc(db, "conversations", `${uid}_${phoneDocId(phone)}`);
-  const convoSnap = await getDoc(convoRef);
-  const number = toE164(String(data.twilioNumber || data.assignedTwilioNumber || ""));
-
-  if (convoSnap.exists()) {
-    await updateDoc(convoRef, {
-      callLead: true,
-      interested: true,
-      blocked: false,
-      updatedAt: serverTimestamp(),
-    });
+  if (leadDocs.length > 0) {
+    await Promise.all(
+      leadDocs.map((d) =>
+        updateDoc(d.ref, {
+          interested: true,
+          interestedAt: serverTimestamp(),
+          contacted: false,
+        })
+      )
+    );
   } else {
-    await setDoc(convoRef, {
+    // A number dialed by hand that isn't in any imported file.
+    await addDoc(collection(db, "leads"), {
+      uploadId: "",
+      uploadedBy: uid,
       ownerUid: uid,
-      ownerEmail: String(data.email || ""),
-      ownerName: String(data.name || ""),
-      ownerRole: String(data.role || "user"),
+      name: "",
       phone,
-      phoneReversed: reversePhone(phone),
-      name: leadName,
-      twilioNumber: number,
-      assignedTwilioNumber: number,
-      lastMessage: "Interested customer (from call)",
-      lastDirection: "outbound",
-      lastMessageAt: serverTimestamp(),
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      status: "awaiting_reply",
-      hasReply: false,
-      unreadCount: 0,
-      replyCount: 0,
-      outboundCount: 0,
-      messageCount: 0,
-      blocked: false,
-      callLead: true,
+      rawPhone: phone,
+      status: "verified",
+      validationNote: "Added from a call",
+      sourceFileName: "Calls",
       interested: true,
+      interestedAt: serverTimestamp(),
+      contacted: false,
+      createdAt: serverTimestamp(),
     });
   }
 
