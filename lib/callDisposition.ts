@@ -1,0 +1,145 @@
+"use client";
+
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+} from "firebase/firestore";
+import { auth, db } from "./firebase";
+import { phoneDocId, reversePhone, toE164 } from "./phone";
+
+// What a rep can do with a number during or right after a call:
+//  - markInterested: flags the lead as an interested customer and opens a
+//    conversation for it, so it appears in Replies where the rep can text it
+//  - blockNumber: adds the number to the account's blocked list (same record
+//    the Replies page "Block" action writes), so it is never texted or dialed
+
+export type DispositionEvent = {
+  phone: string;
+  interested?: boolean;
+  blocked?: boolean;
+};
+
+function announce(detail: DispositionEvent) {
+  window.dispatchEvent(new CustomEvent("lead-disposition", { detail }));
+}
+
+async function currentProfile() {
+  const user = auth.currentUser;
+  if (!user) throw new Error("You are not signed in.");
+  const snap = await getDoc(doc(db, "users", user.uid));
+  const data = snap.exists() ? snap.data() || {} : {};
+  return { uid: user.uid, data };
+}
+
+async function leadsForPhone(uid: string, phone: string) {
+  const snap = await getDocs(
+    query(collection(db, "leads"), where("ownerUid", "==", uid), where("phone", "==", phone))
+  );
+  return snap.docs;
+}
+
+export async function markInterested(rawPhone: string) {
+  const phone = toE164(rawPhone);
+  const { uid, data } = await currentProfile();
+
+  const leadDocs = await leadsForPhone(uid, phone);
+  const leadName = String(leadDocs.find((d) => d.get("name"))?.get("name") || "");
+  await Promise.all(
+    leadDocs.map((d) =>
+      updateDoc(d.ref, { interested: true, interestedAt: serverTimestamp() })
+    )
+  );
+
+  const convoRef = doc(db, "conversations", `${uid}_${phoneDocId(phone)}`);
+  const convoSnap = await getDoc(convoRef);
+  const number = toE164(String(data.twilioNumber || data.assignedTwilioNumber || ""));
+
+  if (convoSnap.exists()) {
+    await updateDoc(convoRef, {
+      callLead: true,
+      interested: true,
+      blocked: false,
+      updatedAt: serverTimestamp(),
+    });
+  } else {
+    await setDoc(convoRef, {
+      ownerUid: uid,
+      ownerEmail: String(data.email || ""),
+      ownerName: String(data.name || ""),
+      ownerRole: String(data.role || "user"),
+      phone,
+      phoneReversed: reversePhone(phone),
+      name: leadName,
+      twilioNumber: number,
+      assignedTwilioNumber: number,
+      lastMessage: "Interested customer (from call)",
+      lastDirection: "outbound",
+      lastMessageAt: serverTimestamp(),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      status: "awaiting_reply",
+      hasReply: false,
+      unreadCount: 0,
+      replyCount: 0,
+      outboundCount: 0,
+      messageCount: 0,
+      blocked: false,
+      callLead: true,
+      interested: true,
+    });
+  }
+
+  announce({ phone, interested: true });
+}
+
+export async function blockNumber(rawPhone: string) {
+  const phone = toE164(rawPhone);
+  const { uid, data } = await currentProfile();
+  const number = String(data.twilioNumber || data.assignedTwilioNumber || "").trim();
+
+  await setDoc(
+    doc(db, "blacklisted_numbers", `${uid}_${phoneDocId(phone)}`),
+    {
+      ownerUid: uid,
+      ownerEmail: String(data.email || ""),
+      ownerName: String(data.name || ""),
+      phone,
+      twilioNumber: number,
+      assignedTwilioNumber: String(data.assignedTwilioNumber || ""),
+      status: "blocked",
+      source: "manual_block_from_call",
+      reason: "manual_block",
+      lastKeyword: "STOP",
+      lastBody: "",
+      blockedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      unblockedAt: null,
+    },
+    { merge: true }
+  );
+
+  // Only touch a conversation that already exists.
+  const convoRef = doc(db, "conversations", `${uid}_${phoneDocId(phone)}`);
+  const convoSnap = await getDoc(convoRef);
+  if (convoSnap.exists()) {
+    await updateDoc(convoRef, {
+      status: "blocked",
+      blocked: true,
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  const leadDocs = await leadsForPhone(uid, phone);
+  await Promise.all(
+    leadDocs.map((d) => updateDoc(d.ref, { interested: false, blockedByCall: true }))
+  );
+
+  announce({ phone, blocked: true, interested: false });
+}

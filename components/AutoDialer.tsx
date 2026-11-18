@@ -40,19 +40,10 @@ export type DialProgress = {
 
 const GAP_SECONDS = 5;
 
-function easternHour(): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    hour: "numeric",
-    hour12: false,
-  }).formatToParts(new Date());
-  const h = Number(parts.find((p) => p.type === "hour")?.value || 0);
-  return h === 24 ? 0 : h;
-}
-
+// Calling runs around the clock. The account holder is responsible for
+// complying with local calling-hour rules.
 function withinCallingHours() {
-  const h = easternHour();
-  return h >= 11 && h < 21;
+  return true;
 }
 
 function skipStatus(status?: string) {
@@ -549,7 +540,7 @@ export default function AutoDialer({ leads, onProgress, resetKey, onSaved }: Pro
       {note && <div style={{ fontSize: 13, opacity: 0.85 }}>{note}</div>}
       <div style={{ fontSize: 12, opacity: 0.6 }}>
         Dials in list order, one at a time. Hang up to move to the next lead. Opted-out numbers are
-        skipped. Runs 11:00-21:00 US Eastern. Keep this tab open.
+        skipped. Keep this tab open.
       </div>
     </div>
   );

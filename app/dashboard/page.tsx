@@ -48,6 +48,15 @@ type LeadItem = {
   sourceFileName?: string;
   rowIndex?: number;
   dialStatus?: string;
+  interested?: boolean;
+  company?: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  monthlyRevenue?: string;
+  amountRequested?: string;
 };
 
 type UploadItem = {
@@ -274,6 +283,51 @@ function guessNameFromRow(row: RowData) {
   );
 }
 
+// Pulls the optional business columns out of a row by header name, so files
+// with different column spellings still import ("Company/Business Name",
+// "Monthly Revenue", "Zip Code" ...). Missing columns are simply empty.
+function extractLeadExtras(row: RowData) {
+  const find = (rx: RegExp, exclude?: RegExp) => {
+    const key = Object.keys(row || {}).find(
+      (k) => rx.test(k.trim()) && !(exclude && exclude.test(k)) && String(row[k] || "").trim() !== ""
+    );
+    return key ? String(row[key]).trim() : "";
+  };
+  return {
+    company: find(/company|business\s*name|dba/i, /phone|number|email/i),
+    email: find(/e-?mail/i),
+    address: find(/address|street/i, /e-?mail/i),
+    city: find(/^city/i),
+    state: find(/^state|^st$/i),
+    zip: find(/zip|postal/i),
+    monthlyRevenue: find(/monthly.*revenue|revenue/i),
+    amountRequested: find(/amount.*request|requested/i),
+  };
+}
+
+const IMPORT_HEADERS = [
+  "Merchant Name",
+  "Company/Business Name",
+  "Phone",
+  "Email",
+  "Address",
+  "City",
+  "State",
+  "Zip",
+  "Monthly Revenue",
+  "Amount Requested",
+];
+
+function downloadSampleHeaders() {
+  const blob = new Blob([IMPORT_HEADERS.join(",") + "\n"], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "lead-import-template.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function truncateMiddle(value: string, start = 8, end = 6) {
   if (!value) return "-";
   if (value.length <= start + end + 3) return value;
@@ -359,6 +413,8 @@ export default function DashboardPage() {
   const [twilioNumber, setTwilioNumber] = useState("");
 
   const [uploading, setUploading] = useState(false);
+  const [showInterestedOnly, setShowInterestedOnly] = useState(false);
+  const [showImportHelp, setShowImportHelp] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{
     done: number;
     total: number;
@@ -668,6 +724,15 @@ export default function DashboardPage() {
           sourceFileName: data.sourceFileName || "",
           rowIndex: typeof data.rowIndex === "number" ? data.rowIndex : undefined,
           dialStatus: data.dialStatus || "",
+          interested: data.interested === true,
+          company: data.company || "",
+          email: data.email || "",
+          address: data.address || "",
+          city: data.city || "",
+          state: data.state || "",
+          zip: data.zip || "",
+          monthlyRevenue: data.monthlyRevenue || "",
+          amountRequested: data.amountRequested || "",
         };
       });
 
@@ -812,10 +877,10 @@ export default function DashboardPage() {
     setUploading(true);
     setUploadProgress(null);
 
-    Papa.parse<RowData>(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async (results) => {
+    const processParsed = async (results: {
+      data: RowData[];
+      meta: { fields?: string[] };
+    }) => {
         try {
           const parsedRows = (results.data || []).filter((row) =>
             Object.values(row || {}).some(
@@ -879,6 +944,7 @@ export default function DashboardPage() {
                 : validation.reason,
               sourceFileName: file.name,
               rowIndex: processed,
+              ...extractLeadExtras(row),
               createdAt: serverTimestamp(),
             });
 
@@ -916,6 +982,38 @@ export default function DashboardPage() {
             fileInputRef.current.value = "";
           }
         }
+    };
+
+    if (/\.xlsx$/i.test(file.name)) {
+      // Excel workbook: first sheet, first row = headers.
+      try {
+        const { readSheet } = await import("read-excel-file/browser");
+        const sheet = await readSheet(file);
+        const headerRow = (sheet[0] || []).map((h) => String(h ?? "").trim());
+        const rows: RowData[] = sheet.slice(1).map((r) => {
+          const obj: RowData = {};
+          headerRow.forEach((h, i) => {
+            if (h) obj[h] = String(r[i] ?? "").trim();
+          });
+          return obj;
+        });
+        await processParsed({ data: rows, meta: { fields: headerRow } });
+      } catch (error: any) {
+        showToast(`Excel read failed: ${error?.message || "unsupported file"}`, "error");
+        setUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+      return;
+    }
+
+    Papa.parse<RowData>(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        void processParsed({
+          data: results.data as RowData[],
+          meta: { fields: results.meta.fields },
+        });
       },
       error: (error) => {
         showToast(`CSV read failed: ${error.message}`, "error");
@@ -1427,10 +1525,16 @@ export default function DashboardPage() {
 
   const filteredLeads = useMemo(() => {
     const term = leadSearch.trim().toLowerCase();
-    if (!term) return selectedLeads;
+    const base = showInterestedOnly
+      ? selectedLeads.filter((l) => l.interested === true)
+      : selectedLeads;
+    if (!term) return base;
 
-    return selectedLeads.filter((lead) => {
+    return base.filter((lead) => {
       return (
+        String(lead.company || "").toLowerCase().includes(term) ||
+        String(lead.email || "").toLowerCase().includes(term) ||
+        String(lead.city || "").toLowerCase().includes(term) ||
         String(lead.name || "").toLowerCase().includes(term) ||
         String(lead.phone || "").toLowerCase().includes(term) ||
         String(lead.status || "").toLowerCase().includes(term) ||
@@ -1438,7 +1542,32 @@ export default function DashboardPage() {
         String(lead.sourceFileName || "").toLowerCase().includes(term)
       );
     });
-  }, [selectedLeads, leadSearch]);
+  }, [selectedLeads, leadSearch, showInterestedOnly]);
+
+  // A call panel action (Interested / Block) updates the matching lead here.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const d = (e as CustomEvent).detail as {
+        phone: string;
+        interested?: boolean;
+        blocked?: boolean;
+      };
+      if (!d?.phone) return;
+      setSelectedLeads((prev) =>
+        prev.map((l) =>
+          l.phone === d.phone
+            ? {
+                ...l,
+                interested: d.interested ?? l.interested,
+                status: d.blocked ? "blocked" : l.status,
+              }
+            : l
+        )
+      );
+    };
+    window.addEventListener("lead-disposition", handler);
+    return () => window.removeEventListener("lead-disposition", handler);
+  }, []);
 
   // Large uploads (thousands of leads) rendered every row at once, which
   // made this list very slow. Paginate instead, same pattern as /blacklisted.
@@ -1823,9 +1952,80 @@ export default function DashboardPage() {
                           : "pointer",
                     }}
                   >
-                    {uploading ? "Uploading..." : "Upload CSV"}
+                    {uploading ? "Uploading..." : "Upload CSV / Excel"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowImportHelp((v) => !v)}
+                    style={{
+                      ...heroPrimaryButtonStyle,
+                      background: "rgba(255,255,255,0.14)",
+                    }}
+                  >
+                    {showImportHelp ? "Hide file format" : "File format help"}
                   </button>
                 </div>
+
+                {showImportHelp ? (
+                  <div
+                    style={{
+                      margin: "12px 0",
+                      padding: 16,
+                      borderRadius: 16,
+                      background: "rgba(255,255,255,0.12)",
+                      color: "#fff",
+                      fontSize: 14,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, marginBottom: 6 }}>
+                      Put these headers in row 1 of your .csv or .xlsx file
+                    </div>
+                    <div style={{ overflowX: "auto", marginBottom: 10 }}>
+                      <table style={{ borderCollapse: "collapse", background: "#fff", color: "#111" }}>
+                        <thead>
+                          <tr>
+                            {IMPORT_HEADERS.map((h) => (
+                              <th
+                                key={h}
+                                style={{
+                                  border: "1px solid #d1d5db",
+                                  padding: "6px 10px",
+                                  fontSize: 13,
+                                  whiteSpace: "nowrap",
+                                  background: h === "Phone" ? "#dcfce7" : "#f3f4f6",
+                                }}
+                              >
+                                {h}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                      </table>
+                    </div>
+                    <div>
+                      Only a phone column is required (Phone, Phone Number, Business Phone Number,
+                      Mobile or Cell all work). Every other column is optional and is picked up
+                      automatically when the header contains the same words - for example
+                      &quot;Merchant name&quot;, &quot;Company/Business Name&quot;, &quot;Email&quot;,
+                      &quot;Zip&quot;, &quot;Monthly Revenue&quot;. Use US numbers; 10 digits is fine.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={downloadSampleHeaders}
+                      style={{
+                        marginTop: 10,
+                        border: "none",
+                        borderRadius: 10,
+                        padding: "8px 14px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Download blank template
+                    </button>
+                  </div>
+                ) : null}
 
                 <div style={statsGridStyle}>
                   <StatCard
@@ -1855,7 +2055,7 @@ export default function DashboardPage() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".csv,text/csv"
+                accept=".csv,text/csv,.xlsx"
                 onChange={handleCsvUpload}
                 style={{ display: "none" }}
               />
@@ -1996,6 +2196,17 @@ export default function DashboardPage() {
                         style={inlineSearchInputStyle}
                       />
                       <button
+                        onClick={() => setShowInterestedOnly((v) => !v)}
+                        style={{
+                          ...secondaryButtonStyle,
+                          ...(showInterestedOnly
+                            ? { background: "#16a34a", color: "#fff", border: "1px solid #16a34a" }
+                            : {}),
+                        }}
+                      >
+                        ★ Interested
+                      </button>
+                      <button
                         onClick={() =>
                           selectedUploadId && loadLeadsForUpload(selectedUploadId)
                         }
@@ -2030,11 +2241,13 @@ export default function DashboardPage() {
                       <table style={tableStyle}>
                         <thead>
                           <tr>
-                            <th style={thStyle}>Name</th>
+                            <th style={thStyle}>Name / Company</th>
                             <th style={thStyle}>Phone</th>
+                            <th style={thStyle}>Email</th>
+                            <th style={thStyle}>Location</th>
+                            <th style={thStyle}>Revenue</th>
                             <th style={thStyle}>Status</th>
                             <th style={thStyle}>Validation</th>
-                            <th style={thStyle}>Source File</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2049,7 +2262,19 @@ export default function DashboardPage() {
                                     : undefined
                                 }
                               >
-                                <td style={tdStyle}>{lead.name || "-"}</td>
+                                <td style={tdStyle}>
+                                  <div style={{ fontWeight: 700 }}>
+                                    {lead.name || lead.company || "-"}
+                                    {lead.interested ? (
+                                      <span style={{ marginLeft: 8, color: "#16a34a", fontSize: 12 }}>
+                                        ★ Interested
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  {lead.name && lead.company ? (
+                                    <div style={{ fontSize: 12, opacity: 0.7 }}>{lead.company}</div>
+                                  ) : null}
+                                </td>
                                 <td style={tdStyle}>
                                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                                     <span>{lead.phone}</span>
@@ -2065,6 +2290,13 @@ export default function DashboardPage() {
                                     ) : null}
                                   </div>
                                 </td>
+                                <td style={tdStyle}>{lead.email || "-"}</td>
+                                <td style={tdStyle}>
+                                  {[lead.city, [lead.state, lead.zip].filter(Boolean).join(" ")]
+                                    .filter(Boolean)
+                                    .join(", ") || "-"}
+                                </td>
+                                <td style={tdStyle}>{lead.monthlyRevenue || "-"}</td>
                                 <td style={tdStyle}>
                                   <span
                                     style={{
@@ -2083,9 +2315,6 @@ export default function DashboardPage() {
                                 </td>
                                 <td style={tdStyle}>
                                   {lead.validationNote || "-"}
-                                </td>
-                                <td style={tdStyle}>
-                                  {lead.sourceFileName || "-"}
                                 </td>
                               </tr>
                             );

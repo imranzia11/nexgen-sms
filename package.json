@@ -18,6 +18,7 @@
     "papaparse": "^5.5.3",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "read-excel-file": "^9.3.17",
     "twilio": "^5.13.1"
   },
   "devDependencies": {
