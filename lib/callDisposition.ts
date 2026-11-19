@@ -6,6 +6,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   query,
   serverTimestamp,
   setDoc,
@@ -38,6 +39,22 @@ async function currentProfile() {
   const snap = await getDoc(doc(db, "users", user.uid));
   const data = snap.exists() ? snap.data() || {} : {};
   return { uid: user.uid, data };
+}
+
+// Existence check by query. A direct getDoc() on a conversation that doesn't
+// exist is rejected by the security rules (they read resource.data.ownerUid,
+// which is null for a missing document), so we look it up with a query that
+// is scoped to the owner instead.
+async function findConversation(uid: string, phone: string) {
+  const snap = await getDocs(
+    query(
+      collection(db, "conversations"),
+      where("ownerUid", "==", uid),
+      where("phone", "==", phone),
+      limit(1)
+    )
+  );
+  return snap.docs[0] || null;
 }
 
 async function leadsForPhone(uid: string, phone: string) {
@@ -88,8 +105,8 @@ export async function markInterested(rawPhone: string) {
   // A conversation that already has messages is left alone - it is already
   // in Replies.
   const convoRef = doc(db, "conversations", `${uid}_${phoneDocId(phone)}`);
-  const convoSnap = await getDoc(convoRef);
-  if (!convoSnap.exists()) {
+  const existingConvo = await findConversation(uid, phone);
+  if (!existingConvo) {
     const number = toE164(String(data.twilioNumber || data.assignedTwilioNumber || ""));
     const leadName = String(leadDocs.find((d) => d.get("name"))?.get("name") || "");
     await setDoc(convoRef, {
@@ -148,10 +165,9 @@ export async function blockNumber(rawPhone: string) {
   );
 
   // Only touch a conversation that already exists.
-  const convoRef = doc(db, "conversations", `${uid}_${phoneDocId(phone)}`);
-  const convoSnap = await getDoc(convoRef);
-  if (convoSnap.exists()) {
-    await updateDoc(convoRef, {
+  const existingConvo = await findConversation(uid, phone);
+  if (existingConvo) {
+    await updateDoc(existingConvo.ref, {
       status: "blocked",
       blocked: true,
       updatedAt: serverTimestamp(),

@@ -2290,9 +2290,10 @@ export default function DashboardPage() {
                                       title={lead.interested ? "Marked interested" : "Mark as interested (opens it in Replies)"}
                                       disabled={lead.interested === true}
                                       onClick={() => {
-                                        void markInterested(lead.phone).catch(() =>
-                                          showToast("Could not mark as interested.", "error")
-                                        );
+                                        void markInterested(lead.phone).catch((e) => {
+                                          console.error("markInterested failed", e);
+                                          showToast("Could not mark as interested.", "error");
+                                        });
                                       }}
                                       style={{
                                         border: "none",
