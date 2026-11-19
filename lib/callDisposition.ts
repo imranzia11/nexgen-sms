@@ -13,12 +13,12 @@ import {
   where,
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
-import { phoneDocId, toE164 } from "./phone";
+import { phoneDocId, reversePhone, toE164 } from "./phone";
 
 // What a rep can do with a number during or right after a call:
-//  - markInterested: flags the lead as an interested customer; it shows in
-//    the dashboard's "Call Leads" tab until the first text is sent, which
-//    opens the conversation in Replies
+//  - markInterested: flags the lead as an interested customer and opens a
+//    conversation for it that shows in Replies under "★ Call Leads" until the
+//    first text is sent (the send-reply API then clears the callLead flag)
 //  - blockNumber: adds the number to the account's blocked list (same record
 //    the Replies page "Block" action writes), so it is never texted or dialed
 
@@ -81,6 +81,40 @@ export async function markInterested(rawPhone: string) {
       interestedAt: serverTimestamp(),
       contacted: false,
       createdAt: serverTimestamp(),
+    });
+  }
+
+  // Open the conversation so the lead shows in Replies under "Call Leads".
+  // A conversation that already has messages is left alone - it is already
+  // in Replies.
+  const convoRef = doc(db, "conversations", `${uid}_${phoneDocId(phone)}`);
+  const convoSnap = await getDoc(convoRef);
+  if (!convoSnap.exists()) {
+    const number = toE164(String(data.twilioNumber || data.assignedTwilioNumber || ""));
+    const leadName = String(leadDocs.find((d) => d.get("name"))?.get("name") || "");
+    await setDoc(convoRef, {
+      ownerUid: uid,
+      ownerEmail: String(data.email || ""),
+      ownerName: String(data.name || ""),
+      ownerRole: String(data.role || "user"),
+      phone,
+      phoneReversed: reversePhone(phone),
+      name: leadName,
+      twilioNumber: number,
+      assignedTwilioNumber: number,
+      lastMessage: "Interested customer (from call)",
+      lastDirection: "outbound",
+      lastMessageAt: serverTimestamp(),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      status: "call_lead",
+      hasReply: false,
+      unreadCount: 0,
+      replyCount: 0,
+      outboundCount: 0,
+      messageCount: 0,
+      blocked: false,
+      callLead: true,
     });
   }
 

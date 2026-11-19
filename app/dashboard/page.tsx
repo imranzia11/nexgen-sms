@@ -33,9 +33,7 @@ import RepliesNavBadge from "../../components/RepliesNavBadge";
 import TwilioBalanceCard from "../../components/TwilioBalanceCard";
 import BillingNavCard from "../../components/BillingNavCard";
 import CallButton from "../../components/CallButton";
-import { markInterested } from "../../lib/callDisposition";
-import CallLeadsPanel from "../../components/CallLeadsPanel";
-import AutoDialer, { type DialProgress } from "../../components/AutoDialer";
+import { markInterested } from "../../lib/callDisposition";import AutoDialer, { type DialProgress } from "../../components/AutoDialer";
 
 type RowData = Record<string, string>;
 
@@ -415,7 +413,6 @@ export default function DashboardPage() {
   const [twilioNumber, setTwilioNumber] = useState("");
 
   const [uploading, setUploading] = useState(false);
-  const [leadsTab, setLeadsTab] = useState<"file" | "call">("file");
   const [leadFilter, setLeadFilter] = useState<"all" | "interested" | "answered">("all");
   const [showImportHelp, setShowImportHelp] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{
@@ -2185,36 +2182,6 @@ export default function DashboardPage() {
                   )}
                 </section>
 
-                <div style={{ display: "flex", gap: 8, margin: "0 0 12px" }}>
-                  {(
-                    [
-                      ["file", "Leads in File"],
-                      ["call", "★ Call Leads"],
-                    ] as const
-                  ).map(([key, label]) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setLeadsTab(key)}
-                      style={{
-                        ...secondaryButtonStyle,
-                        ...(leadsTab === key
-                          ? { background: "#0f3d3a", color: "#fff", border: "1px solid #0f3d3a" }
-                          : {}),
-                      }}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-
-                {leadsTab === "call" ? (
-                  <section style={panelStyle}>
-                    <CallLeadsPanel />
-                  </section>
-                ) : null}
-
-                <div style={{ display: leadsTab === "file" ? "block" : "none" }}>
                 <section style={panelStyle}>
                   <div style={panelHeaderStyle}>
                     <div>
@@ -2424,7 +2391,6 @@ export default function DashboardPage() {
                     </div>
                   ) : null}
                 </section>
-                </div>
               </div>
 
               <div style={rightColumnStyle}>

@@ -66,7 +66,7 @@ export default function CallBar() {
       return (
         <div style={doneStyle}>
           {mark === "interested"
-            ? "Saved to Call Leads - text them from the dashboard"
+            ? "Saved to Replies > Call Leads"
             : "Number blocked"}
         </div>
       );

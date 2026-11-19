@@ -248,6 +248,8 @@ const msg = await sendSmsForUser({
         // than false, which would silently break any future query that
         // filters on blocked == false.
         blocked: false,
+        // First text to a call lead: it leaves the "Call Leads" tab.
+        callLead: false,
       },
       { merge: true }
     );

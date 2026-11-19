@@ -42,6 +42,9 @@ type SmsRow = {
   lastDirection: string;
   pinned: boolean;
   lastOutboundStatus: string;
+  // Interested customer marked during/after a call, not yet texted. Shown
+  // only in the "Call Leads" tab; the first text clears it (send-reply API).
+  callLead?: boolean;
   // True only for numbers someone on the team deliberately blocked via the
   // Block button - NOT for customers who texted STOP. Those stay fully
   // hidden from this list, same as always. A manually-blocked conversation
@@ -84,7 +87,8 @@ type FilterMode =
   | "pinned"
   | "failed"
   | "attention"
-  | "followups";
+  | "followups"
+  | "call_leads";
 
 // Matches the same failed/undelivered statuses used to render the red
 // error bubble on the /replies/[phone] thread view.
@@ -99,9 +103,12 @@ function activeTabCount(
   mode: FilterMode,
   counts: StatCounts,
   attentionCount: number,
-  followUpsCount: number = 0
+  followUpsCount: number = 0,
+  callLeadsCount: number = 0
 ): number {
   switch (mode) {
+    case "call_leads":
+      return callLeadsCount;
     case "all":
       return counts.all;
     case "replied":
@@ -143,6 +150,8 @@ function filterModeLabel(mode: FilterMode): string {
       return "Attention required";
     case "followups":
       return "Follow-ups";
+    case "call_leads":
+      return "Call leads";
     default:
       return "";
   }
@@ -520,6 +529,12 @@ function buildScopedConversationsQuery(
   const col = collection(db, "conversations");
   const base = [where("ownerUid", "==", ownerUid), where("blocked", "==", false)];
 
+  // Equality filters only, so no composite index is needed; the list is
+  // sorted client-side like every other tab.
+  if (mode === "call_leads") {
+    return query(col, ...base, where("callLead", "==", true), limit(limitN));
+  }
+
   if (mode === "pinned") {
     return query(
       col,
@@ -610,6 +625,7 @@ function makeRow(id: string, data: Record<string, any>): SmsRow {
     hasReply: data.hasReply === true,
     lastDirection,
     pinned: data.pinned === true,
+    callLead: data.callLead === true,
     lastOutboundStatus: String(data.lastOutboundStatus || "")
       .trim()
       .toLowerCase(),
@@ -1945,7 +1961,14 @@ export default function RepliesPage() {
       return searchedItems.filter((item) => item.pinned);
     }
 
-    const nonPinned = searchedItems.filter((item) => !item.pinned);
+    if (filterMode === "call_leads") {
+      return searchedItems
+        .filter((item) => item.callLead === true)
+        .sort((a, b) => b.sortSeconds - a.sortSeconds);
+    }
+
+    // Call leads that haven't been texted yet only live in their own tab.
+    const nonPinned = searchedItems.filter((item) => !item.pinned && !item.callLead);
 
     // A pinned conversation only ever shows under "Pinned Messages", never
     // duplicated here too - but it still counts toward the Customer
@@ -2265,6 +2288,16 @@ export default function RepliesPage() {
                   ⏱ Follow-Ups
                 </button>
 
+                <button
+                  onClick={() => setFilterMode("call_leads")}
+                  style={{
+                    ...filterTabStyle,
+                    ...(filterMode === "call_leads" ? activeFilterTabStyle : {}),
+                  }}
+                >
+                  ★ Call Leads
+                </button>
+
               </div>
 
               {isMobile ? (
@@ -2281,7 +2314,8 @@ export default function RepliesPage() {
                         filterMode,
                         counts,
                         attentionItems.length,
-                        followUpItems.length
+                        followUpItems.length,
+                        items.filter((i) => i.callLead).length
                       )}
                     </span>
                     <span style={mobileStatLabelStyle}>
@@ -2504,6 +2538,8 @@ export default function RepliesPage() {
                 <div style={emptyTitleStyle}>
                   {filterMode === "pinned"
                     ? "No pinned messages yet."
+                    : filterMode === "call_leads"
+                    ? "No call leads yet."
                     : filterMode === "failed"
                     ? "No failed or undelivered messages."
                     : "No SMS found for this filter."}
@@ -2511,6 +2547,8 @@ export default function RepliesPage() {
                 <div style={emptyTextStyle}>
                   {filterMode === "pinned"
                     ? "Pin a conversation from the ⋯ menu to see it here."
+                    : filterMode === "call_leads"
+                    ? "Press ★ on a lead (or Interested during a call). Open it here and send the first text - it then moves out of this tab."
                     : filterMode === "failed"
                     ? "Conversations will show up here if a message fails to send or the carrier reports it undelivered."
                     : "New messages and replies will appear here once they are saved with the correct ownerUid."}
@@ -2570,6 +2608,8 @@ export default function RepliesPage() {
                               // staff decision, not a delivery/reply signal.
                               item.manuallyBlocked
                                 ? manuallyBlockedBadgeStyle
+                                : item.callLead
+                                ? repliedBadgeStyle
                                 : isFailedOutboundStatus(item.lastOutboundStatus) &&
                                   item.lastDirection !== "inbound"
                                 ? failedBadgeStyle
@@ -2580,6 +2620,8 @@ export default function RepliesPage() {
                           >
                             {item.manuallyBlocked
                               ? "Blocked — Unblock to continue chat"
+                              : item.callLead
+                              ? "★ Call Lead - send first text"
                               : isFailedOutboundStatus(item.lastOutboundStatus) &&
                                 item.lastDirection !== "inbound"
                               ? "Delivery Issue"
