@@ -2271,10 +2271,10 @@ export default function DashboardPage() {
                           <tr>
                             <th style={thStyle}>Name / Company</th>
                             <th style={thStyle}>Phone</th>
+                            <th style={thStyle}>Call Status</th>
                             <th style={thStyle}>Email</th>
                             <th style={thStyle}>Location</th>
                             <th style={thStyle}>Revenue</th>
-                            <th style={thStyle}>Call Status</th>
                             <th style={thStyle}>Status</th>
                             <th style={thStyle}>Validation</th>
                           </tr>
