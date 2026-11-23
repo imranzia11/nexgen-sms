@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { auth } from "../lib/firebase";
 
 type FreeNumber = {
@@ -172,131 +173,231 @@ export default function CallNumberCard() {
         </button>
       </div>
 
-      {open ? (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 1000,
-            background: "rgba(15,23,42,0.55)",
-            display: "grid",
-            placeItems: "center",
-            padding: 16,
-          }}
-          onClick={() => !busy && setOpen(false)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: "min(720px, 100%)",
-              maxHeight: "88vh",
-              overflow: "auto",
-              background: "#fff",
-              color: "#0f172a",
-              borderRadius: 20,
-              padding: 22,
-              display: "grid",
-              gap: 14,
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontSize: 22, fontWeight: 900 }}>Choose your voice calling number</div>
-              <button
-                type="button"
-                style={{ ...btn, background: "#e2e8f0" }}
-                onClick={() => setOpen(false)}
-              >
-                Close
-              </button>
-            </div>
-            <div style={{ color: "#475569", fontSize: 14, fontWeight: 600 }}>
-              Calls are placed from the number you pick. Texts always go from your SMS number (
-              {pretty(info.textNumber)}). Pick a number that has been used less to avoid it being
-              flagged as spam.
-            </div>
+      {open
+        ? createPortal(
+            <NumberPicker
+              info={info}
+              choice={choice}
+              setChoice={setChoice}
+              busy={busy}
+              loading={loading}
+              error={error}
+              onSave={() => void save()}
+              onClose={() => setOpen(false)}
+            />,
+            document.body
+          )
+        : null}
+    </>
+  );
+}
 
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 15 }}>
-                <thead>
-                  <tr style={{ color: "#64748b", fontSize: 13 }}>
-                    <th style={cell}></th>
-                    <th style={cell}>Number</th>
-                    <th style={cell}>Calls in last 24h</th>
-                    <th style={cell}>Last used to call</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    onClick={() => setChoice("")}
-                    style={{
-                      borderTop: "1px solid #e2e8f0",
-                      cursor: "pointer",
-                      background: choice === "" ? "#ecfdf5" : "transparent",
-                    }}
-                  >
-                    <td style={cell}>
-                      <input type="radio" readOnly checked={choice === ""} />
-                    </td>
-                    <td style={{ ...cell, fontWeight: 800 }}>{pretty(info.textNumber)}</td>
-                    <td style={cell} colSpan={2}>
-                      Default - same as your SMS number
-                    </td>
-                  </tr>
-                  {info.available.map((n) => (
-                    <tr
-                      key={n.phoneNumber}
-                      onClick={() => setChoice(n.phoneNumber)}
-                      style={{
-                        borderTop: "1px solid #e2e8f0",
-                        cursor: "pointer",
-                        background: choice === n.phoneNumber ? "#ecfdf5" : "transparent",
-                      }}
-                    >
-                      <td style={cell}>
-                        <input type="radio" readOnly checked={choice === n.phoneNumber} />
-                      </td>
-                      <td style={{ ...cell, fontWeight: 800 }}>{pretty(n.phoneNumber)}</td>
-                      <td style={{ ...cell, fontWeight: 800 }}>{n.calls24h}</td>
-                      <td style={cell}>{ago(n.lastCallAt)}</td>
-                    </tr>
-                  ))}
-                  {info.available.length === 0 && !loading ? (
-                    <tr>
-                      <td colSpan={4} style={{ ...cell, color: "#64748b" }}>
-                        No other numbers are available right now.
-                      </td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </div>
+function usage(n: number) {
+  if (n === 0) return { label: "Fresh", bg: "#dcfce7", fg: "#15803d" };
+  if (n < 50) return { label: "Light use", bg: "#fef9c3", fg: "#a16207" };
+  return { label: "Heavy use", bg: "#fee2e2", fg: "#b91c1c" };
+}
 
-            {error ? <div style={{ color: "#b91c1c", fontWeight: 700 }}>{error}</div> : null}
-            <div style={{ display: "flex", gap: 10 }}>
-              <button
-                type="button"
-                disabled={busy || choice === info.callNumber}
-                onClick={() => void save()}
-                style={{
-                  ...btn,
-                  background: "#0f766e",
-                  color: "#fff",
-                  opacity: busy || choice === info.callNumber ? 0.5 : 1,
-                }}
-              >
-                {busy ? "Saving..." : "Use this number"}
-              </button>
-              <button
-                type="button"
-                style={{ ...btn, background: "#e2e8f0" }}
-                onClick={() => setOpen(false)}
-              >
-                Cancel
-              </button>
-            </div>
+function NumberPicker(props: {
+  info: Info;
+  choice: string;
+  setChoice: (v: string) => void;
+  busy: boolean;
+  loading: boolean;
+  error: string;
+  onSave: () => void;
+  onClose: () => void;
+}) {
+  const { info, choice, setChoice, busy, loading, error, onSave, onClose } = props;
+  const unchanged = choice === info.callNumber;
+
+  const rows: { key: string; value: string; title: string; sub: string; calls?: number; last?: string; badge?: ReturnType<typeof usage> }[] = [
+    {
+      key: "default",
+      value: "",
+      title: pretty(info.textNumber),
+      sub: "Default - same as your SMS number",
+    },
+    ...info.available.map((n) => ({
+      key: n.phoneNumber,
+      value: n.phoneNumber,
+      title: pretty(n.phoneNumber),
+      sub: ago(n.lastCallAt),
+      calls: n.calls24h,
+      badge: usage(n.calls24h),
+    })),
+  ];
+
+  return (
+    <div
+      onClick={() => !busy && onClose()}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 2000,
+        background: "rgba(15,23,42,0.6)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "min(560px, 100%)",
+          maxHeight: "90vh",
+          display: "flex",
+          flexDirection: "column",
+          background: "#fff",
+          color: "#0f172a",
+          borderRadius: 24,
+          boxShadow: "0 30px 80px rgba(0,0,0,0.35)",
+          overflow: "hidden",
+        }}
+      >
+        <div style={{ padding: "22px 24px 14px", borderBottom: "1px solid #e2e8f0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+            <div style={{ fontSize: 22, fontWeight: 900 }}>Voice calling number</div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              style={{
+                border: "none",
+                background: "#f1f5f9",
+                borderRadius: "50%",
+                width: 34,
+                height: 34,
+                fontSize: 18,
+                fontWeight: 900,
+                cursor: "pointer",
+              }}
+            >
+              ×
+            </button>
+          </div>
+          <div style={{ marginTop: 6, color: "#64748b", fontSize: 14, lineHeight: 1.5 }}>
+            Calls go out from the number you pick. Texts always use your SMS number,{" "}
+            <strong>{pretty(info.textNumber)}</strong>. A number with fewer calls today is less likely to be flagged as spam.
           </div>
         </div>
-      ) : null}
-    </>
+
+        <div style={{ padding: 16, display: "grid", gap: 10, overflowY: "auto" }}>
+          {rows.map((r) => {
+            const selected = choice === r.value;
+            return (
+              <button
+                key={r.key}
+                type="button"
+                onClick={() => setChoice(r.value)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 14,
+                  textAlign: "left",
+                  width: "100%",
+                  padding: "14px 16px",
+                  borderRadius: 16,
+                  cursor: "pointer",
+                  background: selected ? "#ecfdf5" : "#fff",
+                  border: selected ? "2px solid #0f766e" : "2px solid #e2e8f0",
+                  color: "#0f172a",
+                }}
+              >
+                <span
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: "50%",
+                    flexShrink: 0,
+                    border: selected ? "6px solid #0f766e" : "2px solid #cbd5e1",
+                    background: "#fff",
+                  }}
+                />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: 18, fontWeight: 900 }}>{r.title}</span>
+                  <span style={{ display: "block", marginTop: 2, fontSize: 13, color: "#64748b" }}>
+                    {r.calls === undefined ? r.sub : `Last used: ${r.sub}`}
+                  </span>
+                </span>
+                {r.calls !== undefined && r.badge ? (
+                  <span style={{ textAlign: "right", flexShrink: 0 }}>
+                    <span style={{ display: "block", fontSize: 20, fontWeight: 900 }}>{r.calls}</span>
+                    <span style={{ display: "block", fontSize: 11, color: "#64748b" }}>calls / 24h</span>
+                    <span
+                      style={{
+                        display: "inline-block",
+                        marginTop: 4,
+                        borderRadius: 999,
+                        padding: "2px 9px",
+                        fontSize: 11,
+                        fontWeight: 800,
+                        background: r.badge.bg,
+                        color: r.badge.fg,
+                      }}
+                    >
+                      {r.badge.label}
+                    </span>
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+          {info.available.length === 0 && !loading ? (
+            <div style={{ color: "#64748b", fontSize: 14, padding: "4px 6px" }}>
+              No other numbers are available right now.
+            </div>
+          ) : null}
+        </div>
+
+        <div
+          style={{
+            padding: "14px 20px",
+            borderTop: "1px solid #e2e8f0",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          {error ? (
+            <span style={{ color: "#b91c1c", fontWeight: 700, fontSize: 13, flex: 1 }}>{error}</span>
+          ) : (
+            <span style={{ flex: 1 }} />
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              border: "none",
+              borderRadius: 12,
+              padding: "11px 18px",
+              fontWeight: 800,
+              background: "#e2e8f0",
+              cursor: "pointer",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={busy || unchanged}
+            onClick={onSave}
+            style={{
+              border: "none",
+              borderRadius: 12,
+              padding: "11px 20px",
+              fontWeight: 800,
+              background: "#0f766e",
+              color: "#fff",
+              cursor: busy || unchanged ? "not-allowed" : "pointer",
+              opacity: busy || unchanged ? 0.5 : 1,
+            }}
+          >
+            {busy ? "Saving..." : "Use this number"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
