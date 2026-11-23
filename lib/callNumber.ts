@@ -24,7 +24,9 @@ export class HttpError extends Error {
 }
 
 // Twilio numbers nobody uses for texting or calling.
-export async function listFreeNumbers(): Promise<{ phoneNumber: string; friendlyName: string }[]> {
+export async function listFreeNumbers(): Promise<
+  { phoneNumber: string; friendlyName: string; calls24h: number; lastCallAt: string }[]
+> {
   const { sid, header } = twilioAuth();
   const res = await fetch(
     `https://api.twilio.com/2010-04-01/Accounts/${sid}/IncomingPhoneNumbers.json?PageSize=1000`,
@@ -52,11 +54,36 @@ export async function listFreeNumbers(): Promise<{ phoneNumber: string; friendly
     if (c) taken.add(c);
   });
 
+  // Calls placed from each number in the last 30 days (24h count + last use).
+  const now = Date.now();
+  const dayAgo = now - 24 * 60 * 60 * 1000;
+  const callsSnap = await adminDb
+    .collection("calls")
+    .where("createdAt", ">=", new Date(now - 30 * 24 * 60 * 60 * 1000))
+    .select("from", "createdAt")
+    .get();
+  const stats = new Map<string, { calls24h: number; lastMs: number }>();
+  callsSnap.docs.forEach((d) => {
+    const from = toE164(String(d.get("from") || ""));
+    if (!from) return;
+    const ms = d.get("createdAt")?.toMillis?.() || 0;
+    const s = stats.get(from) || { calls24h: 0, lastMs: 0 };
+    if (ms >= dayAgo) s.calls24h += 1;
+    if (ms > s.lastMs) s.lastMs = ms;
+    stats.set(from, s);
+  });
+
   return (body.incoming_phone_numbers || [])
-    .map((n) => ({
-      phoneNumber: toE164(String(n.phone_number || "")),
-      friendlyName: String(n.friendly_name || n.phone_number || ""),
-    }))
+    .map((n) => {
+      const phoneNumber = toE164(String(n.phone_number || ""));
+      const s = stats.get(phoneNumber);
+      return {
+        phoneNumber,
+        friendlyName: String(n.friendly_name || n.phone_number || ""),
+        calls24h: s?.calls24h || 0,
+        lastCallAt: s?.lastMs ? new Date(s.lastMs).toISOString() : "",
+      };
+    })
     .filter((n) => n.phoneNumber && !taken.has(n.phoneNumber))
     .sort((a, b) => a.phoneNumber.localeCompare(b.phoneNumber));
 }

@@ -1789,7 +1789,7 @@ export default function DashboardPage() {
                     <div style={twilioNumberIconStyle}>☎</div>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={sidebarRepliesTitleStyle}>
-                        My Twilio Number
+                        Twilio SMS Number
                       </div>
                       <div style={twilioNumberValueStyle}>
                         {twilioNumber

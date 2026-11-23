@@ -3,17 +3,34 @@
 import { useEffect, useState } from "react";
 import { auth } from "../lib/firebase";
 
+type FreeNumber = {
+  phoneNumber: string;
+  friendlyName: string;
+  calls24h: number;
+  lastCallAt: string;
+};
+
 type Info = {
   enabled: boolean;
   textNumber: string;
   callNumber: string;
   dialsFrom: string;
-  available: { phoneNumber: string; friendlyName: string }[];
+  available: FreeNumber[];
 };
 
 function pretty(n: string) {
   const d = n.replace(/\D/g, "").slice(-10);
   return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : n || "-";
+}
+
+function ago(iso: string) {
+  if (!iso) return "Not used in 30 days";
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs} hr ago`;
+  return `${Math.round(hrs / 24)} day(s) ago`;
 }
 
 async function call(method: "GET" | "POST", body?: unknown) {
@@ -30,19 +47,25 @@ async function call(method: "GET" | "POST", body?: unknown) {
   return json;
 }
 
-// Sidebar card: which number my calls are placed from, with a picker.
+// Sidebar card for the voice calling number. "Change number" opens a second
+// screen listing every free number with how much it was used for calls in the
+// last 24 hours.
 export default function CallNumberCard() {
   const [info, setInfo] = useState<Info | null>(null);
   const [open, setOpen] = useState(false);
   const [choice, setChoice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const load = async () => {
     try {
+      setLoading(true);
       setInfo((await call("GET")) as Info);
     } catch {
       setInfo(null);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -69,76 +92,174 @@ export default function CallNumberCard() {
     }
   };
 
-  const box: React.CSSProperties = {
-    borderRadius: 16,
-    padding: 14,
-    background: "rgba(255,255,255,0.08)",
-    border: "1px solid rgba(255,255,255,0.14)",
-    color: "#fff",
-    display: "grid",
-    gap: 8,
-  };
   const btn: React.CSSProperties = {
     border: "none",
     borderRadius: 10,
-    padding: "9px 12px",
+    padding: "10px 14px",
     fontWeight: 800,
     cursor: "pointer",
     background: "#fff",
     color: "#0f172a",
   };
+  const cell: React.CSSProperties = { padding: "10px 12px", textAlign: "left" };
 
   return (
-    <div style={{ marginTop: 12 }}>
-      <div style={box}>
-        <div style={{ fontSize: 13, fontWeight: 800, opacity: 0.8 }}>My Calling Number</div>
+    <>
+      <div
+        style={{
+          borderRadius: 16,
+          padding: 14,
+          background: "rgba(255,255,255,0.08)",
+          border: "1px solid rgba(255,255,255,0.14)",
+          color: "#fff",
+          display: "grid",
+          gap: 8,
+        }}
+      >
+        <div style={{ fontSize: 13, fontWeight: 800, opacity: 0.8 }}>Voice Calling Number</div>
         <div style={{ fontSize: 20, fontWeight: 900 }}>{pretty(info.dialsFrom)}</div>
         <div style={{ fontSize: 12, opacity: 0.75 }}>
-          {info.callNumber ? "Custom calling number" : "Same as your text number"}
+          {info.callNumber ? "Custom calling number" : "Same as your SMS number"}
         </div>
+        <button
+          type="button"
+          style={btn}
+          onClick={() => {
+            setChoice(info.callNumber);
+            setError("");
+            setOpen(true);
+            void load();
+          }}
+        >
+          Change number
+        </button>
+      </div>
 
-        {open ? (
-          <>
-            <select
-              value={choice}
-              onChange={(e) => setChoice(e.target.value)}
-              style={{ borderRadius: 10, padding: 9, fontWeight: 700 }}
-            >
-              <option value="">Same as text number ({pretty(info.textNumber)})</option>
-              {info.available.map((n) => (
-                <option key={n.phoneNumber} value={n.phoneNumber}>
-                  {pretty(n.phoneNumber)}
-                </option>
-              ))}
-            </select>
-            {error ? <div style={{ color: "#fecaca", fontSize: 13, fontWeight: 700 }}>{error}</div> : null}
-            <div style={{ display: "flex", gap: 8 }}>
-              <button type="button" style={btn} disabled={busy} onClick={() => void save()}>
-                {busy ? "Saving..." : "Save"}
+      {open ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            background: "rgba(15,23,42,0.55)",
+            display: "grid",
+            placeItems: "center",
+            padding: 16,
+          }}
+          onClick={() => !busy && setOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(720px, 100%)",
+              maxHeight: "88vh",
+              overflow: "auto",
+              background: "#fff",
+              color: "#0f172a",
+              borderRadius: 20,
+              padding: 22,
+              display: "grid",
+              gap: 14,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontSize: 22, fontWeight: 900 }}>Choose your voice calling number</div>
+              <button
+                type="button"
+                style={{ ...btn, background: "#e2e8f0" }}
+                onClick={() => setOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+            <div style={{ color: "#475569", fontSize: 14, fontWeight: 600 }}>
+              Calls are placed from the number you pick. Texts always go from your SMS number (
+              {pretty(info.textNumber)}). Pick a number that has been used less to avoid it being
+              flagged as spam.
+            </div>
+
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 15 }}>
+                <thead>
+                  <tr style={{ color: "#64748b", fontSize: 13 }}>
+                    <th style={cell}></th>
+                    <th style={cell}>Number</th>
+                    <th style={cell}>Calls in last 24h</th>
+                    <th style={cell}>Last used to call</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    onClick={() => setChoice("")}
+                    style={{
+                      borderTop: "1px solid #e2e8f0",
+                      cursor: "pointer",
+                      background: choice === "" ? "#ecfdf5" : "transparent",
+                    }}
+                  >
+                    <td style={cell}>
+                      <input type="radio" readOnly checked={choice === ""} />
+                    </td>
+                    <td style={{ ...cell, fontWeight: 800 }}>{pretty(info.textNumber)}</td>
+                    <td style={cell} colSpan={2}>
+                      Default - same as your SMS number
+                    </td>
+                  </tr>
+                  {info.available.map((n) => (
+                    <tr
+                      key={n.phoneNumber}
+                      onClick={() => setChoice(n.phoneNumber)}
+                      style={{
+                        borderTop: "1px solid #e2e8f0",
+                        cursor: "pointer",
+                        background: choice === n.phoneNumber ? "#ecfdf5" : "transparent",
+                      }}
+                    >
+                      <td style={cell}>
+                        <input type="radio" readOnly checked={choice === n.phoneNumber} />
+                      </td>
+                      <td style={{ ...cell, fontWeight: 800 }}>{pretty(n.phoneNumber)}</td>
+                      <td style={{ ...cell, fontWeight: 800 }}>{n.calls24h}</td>
+                      <td style={cell}>{ago(n.lastCallAt)}</td>
+                    </tr>
+                  ))}
+                  {info.available.length === 0 && !loading ? (
+                    <tr>
+                      <td colSpan={4} style={{ ...cell, color: "#64748b" }}>
+                        No other numbers are available right now.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+
+            {error ? <div style={{ color: "#b91c1c", fontWeight: 700 }}>{error}</div> : null}
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                type="button"
+                disabled={busy || choice === info.callNumber}
+                onClick={() => void save()}
+                style={{
+                  ...btn,
+                  background: "#0f766e",
+                  color: "#fff",
+                  opacity: busy || choice === info.callNumber ? 0.5 : 1,
+                }}
+              >
+                {busy ? "Saving..." : "Use this number"}
               </button>
               <button
                 type="button"
-                style={{ ...btn, background: "rgba(255,255,255,0.18)", color: "#fff" }}
+                style={{ ...btn, background: "#e2e8f0" }}
                 onClick={() => setOpen(false)}
               >
                 Cancel
               </button>
             </div>
-          </>
-        ) : (
-          <button
-            type="button"
-            style={btn}
-            onClick={() => {
-              setChoice(info.callNumber);
-              setError("");
-              setOpen(true);
-            }}
-          >
-            Change calling number
-          </button>
-        )}
-      </div>
-    </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
