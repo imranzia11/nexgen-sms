@@ -1931,7 +1931,7 @@ export default function DashboardPage() {
                   </p>
                 </div>
 
-                <div style={heroTopControlsStyle}>
+                <div style={{ ...heroTopControlsStyle, flexWrap: "wrap" }}>
                   <div style={searchBarStyle}>
                     <span style={{ fontSize: 18, opacity: 0.8 }}>⌕</span>
                     <input
@@ -1962,10 +1962,14 @@ export default function DashboardPage() {
                     onClick={() => setShowImportHelp((v) => !v)}
                     style={{
                       ...heroPrimaryButtonStyle,
-                      background: "rgba(255,255,255,0.14)",
+                      background: "#facc15",
+                      color: "#1f2937",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                      boxShadow: "0 8px 20px rgba(250,204,21,0.45)",
                     }}
                   >
-                    {showImportHelp ? "Hide file format" : "File format help"}
+                    {showImportHelp ? "✕ Hide file format" : "ⓘ File format help"}
                   </button>
                 </div>
 
@@ -2099,12 +2103,17 @@ export default function DashboardPage() {
                             key={upload.id}
                             style={{
                               ...fileCardStyle,
+                              // Selected file = green; unselected = plain grey.
                               border: selected
-                                ? "1px solid rgba(13, 148, 136, 0.45)"
-                                : "1px solid rgba(15, 23, 42, 0.06)",
+                                ? "2px solid #16a34a"
+                                : "1px solid rgba(15, 23, 42, 0.08)",
+                              background: selected
+                                ? "linear-gradient(135deg, #f0fdf4, #dcfce7)"
+                                : "#f8fafc",
                               boxShadow: selected
-                                ? "0 18px 40px rgba(13, 148, 136, 0.14)"
-                                : "0 8px 20px rgba(15, 23, 42, 0.05)",
+                                ? "0 18px 40px rgba(22, 163, 74, 0.22)"
+                                : "none",
+                              opacity: selected ? 1 : 0.9,
                             }}
                           >
                             <div style={fileCardTopStyle}>
@@ -2154,11 +2163,19 @@ export default function DashboardPage() {
                                 onClick={() => setSelectedUploadId(upload.id)}
                                 style={
                                   selected
-                                    ? selectedButtonStyle
-                                    : primaryButtonStyle
+                                    ? {
+                                        ...selectedButtonStyle,
+                                        background: "#16a34a",
+                                        boxShadow: "0 6px 16px rgba(22,163,74,0.4)",
+                                      }
+                                    : {
+                                        ...secondaryButtonStyle,
+                                        background: "#e2e8f0",
+                                        color: "#334155",
+                                      }
                                 }
                               >
-                                {selected ? "Selected" : "Select File"}
+                                {selected ? "✓ Selected" : "Select File"}
                               </button>
 
                               <button
@@ -2252,6 +2269,7 @@ export default function DashboardPage() {
                             <th style={thStyle}>Email</th>
                             <th style={thStyle}>Location</th>
                             <th style={thStyle}>Revenue</th>
+                            <th style={thStyle}>Call Status</th>
                             <th style={thStyle}>Status</th>
                             <th style={thStyle}>Validation</th>
                           </tr>
@@ -2306,16 +2324,39 @@ export default function DashboardPage() {
                                     >
                                       {lead.interested ? "★" : "☆"}
                                     </button>
-                                    {dialProgress.currentId === lead.id ? (
-                                      <span style={{ fontSize: 12, fontWeight: 700, color: "#16a34a" }}>
-                                        Dialing
-                                      </span>
-                                    ) : dialProgress.outcomes[lead.id] ? (
-                                      <span style={{ fontSize: 12, fontWeight: 700, opacity: 0.75 }}>
-                                        {dialProgress.outcomes[lead.id]}
-                                      </span>
-                                    ) : null}
                                   </div>
+                                </td>
+                                <td style={tdStyle}>
+                                  {(() => {
+                                    const dialing = dialProgress.currentId === lead.id;
+                                    const outcome =
+                                      dialProgress.outcomes[lead.id] || lead.dialStatus || "";
+                                    const chip = (text: string, bg: string, color: string) => (
+                                      <span
+                                        style={{
+                                          background: bg,
+                                          color,
+                                          borderRadius: 999,
+                                          padding: "6px 10px",
+                                          fontSize: 13,
+                                          fontWeight: 700,
+                                          whiteSpace: "nowrap",
+                                        }}
+                                      >
+                                        {text}
+                                      </span>
+                                    );
+                                    if (dialing) return chip("Dialing now...", "#dcfce7", "#15803d");
+                                    if (outcome === "answered")
+                                      return chip("Called - answered", "#dcfce7", "#15803d");
+                                    if (outcome === "no answer")
+                                      return chip("Called - no answer", "#fef3c7", "#b45309");
+                                    if (outcome === "failed")
+                                      return chip("Called - failed", "#fee2e2", "#b91c1c");
+                                    if (outcome === "skipped")
+                                      return chip("Skipped", "#e5e7eb", "#4b5563");
+                                    return chip("Not dialed yet", "#f1f5f9", "#64748b");
+                                  })()}
                                 </td>
                                 <td style={tdStyle}>{lead.email || "-"}</td>
                                 <td style={tdStyle}>
