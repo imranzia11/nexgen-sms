@@ -107,23 +107,60 @@ export default function CallNumberCard() {
     <>
       <div
         style={{
-          borderRadius: 16,
-          padding: 14,
-          background: "rgba(255,255,255,0.08)",
-          border: "1px solid rgba(255,255,255,0.14)",
+          width: "100%",
+          borderRadius: 26,
+          padding: "18px 18px",
+          background: "rgba(255,255,255,0.10)",
+          border: "1px solid rgba(255,255,255,0.16)",
+          boxShadow: "0 18px 40px rgba(0,0,0,0.08)",
+          backdropFilter: "blur(10px)",
           color: "#fff",
           display: "grid",
-          gap: 8,
+          gap: 14,
         }}
       >
-        <div style={{ fontSize: 13, fontWeight: 800, opacity: 0.8 }}>Voice Calling Number</div>
-        <div style={{ fontSize: 20, fontWeight: 900 }}>{pretty(info.dialsFrom)}</div>
-        <div style={{ fontSize: 12, opacity: 0.75 }}>
-          {info.callNumber ? "Custom calling number" : "Same as your SMS number"}
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div
+            style={{
+              width: 54,
+              height: 54,
+              borderRadius: "50%",
+              display: "grid",
+              placeItems: "center",
+              background: "#ccfbf1",
+              color: "#115e59",
+              fontSize: 22,
+              fontWeight: 900,
+              flexShrink: 0,
+            }}
+          >
+            ✆
+          </div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ color: "#fff", fontSize: 18, fontWeight: 900, lineHeight: 1.1 }}>
+              Voice Calling Number
+            </div>
+            <div style={{ marginTop: 6, fontSize: 18, fontWeight: 900, wordBreak: "break-word" }}>
+              {pretty(info.dialsFrom)}
+            </div>
+            <div style={{ marginTop: 4, fontSize: 13, color: "rgba(236,254,255,0.7)" }}>
+              {info.callNumber ? "Custom calling number" : "Same as your SMS number"}
+            </div>
+          </div>
         </div>
         <button
           type="button"
-          style={btn}
+          style={{
+            width: "100%",
+            border: "1px solid rgba(255,255,255,0.18)",
+            borderRadius: 14,
+            padding: "10px 14px",
+            background: "rgba(255,255,255,0.08)",
+            color: "#ffffff",
+            fontWeight: 800,
+            fontSize: 15,
+            cursor: "pointer",
+          }}
           onClick={() => {
             setChoice(info.callNumber);
             setError("");
