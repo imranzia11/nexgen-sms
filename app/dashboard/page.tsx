@@ -31,6 +31,7 @@ import { logDeletion } from "../../lib/deletionLog";
 import LoadingScreen from "../../components/LoadingScreen";
 import RepliesNavBadge from "../../components/RepliesNavBadge";
 import TwilioBalanceCard from "../../components/TwilioBalanceCard";
+import CallNumberCard from "../../components/CallNumberCard";
 import BillingNavCard from "../../components/BillingNavCard";
 import CallButton from "../../components/CallButton";
 import { markInterested } from "../../lib/callDisposition";import AutoDialer, { type DialProgress } from "../../components/AutoDialer";
@@ -1812,6 +1813,10 @@ export default function DashboardPage() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              <div style={sidebarRepliesWrapStyle}>
+                <CallNumberCard />
               </div>
 
               <div style={sidebarRepliesWrapStyle}>
