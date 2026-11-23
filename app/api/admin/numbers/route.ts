@@ -61,17 +61,29 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const [assignmentsSnap, usersSnap] = await Promise.all([
+    const [assignmentsSnap, usersSnap, callAssignSnap] = await Promise.all([
       adminDb.collection("numberAssignments").get(),
       adminDb.collection("users").where("isActive", "==", true).get(),
+      adminDb.collection("callNumberAssignments").get(),
     ]);
 
     const taken = new Set<string>();
+    // Numbers dedicated to dialing (separate from the text number).
+    const callOwner = new Map<string, string>();
     assignmentsSnap.docs.forEach((d) => taken.add(toE164(d.id)));
+    callAssignSnap.docs.forEach((d) => {
+      taken.add(toE164(d.id));
+      callOwner.set(toE164(d.id), String(d.data()?.ownerUid || ""));
+    });
     usersSnap.docs.forEach((d) => {
       const data = d.data() || {};
       const n = toE164(String(data.twilioNumber || data.assignedTwilioNumber || ""));
       if (n) taken.add(n);
+      const c = toE164(String(data.callNumber || ""));
+      if (c) {
+        taken.add(c);
+        callOwner.set(c, d.id);
+      }
     });
 
     // ?all=1 -> every number on the Twilio account with who holds it and how
@@ -124,7 +136,8 @@ export async function GET(req: NextRequest) {
       const rows = (twilioBody.incoming_phone_numbers || [])
         .map((n) => {
           const phoneNumber = toE164(String(n.phone_number || ""));
-          const ownerUid = assignmentOwner.get(phoneNumber) || "";
+          const callOnlyUid = callOwner.get(phoneNumber) || "";
+          const ownerUid = assignmentOwner.get(phoneNumber) || callOnlyUid;
           const owner =
             (ownerUid && byUid.get(ownerUid)) || byNumber.get(phoneNumber) || null;
           const s = stats.get(phoneNumber);
@@ -132,6 +145,7 @@ export async function GET(req: NextRequest) {
             phoneNumber,
             friendlyName: String(n.friendly_name || n.phone_number || ""),
             assigned: taken.has(phoneNumber),
+            usedFor: callOnlyUid && !assignmentOwner.get(phoneNumber) ? "calls" : taken.has(phoneNumber) ? "sms" : "",
             ownerUid: owner?.uid || ownerUid,
             ownerEmail: owner?.email || "",
             ownerName: owner?.name || "",

@@ -58,7 +58,11 @@ export async function POST(req: NextRequest) {
       return reject("Calling is not enabled for this account.");
     }
 
-    const callerId = toE164(String(user.twilioNumber || user.assignedTwilioNumber || ""));
+    // Calls use the account's calling number when one is set, otherwise the
+    // same number it texts from.
+    const callerId = toE164(
+      String(user.callNumber || user.twilioNumber || user.assignedTwilioNumber || "")
+    );
     const to = toE164(String(params.To || ""));
     if (!callerId || !/^\+\d{8,15}$/.test(to)) {
       return reject("This call could not be completed.");

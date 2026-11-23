@@ -91,9 +91,18 @@ export async function POST(
         releasedNumber = currentNumber;
       }
 
+      // A separate calling number is released too.
+      const callNum = toE164(String(targetData.callNumber || ""));
+      if (callNum) {
+        const callRef = adminDb.collection("callNumberAssignments").doc(callNum);
+        const callSnap = await callRef.get();
+        if (callSnap.exists && callSnap.data()?.ownerUid === uid) await callRef.delete();
+      }
+
       await targetRef.set(
         {
           isActive: false,
+          callNumber: "",
           twilioNumber: "",
           assignedTwilioNumber: "",
           ...(releasedNumber ? { releasedTwilioNumber: releasedNumber } : {}),

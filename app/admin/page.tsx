@@ -26,6 +26,7 @@ type NumberRow = {
   phoneNumber: string;
   friendlyName: string;
   assigned: boolean;
+  usedFor?: string;
   ownerUid: string;
   ownerEmail: string;
   ownerName: string;
@@ -107,6 +108,7 @@ export default function AdminOverviewPage() {
   const [allNumbersLoading, setAllNumbersLoading] = useState(false);
   const [changeFor, setChangeFor] = useState<AccountRow | null>(null);
   const [changeNumber, setChangeNumber] = useState("");
+  const [changeMode, setChangeMode] = useState<"sms" | "call">("sms");
   const [enableFor, setEnableFor] = useState<AccountRow | null>(null);
   const [enableNumber, setEnableNumber] = useState("");
   const [showCreate, setShowCreate] = useState(false);
@@ -265,7 +267,7 @@ export default function AdminOverviewPage() {
 
   const handleConfirmChange = async () => {
     if (!changeFor) return;
-    if (!changeNumber) {
+    if (!changeNumber && changeMode === "sms") {
       setActionError("Select the new number first.");
       return;
     }
@@ -275,6 +277,27 @@ export default function AdminOverviewPage() {
       const user = auth.currentUser;
       if (!user) throw new Error("You are not signed in.");
       const idToken = await user.getIdToken();
+
+      if (changeMode === "call") {
+        const res = await fetch(`/api/admin/account/${changeFor.uid}/call-number`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({ callNumber: changeNumber }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || !body.ok) throw new Error(body.error || "Failed to change calling number.");
+        setCreatedNote(
+          `${changeFor.email || changeFor.name} now dials from ${body.dialsFrom}${
+            body.callNumber ? "" : " (same as text number)"
+          }.`
+        );
+        setChangeFor(null);
+        setChangeNumber("");
+        void loadAllNumbers();
+        void loadNumbers();
+        return;
+      }
+
       const res = await fetch(`/api/admin/account/${changeFor.uid}/number`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
@@ -675,7 +698,7 @@ export default function AdminOverviewPage() {
                             color: n.assigned ? "#15803d" : "#b45309",
                           }}
                         >
-                          {n.assigned ? "Assigned" : "Unassigned"}
+                          {!n.assigned ? "Unassigned" : n.usedFor === "calls" ? "Calls only" : "Texts"}
                         </span>
                       </td>
                       <td style={{ padding: "10px" }}>
@@ -707,21 +730,29 @@ export default function AdminOverviewPage() {
         {changeFor ? (
           <div style={createFormStyle}>
             <div style={createFormTitleStyle}>
-              Change number for {changeFor.email || changeFor.name}
+              {changeMode === "call" ? "Calling number" : "Text number"} for{" "}
+              {changeFor.email || changeFor.name}
             </div>
             <div style={{ color: "#475569", fontSize: 14, fontWeight: 600 }}>
-              Currently {changeFor.twilioNumber || "no number"}. New texts and calls go out from
-              the new number straight away; the old one becomes free to assign.
+              {changeMode === "call"
+                ? `Calls are placed from this number. Texts stay on ${
+                    changeFor.twilioNumber || "the text number"
+                  }. Leave it on the default to dial from the text number.`
+                : `Currently ${
+                    changeFor.twilioNumber || "no number"
+                  }. New texts go out from the new number straight away; the old one becomes free to assign.`}
             </div>
             <label style={createLabelStyle}>
-              New number (unassigned only)
+              {changeMode === "call" ? "Dial from (unassigned only)" : "New number (unassigned only)"}
               <select
                 style={createInputStyle}
                 value={changeNumber}
                 onChange={(e) => setChangeNumber(e.target.value)}
               >
                 <option value="">
-                  {allNumbersLoading
+                  {changeMode === "call"
+                    ? "Default - same as text number"
+                    : allNumbersLoading
                     ? "Loading numbers..."
                     : allNumbers.filter((n) => !n.assigned).length === 0
                     ? "No unassigned numbers"
@@ -743,7 +774,7 @@ export default function AdminOverviewPage() {
                 onClick={() => void handleConfirmChange()}
                 style={createSubmitStyle}
               >
-                {busyUid === changeFor.uid ? "Saving..." : "Change number"}
+                {busyUid === changeFor.uid ? "Saving..." : "Save"}
               </button>
               <button
                 type="button"
@@ -993,6 +1024,7 @@ export default function AdminOverviewPage() {
                         e.preventDefault();
                         e.stopPropagation();
                         setActionError("");
+                        setChangeMode("sms");
                         setChangeFor(account);
                         setChangeNumber("");
                         void loadAllNumbers();
@@ -1004,7 +1036,30 @@ export default function AdminOverviewPage() {
                         opacity: busyUid === account.uid ? 0.6 : 1,
                       }}
                     >
-                      Change number
+                      Text number
+                    </button>
+                  ) : null}
+                  {account.isActive ? (
+                    <button
+                      type="button"
+                      disabled={busyUid === account.uid}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setActionError("");
+                        setChangeMode("call");
+                        setChangeFor(account);
+                        setChangeNumber("");
+                        void loadAllNumbers();
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }}
+                      style={{
+                        ...toggleButtonStyle,
+                        ...toggleEnableStyle,
+                        opacity: busyUid === account.uid ? 0.6 : 1,
+                      }}
+                    >
+                      Call number
                     </button>
                   ) : null}
                   {account.isActive ? (
