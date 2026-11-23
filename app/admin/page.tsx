@@ -22,6 +22,27 @@ type AvailableNumber = {
   friendlyName: string;
 };
 
+type NumberRow = {
+  phoneNumber: string;
+  friendlyName: string;
+  assigned: boolean;
+  ownerUid: string;
+  ownerEmail: string;
+  ownerName: string;
+  calls24h: number;
+  lastCallAt: string;
+};
+
+function formatAgo(iso: string) {
+  if (!iso) return "Not used in 30 days";
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs} hr ago`;
+  return `${Math.round(hrs / 24)} day(s) ago`;
+}
+
 type BillingCategory = {
   category: string;
   description: string;
@@ -81,6 +102,11 @@ export default function AdminOverviewPage() {
   const [availableNumbers, setAvailableNumbers] = useState<AvailableNumber[]>([]);
   const [numbersLoading, setNumbersLoading] = useState(false);
   const [numbersError, setNumbersError] = useState("");
+  const [showNumbers, setShowNumbers] = useState(false);
+  const [allNumbers, setAllNumbers] = useState<NumberRow[]>([]);
+  const [allNumbersLoading, setAllNumbersLoading] = useState(false);
+  const [changeFor, setChangeFor] = useState<AccountRow | null>(null);
+  const [changeNumber, setChangeNumber] = useState("");
   const [enableFor, setEnableFor] = useState<AccountRow | null>(null);
   const [enableNumber, setEnableNumber] = useState("");
   const [showCreate, setShowCreate] = useState(false);
@@ -213,6 +239,68 @@ export default function AdminOverviewPage() {
       );
     } finally {
       setNumbersLoading(false);
+    }
+  };
+
+  // Every Twilio number with its owner, last call and 24-hour call count.
+  const loadAllNumbers = async () => {
+    try {
+      setAllNumbersLoading(true);
+      setNumbersError("");
+      const user = auth.currentUser;
+      if (!user) throw new Error("You are not signed in.");
+      const idToken = await user.getIdToken();
+      const res = await fetch("/api/admin/numbers?all=1", {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) throw new Error(body.error || "Failed to load numbers.");
+      setAllNumbers((body.numbers || []) as NumberRow[]);
+    } catch (error: unknown) {
+      setNumbersError(error instanceof Error ? error.message : "Failed to load numbers.");
+    } finally {
+      setAllNumbersLoading(false);
+    }
+  };
+
+  const handleConfirmChange = async () => {
+    if (!changeFor) return;
+    if (!changeNumber) {
+      setActionError("Select the new number first.");
+      return;
+    }
+    try {
+      setBusyUid(changeFor.uid);
+      setActionError("");
+      const user = auth.currentUser;
+      if (!user) throw new Error("You are not signed in.");
+      const idToken = await user.getIdToken();
+      const res = await fetch(`/api/admin/account/${changeFor.uid}/number`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ twilioNumber: changeNumber }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) throw new Error(body.error || "Failed to change number.");
+
+      setAccounts((prev) =>
+        prev.map((a) =>
+          a.uid === changeFor.uid ? { ...a, twilioNumber: String(body.twilioNumber || "") } : a
+        )
+      );
+      setCreatedNote(
+        `${changeFor.email || changeFor.name} now uses ${body.twilioNumber}. ${
+          body.releasedNumber ? `${body.releasedNumber} is free again.` : ""
+        }`
+      );
+      setChangeFor(null);
+      setChangeNumber("");
+      void loadAllNumbers();
+      void loadNumbers();
+    } catch (error: unknown) {
+      setActionError(error instanceof Error ? error.message : "Failed to change number.");
+    } finally {
+      setBusyUid("");
     }
   };
 
@@ -423,6 +511,16 @@ export default function AdminOverviewPage() {
             >
               {showCreate ? "Close" : "Create Account"}
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!showNumbers) void loadAllNumbers();
+                setShowNumbers((v) => !v);
+              }}
+              style={logoutButtonStyle}
+            >
+              {showNumbers ? "Hide Numbers" : "Numbers"}
+            </button>
             <Link href="/admin/broadcast" style={diagnoseLinkStyle}>
               Send Update
             </Link>
@@ -532,6 +630,134 @@ export default function AdminOverviewPage() {
           </div>
         ) : billingError ? (
           <div style={errorStateStyle}>{billingError}</div>
+        ) : null}
+
+        {showNumbers ? (
+          <div style={createFormStyle}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={createFormTitleStyle}>
+                Twilio numbers ({allNumbers.filter((n) => !n.assigned).length} unassigned of{" "}
+                {allNumbers.length})
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadAllNumbers()}
+                style={{ ...createSubmitStyle, background: "#e2e8f0", color: "#334155" }}
+              >
+                {allNumbersLoading ? "Loading..." : "Refresh"}
+              </button>
+            </div>
+            {numbersError ? (
+              <span style={{ color: "#991b1b", fontWeight: 700 }}>{numbersError}</span>
+            ) : null}
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                <thead>
+                  <tr style={{ textAlign: "left", color: "#64748b" }}>
+                    <th style={{ padding: "8px 10px" }}>Number</th>
+                    <th style={{ padding: "8px 10px" }}>Status</th>
+                    <th style={{ padding: "8px 10px" }}>Assigned to</th>
+                    <th style={{ padding: "8px 10px" }}>Last used to call</th>
+                    <th style={{ padding: "8px 10px" }}>Calls (24h)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allNumbers.map((n) => (
+                    <tr key={n.phoneNumber} style={{ borderTop: "1px solid #e2e8f0" }}>
+                      <td style={{ padding: "10px", fontWeight: 800 }}>{n.phoneNumber}</td>
+                      <td style={{ padding: "10px" }}>
+                        <span
+                          style={{
+                            borderRadius: 999,
+                            padding: "4px 10px",
+                            fontWeight: 700,
+                            background: n.assigned ? "#dcfce7" : "#fef3c7",
+                            color: n.assigned ? "#15803d" : "#b45309",
+                          }}
+                        >
+                          {n.assigned ? "Assigned" : "Unassigned"}
+                        </span>
+                      </td>
+                      <td style={{ padding: "10px" }}>
+                        {n.assigned ? n.ownerName || n.ownerEmail || "-" : "-"}
+                        {n.assigned && n.ownerName && n.ownerEmail ? (
+                          <div style={{ fontSize: 12, color: "#64748b" }}>{n.ownerEmail}</div>
+                        ) : null}
+                      </td>
+                      <td style={{ padding: "10px" }}>{formatAgo(n.lastCallAt)}</td>
+                      <td style={{ padding: "10px", fontWeight: 800 }}>{n.calls24h}</td>
+                    </tr>
+                  ))}
+                  {allNumbers.length === 0 && !allNumbersLoading ? (
+                    <tr>
+                      <td colSpan={5} style={{ padding: 14, color: "#64748b" }}>
+                        No numbers loaded.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ fontSize: 12, color: "#64748b" }}>
+              Calls are counted from the dialer (browser calls) by caller ID, last 24 hours.
+            </div>
+          </div>
+        ) : null}
+
+        {changeFor ? (
+          <div style={createFormStyle}>
+            <div style={createFormTitleStyle}>
+              Change number for {changeFor.email || changeFor.name}
+            </div>
+            <div style={{ color: "#475569", fontSize: 14, fontWeight: 600 }}>
+              Currently {changeFor.twilioNumber || "no number"}. New texts and calls go out from
+              the new number straight away; the old one becomes free to assign.
+            </div>
+            <label style={createLabelStyle}>
+              New number (unassigned only)
+              <select
+                style={createInputStyle}
+                value={changeNumber}
+                onChange={(e) => setChangeNumber(e.target.value)}
+              >
+                <option value="">
+                  {allNumbersLoading
+                    ? "Loading numbers..."
+                    : allNumbers.filter((n) => !n.assigned).length === 0
+                    ? "No unassigned numbers"
+                    : "Select a number"}
+                </option>
+                {allNumbers
+                  .filter((n) => !n.assigned)
+                  .map((n) => (
+                    <option key={n.phoneNumber} value={n.phoneNumber}>
+                      {n.phoneNumber} - {n.calls24h} call(s) 24h - last used {formatAgo(n.lastCallAt)}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <div style={{ display: "flex", gap: 12 }}>
+              <button
+                type="button"
+                disabled={busyUid === changeFor.uid}
+                onClick={() => void handleConfirmChange()}
+                style={createSubmitStyle}
+              >
+                {busyUid === changeFor.uid ? "Saving..." : "Change number"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setChangeFor(null);
+                  setChangeNumber("");
+                  setActionError("");
+                }}
+                style={{ ...createSubmitStyle, background: "#e2e8f0", color: "#334155" }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         ) : null}
 
         {enableFor ? (
@@ -759,6 +985,28 @@ export default function AdminOverviewPage() {
                       ? "Disable"
                       : "Enable"}
                   </button>
+                  {account.isActive ? (
+                    <button
+                      type="button"
+                      disabled={busyUid === account.uid}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setActionError("");
+                        setChangeFor(account);
+                        setChangeNumber("");
+                        void loadAllNumbers();
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }}
+                      style={{
+                        ...toggleButtonStyle,
+                        ...toggleEnableStyle,
+                        opacity: busyUid === account.uid ? 0.6 : 1,
+                      }}
+                    >
+                      Change number
+                    </button>
+                  ) : null}
                   {account.isActive ? (
                     <button
                       type="button"
