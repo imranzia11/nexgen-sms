@@ -82,18 +82,36 @@ async function ensureDevice() {
   device = new Device(tokenResult.token, {
     codecPreferences: ["opus", "pcmu"] as any,
     closeProtection: true,
-  });
+    tokenRefreshMs: 5 * 60 * 1000,
+  } as any);
 
-  // Keep the token fresh for long sessions.
-  device.on("tokenWillExpire", async () => {
+  // Keep the token fresh for long sessions (a sleeping/background tab can
+  // miss the SDK's own timer, so also refresh on a fixed interval).
+  const refreshToken = async () => {
     try {
       const fresh = await fetchToken();
-      if (fresh.token) device.updateToken(fresh.token);
+      if (fresh.token && device) device.updateToken(fresh.token);
+      return true;
     } catch {
-      /* the next call attempt will surface a real error */
+      return false;
     }
+  };
+  device.on("tokenWillExpire", () => {
+    void refreshToken();
   });
-  device.on("error", (err: any) => {
+  setInterval(() => void refreshToken(), 20 * 60 * 1000);
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") void refreshToken();
+    });
+  }
+  device.on("error", async (err: any) => {
+    // 20104 = expired token: swap in a fresh one instead of failing the dialer.
+    if (err?.code === 20104) {
+      await refreshToken();
+      setState({ status: "idle", error: "" } as any);
+      return;
+    }
     setState({ status: "error", error: err?.message || "Calling error." });
   });
 
