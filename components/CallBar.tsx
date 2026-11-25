@@ -8,7 +8,7 @@ import {
   dismissCallError,
   type CallState,
 } from "../lib/voiceClient";
-import { blockNumber, markInterested } from "../lib/callDisposition";
+import { blockNumber, markBadNumber, markInterested } from "../lib/callDisposition";
 
 // Floating call panel, mounted once in the root layout. Shows while a call is
 // connecting, ringing, live, ended or errored. During the call (and for a short
@@ -21,7 +21,7 @@ function formatTime(total: number) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-type Mark = "interested" | "blocked" | "saving" | "error";
+type Mark = "interested" | "blocked" | "bad" | "saving" | "error";
 
 export default function CallBar() {
   const [call, setCall] = useState<CallState | null>(null);
@@ -44,7 +44,7 @@ export default function CallBar() {
     }
   }, [call, lastTo]);
 
-  async function act(kind: "interested" | "blocked", to: string) {
+  async function act(kind: "interested" | "blocked" | "bad", to: string) {
     if (!to) return;
     if (kind === "blocked" && !window.confirm(`Block ${to}? They won't be called or texted again.`)) {
       return;
@@ -52,6 +52,7 @@ export default function CallBar() {
     setMarks((m) => ({ ...m, [to]: "saving" }));
     try {
       if (kind === "interested") await markInterested(to);
+      else if (kind === "bad") await markBadNumber(to);
       else await blockNumber(to);
       setMarks((m) => ({ ...m, [to]: kind }));
     } catch (e) {
@@ -62,11 +63,13 @@ export default function CallBar() {
 
   function Actions({ to }: { to: string }) {
     const mark = marks[to];
-    if (mark === "interested" || mark === "blocked") {
+    if (mark === "interested" || mark === "blocked" || mark === "bad") {
       return (
         <div style={doneStyle}>
           {mark === "interested"
             ? "Saved to Replies > Call Leads"
+            : mark === "bad"
+            ? "Marked wrong / disconnected"
             : "Number blocked"}
         </div>
       );
@@ -80,6 +83,14 @@ export default function CallBar() {
           style={interestedButtonStyle}
         >
           ★ Interested
+        </button>
+        <button
+          type="button"
+          disabled={mark === "saving"}
+          onClick={() => act("bad", to)}
+          style={badButtonStyle}
+        >
+          Wrong / Disconnected
         </button>
         <button
           type="button"
@@ -213,6 +224,12 @@ const blockButtonStyle: CSSProperties = {
   ...muteButtonStyle,
   border: "1px solid rgba(248,113,113,0.6)",
   background: "rgba(220,38,38,0.2)",
+};
+
+const badButtonStyle: CSSProperties = {
+  ...muteButtonStyle,
+  border: "1px solid rgba(251,191,36,0.6)",
+  background: "rgba(245,158,11,0.2)",
 };
 
 const doneStyle: CSSProperties = {

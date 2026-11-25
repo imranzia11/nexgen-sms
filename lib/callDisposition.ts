@@ -27,6 +27,7 @@ export type DispositionEvent = {
   phone: string;
   interested?: boolean;
   blocked?: boolean;
+  badNumber?: boolean;
 };
 
 function announce(detail: DispositionEvent) {
@@ -136,6 +137,49 @@ export async function markInterested(rawPhone: string) {
   }
 
   announce({ phone, interested: true });
+}
+
+// Wrong or disconnected number. Separate from blocking: nothing is added to
+// the blocked list. The lead is flagged badNumber and its status becomes
+// "invalid", so the dialer and bulk texting both skip it from now on, and it
+// is listed under the "Wrong / Disconnected" filter.
+export async function markBadNumber(rawPhone: string) {
+  const phone = toE164(rawPhone);
+  const { uid } = await currentProfile();
+  const note = "Wrong or disconnected number (from call)";
+
+  const leadDocs = await leadsForPhone(uid, phone);
+  if (leadDocs.length > 0) {
+    await Promise.all(
+      leadDocs.map((d) =>
+        updateDoc(d.ref, {
+          badNumber: true,
+          badNumberAt: serverTimestamp(),
+          interested: false,
+          status: "invalid",
+          validationNote: note,
+        })
+      )
+    );
+  } else {
+    await addDoc(collection(db, "leads"), {
+      uploadId: "",
+      uploadedBy: uid,
+      ownerUid: uid,
+      name: "",
+      phone,
+      rawPhone: phone,
+      status: "invalid",
+      validationNote: note,
+      sourceFileName: "Calls",
+      badNumber: true,
+      badNumberAt: serverTimestamp(),
+      interested: false,
+      createdAt: serverTimestamp(),
+    });
+  }
+
+  announce({ phone, badNumber: true, interested: false });
 }
 
 export async function blockNumber(rawPhone: string) {

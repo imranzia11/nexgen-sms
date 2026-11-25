@@ -49,6 +49,7 @@ type LeadItem = {
   sourceFileName?: string;
   rowIndex?: number;
   dialStatus?: string;
+  badNumber?: boolean;
   interested?: boolean;
   company?: string;
   email?: string;
@@ -414,7 +415,7 @@ export default function DashboardPage() {
   const [twilioNumber, setTwilioNumber] = useState("");
 
   const [uploading, setUploading] = useState(false);
-  const [leadFilter, setLeadFilter] = useState<"all" | "interested" | "answered">("all");
+  const [leadFilter, setLeadFilter] = useState<"all" | "interested" | "answered" | "bad">("all");
   const [showImportHelp, setShowImportHelp] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{
     done: number;
@@ -725,6 +726,7 @@ export default function DashboardPage() {
           sourceFileName: data.sourceFileName || "",
           rowIndex: typeof data.rowIndex === "number" ? data.rowIndex : undefined,
           dialStatus: data.dialStatus || "",
+          badNumber: data.badNumber === true,
           interested: data.interested === true,
           company: data.company || "",
           email: data.email || "",
@@ -1531,6 +1533,8 @@ export default function DashboardPage() {
         ? selectedLeads.filter((l) => l.interested === true)
         : leadFilter === "answered"
         ? selectedLeads.filter((l) => l.dialStatus === "answered")
+        : leadFilter === "bad"
+        ? selectedLeads.filter((l) => l.badNumber === true)
         : selectedLeads;
     if (!term) return base;
 
@@ -1555,6 +1559,7 @@ export default function DashboardPage() {
         phone: string;
         interested?: boolean;
         blocked?: boolean;
+        badNumber?: boolean;
       };
       if (!d?.phone) return;
       setSelectedLeads((prev) =>
@@ -1563,7 +1568,8 @@ export default function DashboardPage() {
             ? {
                 ...l,
                 interested: d.interested ?? l.interested,
-                status: d.blocked ? "blocked" : l.status,
+                badNumber: d.badNumber ?? l.badNumber,
+                status: d.blocked ? "blocked" : d.badNumber ? "invalid" : l.status,
               }
             : l
         )
@@ -2220,7 +2226,7 @@ export default function DashboardPage() {
                         placeholder="Search leads"
                         style={inlineSearchInputStyle}
                       />
-                      {(["interested", "answered"] as const).map((f) => (
+                      {(["interested", "answered", "bad"] as const).map((f) => (
                         <button
                           key={f}
                           onClick={() => setLeadFilter((cur) => (cur === f ? "all" : f))}
@@ -2231,7 +2237,11 @@ export default function DashboardPage() {
                               : {}),
                           }}
                         >
-                          {f === "interested" ? "★ Interested" : "Answered"}
+                          {f === "interested"
+                            ? "★ Interested"
+                            : f === "bad"
+                            ? "Wrong / Disconnected"
+                            : "Answered"}
                         </button>
                       ))}
                       <button
@@ -2352,6 +2362,8 @@ export default function DashboardPage() {
                                       </span>
                                     );
                                     if (dialing) return chip("Dialing now...", "#dcfce7", "#15803d");
+                                    if (lead.badNumber)
+                                      return chip("Wrong / disconnected", "#ffedd5", "#c2410c");
                                     if (outcome === "answered")
                                       return chip("Called - answered", "#dcfce7", "#15803d");
                                     if (outcome === "no answer")
